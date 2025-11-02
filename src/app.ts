@@ -8,18 +8,24 @@ import utc from 'dayjs/plugin/utc.js'
 import { serveStatic } from '@hono/node-server/serve-static'
 import { JAKARTA_TZ } from './config'
 import createApp from './lib/create-app'
+import adminAnalyticsRoute from './routes/admin/analytics.route'
 import adminAuthRoute from './routes/admin/auth.route'
 import adminBallboyCostRoute from './routes/admin/ballboy-cost.route'
 import adminBannerRoute from './routes/admin/banner.route'
+import adminBookingRoute from './routes/admin/booking.route'
 import adminClassRoute from './routes/admin/class.route'
+import adminClassBookingRoute from './routes/admin/class-booking.route'
 import adminCoachCostRoute from './routes/admin/coach-cost.route'
 import adminCourtCostRoute from './routes/admin/court-cost.route'
 import adminCourtRoute from './routes/admin/court.route'
 import adminHomeRoute from './routes/admin/home.route'
 import adminInventoryRoute from './routes/admin/inventory.route'
 import adminMembershipRoute from './routes/admin/membership.route'
+import adminMembershipTransactionRoute from './routes/admin/membership-transaction.route'
 import adminPaymentMethodRoute from './routes/admin/payment-method.route'
 import adminStaffRoute from './routes/admin/staff.route'
+import adminTournamentRoute from './routes/admin/tournament.route'
+import adminUserRoute from './routes/admin/user.route'
 import authRoute from './routes/auth.route'
 import bannerRoute from './routes/banner.route'
 import checkoutRoute from './routes/checkout.route'
@@ -34,6 +40,7 @@ import invoiceRoute from './routes/invoice.route'
 import phoneVerificationRoute from './routes/phone.route'
 import xenditWebhookRoute from './routes/xendit-webhook.route'
 import ballboyRoute from './routes/ballboy.route'
+import tournamentRoute from './routes/tournament.route'
 
 dayjs.locale('id')
 dayjs.extend(utc)
@@ -61,12 +68,14 @@ const routes = [
   inventoryRoute,
   invoiceRoute,
   checkoutRoute,
+  tournamentRoute,
   xenditWebhookRoute,
 ]
 
 // ADD NEW ADMIN ROUTES HERE
 const adminRoutes = [
   adminHomeRoute,
+  adminAnalyticsRoute,
   adminAuthRoute,
   adminInventoryRoute,
   adminStaffRoute,
@@ -75,9 +84,14 @@ const adminRoutes = [
   adminBallboyCostRoute,
   adminCoachCostRoute,
   adminBannerRoute,
+  adminBookingRoute,
   adminClassRoute,
+  adminClassBookingRoute,
   adminMembershipRoute,
+  adminMembershipTransactionRoute,
   adminPaymentMethodRoute,
+  adminTournamentRoute,
+  adminUserRoute,
 ]
 
 routes.forEach((route) => {

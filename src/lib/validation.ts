@@ -348,6 +348,41 @@ export const updateClubSchema = createClubSchema.partial()
 
 export type UpdateClubSchema = z.infer<typeof updateClubSchema>
 
+// Tournament schema
+export const createTournamentSchema = z.object({
+  name: z.string().min(3).max(100),
+  description: z.string().min(3).max(500).optional(),
+  rules: z.string().min(3).max(2000).optional(),
+  image: z.file().optional(),
+  startDate: z
+    .string()
+    .refine((val) => dayjs(val, 'YYYY-MM-DD', true).isValid(), {
+      message: 'Invalid date format, expected YYYY-MM-DD',
+    }),
+  endDate: z
+    .string()
+    .refine((val) => dayjs(val, 'YYYY-MM-DD', true).isValid(), {
+      message: 'Invalid date format, expected YYYY-MM-DD',
+    }),
+  startTime: z.string().refine((val) => dayjs(val, 'HH:mm', true).isValid(), {
+    message: 'Invalid time format, expected HH:mm',
+  }),
+  endTime: z.string().refine((val) => dayjs(val, 'HH:mm', true).isValid(), {
+    message: 'Invalid time format, expected HH:mm',
+  }),
+  maxTeams: z.number().min(2),
+  teamSize: z.number().min(1),
+  entryFee: z.number().min(0),
+  location: z.string().min(3).max(200),
+  isActive: z.coerce.boolean(),
+})
+
+export type CreateTournamentSchema = z.infer<typeof createTournamentSchema>
+
+export const updateTournamentSchema = createTournamentSchema.partial()
+
+export type UpdateTournamentSchema = z.infer<typeof updateTournamentSchema>
+
 // Membership schema
 export const createMembershipSchema = z.object({
   name: z.string().min(3).max(100),
