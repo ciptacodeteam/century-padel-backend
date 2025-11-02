@@ -11,6 +11,6 @@ const adminCourtCostRoute = createRouter()
   .get('/', ...getCourtCostHandler)
   .post('/', ...createCourtCostHandler)
   .put('/:id', ...updateCourtCostHandler)
-  .put('/override', ...overrideSingleCourtCostHandler)
+  .put('/:id/override', ...overrideSingleCourtCostHandler)
 
 export default adminCourtCostRoute

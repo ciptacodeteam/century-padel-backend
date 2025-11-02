@@ -228,18 +228,32 @@ export const getCostHandler = factory.createHandlers(
     try {
       const { id } = c.req.valid('param') as IdSchema
 
-      const court = await db.court.findUnique({
-        where: { id },
-        include: {
-          costSchedules: true,
-        },
-      })
+      const courtCostSlot = await db.$queryRaw`
+        SELECT 
+          s."startAt"::date AS date,
+          json_agg(
+            json_build_object(
+              'id', s.id,
+              'courtId', s."courtId",
+              'startAt', s."startAt",
+              'endAt', s."endAt",
+              'price', s.price,
+              'isAvailable', s."isAvailable",
+              'createdAt', s."createdAt",
+              'updatedAt', s."updatedAt"
+            )
+          ) AS slots
+        FROM slots AS s
+        WHERE s."courtId" = ${id}
+        GROUP BY date
+        ORDER BY date DESC
+      `
 
-      if (!court) {
-        throw new NotFoundException('Court not found')
+      if (!courtCostSlot) {
+        throw new NotFoundException('Court cost slot not found')
       }
 
-      return c.json(ok(court.costSchedules), status.OK)
+      return c.json(ok(courtCostSlot), status.OK)
     } catch (error) {
       c.var.logger.fatal(`Error in getCostHandler: ${error}`)
       throw error

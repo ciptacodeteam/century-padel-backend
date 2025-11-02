@@ -134,11 +134,13 @@ export const updateCourtCostHandler = factory.createHandlers(
 )
 
 export const overrideSingleCourtCostHandler = factory.createHandlers(
+  zValidator('param', idSchema, validateHook),
   zValidator('json', overrideSingleCourtCostSchema, validateHook),
   async (c) => {
     try {
+      const { id: courtId } = c.req.valid('param') as IdSchema
       const validated = c.req.valid('json') as OverrideSingleCourtCostSchema
-      const { date, courtId, hour, price } = validated
+      const { date, hour, price } = validated
 
       const existing = await db.courtCostSchedule.findUnique({
         where: { id: courtId },
