@@ -221,3 +221,28 @@ export const deleteCourtHandler = factory.createHandlers(
     }
   },
 )
+
+export const getCostHandler = factory.createHandlers(
+  zValidator('param', idSchema, validateHook),
+  async (c) => {
+    try {
+      const { id } = c.req.valid('param') as IdSchema
+
+      const court = await db.court.findUnique({
+        where: { id },
+        include: {
+          costSchedules: true,
+        },
+      })
+
+      if (!court) {
+        throw new NotFoundException('Court not found')
+      }
+
+      return c.json(ok(court.costSchedules), status.OK)
+    } catch (error) {
+      c.var.logger.fatal(`Error in getCostHandler: ${error}`)
+      throw error
+    }
+  },
+)
