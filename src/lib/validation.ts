@@ -415,7 +415,7 @@ export const createPaymentMethodSchema = z.object({
     },
     { message: 'Percentage must be a non-negative number' },
   ),
-  channel: z.string().min(3).max(50).optional(),
+  channel: z.string().min(2).max(50).optional(),
   isActive: z.coerce.boolean().optional().default(true),
 })
 
@@ -488,4 +488,22 @@ export const availableInventoryQuerySchema = z
 
 export type AvailableInventoryQuerySchema = z.infer<
   typeof availableInventoryQuerySchema
+>
+
+export const availableCourtSlotsQuerySchema = z.object({
+  startAt: z.string().refine((val) => dayjs(val).isValid(), {
+    message: 'Invalid datetime format for startAt',
+  }).optional(),
+  endAt: z.string().refine((val) => dayjs(val).isValid(), {
+    message: 'Invalid datetime format for endAt',
+  }).optional(),
+}).refine(
+  (vals) =>
+    (!vals.startAt && !vals.endAt) ||
+    (vals.startAt !== undefined && vals.endAt !== undefined),
+  { message: 'Both startAt and endAt must be provided together' },
+)
+
+export type AvailableCourtSlotsQuerySchema = z.infer<
+  typeof availableCourtSlotsQuerySchema
 >
