@@ -270,18 +270,21 @@ export const checkoutHandler = factory.createHandlers(
               )
             }
 
+            const inventoryPrice = inventory.price * inv.quantity
+            totalPrice += inventoryPrice
+
             await tx.bookingInventory.create({
               data: {
                 bookingId: booking.id,
                 inventoryId: inv.inventoryId,
                 quantity: inv.quantity,
-                price: 0, // You may want to add pricing to inventory
+                price: inventory.price, // unit price captured at checkout
               },
             })
             xenditItems.push({
               name: `Inventory - ${inventory.name}`,
               quantity: inv.quantity,
-              price: 0,
+              price: inventory.price,
             })
           }
         }

@@ -57,6 +57,7 @@ export const getAvailableInventoryHandler = factory.createHandlers(
             id: inventory.id,
             name: inventory.name,
             description: inventory.description,
+            price: inventory.price,
             totalQuantity: inventory.quantity,
             availableQuantity,
             bookedQuantity,

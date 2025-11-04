@@ -64,7 +64,7 @@ export const createInventoryHandler = factory.createHandlers(
   async (c) => {
     try {
       const body = c.req.valid('json') as CreateInventorySchema
-      const { name, description, quantity } = body
+      const { name, description, quantity, price } = body
 
       const existingName = await db.inventory.findFirst({
         where: { name },
@@ -85,6 +85,7 @@ export const createInventoryHandler = factory.createHandlers(
           name,
           description,
           quantity,
+          price,
         },
       })
 
