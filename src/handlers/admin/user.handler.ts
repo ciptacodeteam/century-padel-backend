@@ -1,21 +1,16 @@
 import { BadRequestException, NotFoundException } from '@/exceptions'
-import { DEFAULT_OTP_CODE, OTP_LENGTH } from '@/constants'
-import { env } from '@/env'
 import { validateHook } from '@/helpers/validate-hook'
 import { factory } from '@/lib/create-app'
 import { db } from '@/lib/prisma'
 import buildFindManyOptions from '@/lib/query'
 import { ok } from '@/lib/response'
-import { formatPhone, generateOtp } from '@/lib/utils'
 import {
   IdSchema,
   idSchema,
   SearchQuerySchema,
   searchQuerySchema,
 } from '@/lib/validation'
-import { sendPhoneOtp } from '@/services/phone.service'
 import { zValidator } from '@hono/zod-validator'
-import { PhoneVerificationType } from '@prisma/client'
 import dayjs from 'dayjs'
 import status from 'http-status'
 import z from 'zod'
@@ -23,10 +18,12 @@ import z from 'zod'
 // Validation schema for ban user
 const banUserSchema = z.object({
   reason: z.string().min(1).max(500),
-  banExpires: z.string().optional().refine(
-    (val) => !val || dayjs(val).isValid(),
-    { message: 'Invalid date format' }
-  ),
+  banExpires: z
+    .string()
+    .optional()
+    .refine((val) => !val || dayjs(val).isValid(), {
+      message: 'Invalid date format',
+    }),
 })
 
 type BanUserSchema = z.infer<typeof banUserSchema>
@@ -182,155 +179,163 @@ export const getUserDetailHandler = factory.createHandlers(
 
 // POST /admin/users/:id/send-reset-password
 // Send reset password OTP link
-export const sendResetPasswordLinkHandler = factory.createHandlers(
-  zValidator('param', idSchema, validateHook),
-  async (c) => {
-    try {
-      const { id } = c.req.valid('param') as IdSchema
+/**
+ * !important
+ * Salah Implement
+ */
+// export const sendResetPasswordLinkHandler = factory.createHandlers(
+//   zValidator('param', idSchema, validateHook),
+//   async (c) => {
+//     try {
+//       const { id } = c.req.valid('param') as IdSchema
 
-      const user = await db.user.findUnique({
-        where: { id },
-      })
+//       const user = await db.user.findUnique({
+//         where: { id },
+//       })
 
-      if (!user) {
-        throw new NotFoundException('User not found')
-      }
+//       if (!user) {
+//         throw new NotFoundException('User not found')
+//       }
 
-      if (!user.phone) {
-        throw new BadRequestException('User does not have a phone number')
-      }
+//       if (!user.phone) {
+//         throw new BadRequestException('User does not have a phone number')
+//       }
 
-      let code = DEFAULT_OTP_CODE
-      let requestId = Math.random().toString(36).substring(2, 30)
+//       let code = DEFAULT_OTP_CODE
+//       let requestId = Math.random().toString(36).substring(2, 30)
 
-      if (env.nodeEnv === 'production') {
-        code = await generateOtp(OTP_LENGTH)
-        requestId = await sendPhoneOtp(user.phone, code)
+//       if (env.nodeEnv === 'production') {
+//         code = await generateOtp(OTP_LENGTH)
+//         requestId = await sendPhoneOtp(user.phone, code)
 
-        if (!requestId) {
-          c.var.logger.error(
-            `Failed to find OTP request ID for phone ${user.phone}`,
-          )
-          throw new Error('Failed to send OTP')
-        }
-      }
+//         if (!requestId) {
+//           c.var.logger.error(
+//             `Failed to find OTP request ID for phone ${user.phone}`,
+//           )
+//           throw new Error('Failed to send OTP')
+//         }
+//       }
 
-      await db.phoneVerification.upsert({
-        where: { phone: user.phone },
-        update: {
-          requestId,
-          code,
-          isUsed: false,
-          type: PhoneVerificationType.FORGOT_PASSWORD,
-          expiresAt: dayjs().add(5, 'minute').toDate(),
-        },
-        create: {
-          requestId,
-          phone: user.phone,
-          code,
-          isUsed: false,
-          type: PhoneVerificationType.FORGOT_PASSWORD,
-          expiresAt: dayjs().add(5, 'minute').toDate(),
-        },
-      })
+//       await db.phoneVerification.upsert({
+//         where: { phone: user.phone },
+//         update: {
+//           requestId,
+//           code,
+//           isUsed: false,
+//           type: PhoneVerificationType.FORGOT_PASSWORD,
+//           expiresAt: dayjs().add(5, 'minute').toDate(),
+//         },
+//         create: {
+//           requestId,
+//           phone: user.phone,
+//           code,
+//           isUsed: false,
+//           type: PhoneVerificationType.FORGOT_PASSWORD,
+//           expiresAt: dayjs().add(5, 'minute').toDate(),
+//         },
+//       })
 
-      return c.json(
-        ok(
-          {
-            userId: user.id,
-            phone: user.phone,
-            requestId,
-            message:
-              env.nodeEnv === 'production'
-                ? 'OTP sent successfully to user phone'
-                : `OTP code: ${code} (development mode)`,
-          },
-          'Reset password OTP sent successfully',
-        ),
-        status.OK,
-      )
-    } catch (error) {
-      c.var.logger.fatal(`Error in sendResetPasswordLinkHandler: ${error}`)
-      throw error
-    }
-  },
-)
+//       return c.json(
+//         ok(
+//           {
+//             userId: user.id,
+//             phone: user.phone,
+//             requestId,
+//             message:
+//               env.nodeEnv === 'production'
+//                 ? 'OTP sent successfully to user phone'
+//                 : `OTP code: ${code} (development mode)`,
+//           },
+//           'Reset password OTP sent successfully',
+//         ),
+//         status.OK,
+//       )
+//     } catch (error) {
+//       c.var.logger.fatal(`Error in sendResetPasswordLinkHandler: ${error}`)
+//       throw error
+//     }
+//   },
+// )
 
 // POST /admin/users/:id/send-change-phone
 // Send change phone OTP link
-export const sendChangePhoneLinkHandler = factory.createHandlers(
-  zValidator('param', idSchema, validateHook),
-  async (c) => {
-    try {
-      const { id } = c.req.valid('param') as IdSchema
+/**
+ * !important
+ * Salah Implement
+ */
+// export const sendChangePhoneLinkHandler = factory.createHandlers(
+//   zValidator('param', idSchema, validateHook),
+//   async (c) => {
+//     try {
+//       const { id } = c.req.valid('param') as IdSchema
 
-      const user = await db.user.findUnique({
-        where: { id },
-      })
+//       const user = await db.user.findUnique({
+//         where: { id },
+//       })
 
-      if (!user) {
-        throw new NotFoundException('User not found')
-      }
+//       if (!user) {
+//         throw new NotFoundException('User not found')
+//       }
 
-      if (!user.phone) {
-        throw new BadRequestException('User does not have a phone number')
-      }
+//       if (!user.phone) {
+//         throw new BadRequestException('User does not have a phone number')
+//       }
 
-      let code = DEFAULT_OTP_CODE
-      let requestId = Math.random().toString(36).substring(2, 30)
+//       let code = DEFAULT_OTP_CODE
+//       let requestId = Math.random().toString(36).substring(2, 30)
 
-      if (env.nodeEnv === 'production') {
-        code = await generateOtp(OTP_LENGTH)
-        requestId = await sendPhoneOtp(user.phone, code)
+//       if (env.nodeEnv === 'production') {
+//         code = await generateOtp(OTP_LENGTH)
+//         requestId = await sendPhoneOtp(user.phone, code)
 
-        if (!requestId) {
-          c.var.logger.error(
-            `Failed to find OTP request ID for phone ${user.phone}`,
-          )
-          throw new Error('Failed to send OTP')
-        }
-      }
+//         if (!requestId) {
+//           c.var.logger.error(
+//             `Failed to find OTP request ID for phone ${user.phone}`,
+//           )
+//           throw new Error('Failed to send OTP')
+//         }
+//       }
 
-      await db.phoneVerification.upsert({
-        where: { phone: user.phone },
-        update: {
-          requestId,
-          code,
-          isUsed: false,
-          type: PhoneVerificationType.CHANGE_PHONE,
-          expiresAt: dayjs().add(5, 'minute').toDate(),
-        },
-        create: {
-          requestId,
-          phone: user.phone,
-          code,
-          isUsed: false,
-          type: PhoneVerificationType.CHANGE_PHONE,
-          expiresAt: dayjs().add(5, 'minute').toDate(),
-        },
-      })
+//       await db.phoneVerification.upsert({
+//         where: { phone: user.phone },
+//         update: {
+//           requestId,
+//           code,
+//           isUsed: false,
+//           type: PhoneVerificationType.CHANGE_PHONE,
+//           expiresAt: dayjs().add(5, 'minute').toDate(),
+//         },
+//         create: {
+//           requestId,
+//           phone: user.phone,
+//           code,
+//           isUsed: false,
+//           type: PhoneVerificationType.CHANGE_PHONE,
+//           expiresAt: dayjs().add(5, 'minute').toDate(),
+//         },
+//       })
 
-      return c.json(
-        ok(
-          {
-            userId: user.id,
-            phone: user.phone,
-            requestId,
-            message:
-              env.nodeEnv === 'production'
-                ? 'OTP sent successfully to user phone'
-                : `OTP code: ${code} (development mode)`,
-          },
-          'Change phone OTP sent successfully',
-        ),
-        status.OK,
-      )
-    } catch (error) {
-      c.var.logger.fatal(`Error in sendChangePhoneLinkHandler: ${error}`)
-      throw error
-    }
-  },
-)
+//       return c.json(
+//         ok(
+//           {
+//             userId: user.id,
+//             phone: user.phone,
+//             requestId,
+//             message:
+//               env.nodeEnv === 'production'
+//                 ? 'OTP sent successfully to user phone'
+//                 : `OTP code: ${code} (development mode)`,
+//           },
+//           'Change phone OTP sent successfully',
+//         ),
+//         status.OK,
+//       )
+//     } catch (error) {
+//       c.var.logger.fatal(`Error in sendChangePhoneLinkHandler: ${error}`)
+//       throw error
+//     }
+//   },
+// )
 
 // PUT /admin/users/:id/ban
 // Ban user
@@ -408,14 +413,10 @@ export const unbanUserHandler = factory.createHandlers(
         },
       })
 
-      return c.json(
-        ok(updatedUser, 'User unbanned successfully'),
-        status.OK,
-      )
+      return c.json(ok(updatedUser, 'User unbanned successfully'), status.OK)
     } catch (error) {
       c.var.logger.fatal(`Error in unbanUserHandler: ${error}`)
       throw error
     }
   },
 )
-
