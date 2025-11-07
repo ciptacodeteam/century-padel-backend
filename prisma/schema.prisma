@@ -86,13 +86,14 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now()) @updatedAt
 
-  authTokens     AuthToken[]
-  bookings       Booking[]
-  membershipUser MembershipUser[]
-  classBookings  ClassBooking[]
-  clubsLed       Club[]           @relation("ClubLeader")
-  clubMember     ClubMember[]
-  invoice        Invoice[]
+  authTokens          AuthToken[]
+  bookings            Booking[]
+  membershipUser      MembershipUser[]
+  classBookings       ClassBooking[]
+  clubsLed            Club[]               @relation("ClubLeader")
+  clubMember          ClubMember[]
+  invoice             Invoice[]
+  passwordResetTokens PasswordResetToken[]
 
   @@map("user")
 }
@@ -652,4 +653,22 @@ model Tournament {
 
   @@index([isActive, startDate, endDate])
   @@map("tournaments")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  token     String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  requestIp String?
+  userAgent String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @default(now()) @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
 }

@@ -28,7 +28,7 @@
   "dependencies": {
     "@hono/node-server": "^1.19.5",
     "@hono/zod-validator": "^0.7.4",
-    "@prisma/client": "^6.17.1",
+    "@prisma/client": "^6.19.0",
     "@types/xlsx": "^0.0.36",
     "@vercel/blob": "^2.0.0",
     "argon2": "^0.44.0",
@@ -55,7 +55,7 @@
     "eslint": "^9.37.0",
     "eslint-config-prettier": "^10.1.8",
     "prettier": "^3.6.2",
-    "prisma": "^6.17.1",
+    "prisma": "^6.19.0",
     "tsc-alias": "^1.8.16",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.46.1",
