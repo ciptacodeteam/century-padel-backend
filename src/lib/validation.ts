@@ -516,3 +516,12 @@ export const availableCourtSlotsQuerySchema = z
 export type AvailableCourtSlotsQuerySchema = z.infer<
   typeof availableCourtSlotsQuerySchema
 >
+
+export const updateUserSchema = z.object({
+  name: z.string().min(3).max(100).optional(),
+  email: z.string().email().min(5).max(100).optional(),
+  phone: z.string().min(10).max(15).optional(),
+  image: z.file().optional(),
+})
+
+export type UpdateUserSchema = z.infer<typeof updateUserSchema>

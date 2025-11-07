@@ -1,15 +1,20 @@
+import { USER_PROFILE_SUBDIR } from '@/config'
 import { BadRequestException, NotFoundException } from '@/exceptions'
 import { validateHook } from '@/helpers/validate-hook'
 import { factory } from '@/lib/create-app'
 import { db } from '@/lib/prisma'
 import buildFindManyOptions from '@/lib/query'
 import { ok } from '@/lib/response'
+import { formatPhone } from '@/lib/utils'
 import {
   IdSchema,
   idSchema,
   SearchQuerySchema,
   searchQuerySchema,
+  UpdateUserSchema,
+  updateUserSchema,
 } from '@/lib/validation'
+import { deleteFile, uploadFile } from '@/services/upload.service'
 import { zValidator } from '@hono/zod-validator'
 import dayjs from 'dayjs'
 import status from 'http-status'
@@ -172,6 +177,67 @@ export const getUserDetailHandler = factory.createHandlers(
       return c.json(ok(user), status.OK)
     } catch (error) {
       c.var.logger.fatal(`Error in getUserDetailHandler: ${error}`)
+      throw error
+    }
+  },
+)
+
+export const updateUserHandler = factory.createHandlers(
+  zValidator('param', idSchema, validateHook),
+  zValidator('form', updateUserSchema, validateHook),
+  async (c) => {
+    try {
+      const { id } = c.req.valid('param') as IdSchema
+      const { email, image, name, phone } = c.req.valid(
+        'form',
+      ) as UpdateUserSchema
+
+      const user = await db.user.findUnique({
+        where: { id },
+      })
+
+      if (!user) {
+        throw new NotFoundException('User not found')
+      }
+
+      let formattedPhone: string | undefined = user.phone
+
+      if (phone) {
+        formattedPhone = await formatPhone(phone)
+      }
+
+      let imageUrl: string | null = user.image
+
+      if (image) {
+        if (imageUrl) {
+          const deleted = await deleteFile(imageUrl)
+          if (deleted) {
+            c.var.logger.info(`Image deleted for user ID: ${user.id}`)
+          } else {
+            c.var.logger.warn(`Failed to delete image for user ID: ${user.id}`)
+          }
+        }
+
+        const uploaded = await uploadFile(image, {
+          subdir: USER_PROFILE_SUBDIR,
+        })
+
+        imageUrl = uploaded.relativePath
+      }
+
+      const updatedUser = await db.user.update({
+        where: { id },
+        data: {
+          phone: formattedPhone,
+          name,
+          email,
+          image: imageUrl,
+        },
+      })
+
+      return c.json(ok(updatedUser, 'User updated successfully'), status.OK)
+    } catch (error) {
+      c.var.logger.fatal(`Error in updateUserHandler: ${error}`)
       throw error
     }
   },
