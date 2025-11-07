@@ -18,16 +18,44 @@ const getPinoConfig = () => {
         level(label: string) {
           return { level: label }
         },
+        // Only log req.body and res.body
+        bindings(bindings: any) {
+          return bindings
+        },
+        log(object: any) {
+          const out: any = {}
+          if (object.req && object.req.body !== undefined) {
+            out.req = { payload: object.req.body }
+          }
+          if (object.res && object.res.body !== undefined) {
+            out.res = { data: object.res.body }
+          }
+          // Preserve msg if present
+          if (object.msg) out.msg = object.msg
+          return out
+        },
       },
     }
   }
 
   // Local development with pretty console output
   return pretty({
-    ignore: 'req.headers.cookie',
+    ignore: 'req.headers,res.headers',
     colorize: true,
     translateTime: 'SYS:yyyy-mm-dd HH:MM:ss',
     levelFirst: true,
+    // Only log req.body and res.body
+    messageFormat: (log) => {
+      let msg = ''
+      if (log.req && typeof log.req === 'object' && 'body' in log.req) {
+        msg += `req.payload: ${JSON.stringify(log.req.body)} `
+      }
+      if (log.res && typeof log.res === 'object' && 'body' in log.res) {
+        msg += `res.data: ${JSON.stringify(log.res.body)} `
+      }
+      if (log.msg) msg += log.msg
+      return msg.trim()
+    },
   })
 }
 
