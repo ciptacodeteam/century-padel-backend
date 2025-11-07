@@ -1,0 +1,8 @@
+.env.local
+.env
+node_modules/
+dist/
+.prisma/
+*.log
+.DS_Store
+.vscode/local.settings.json
