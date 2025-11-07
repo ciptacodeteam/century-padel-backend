@@ -254,6 +254,13 @@ export const getAvailableCourtSlotsHandler = factory.createHandlers(
         },
       })
 
+      // Transform court images
+      for (const slot of slots) {
+        if (slot.court?.image) {
+          slot.court.image = await getFileUrl(slot.court.image)
+        }
+      }
+
       const formattedSlots = slots.map((slot) => ({
         ...slot,
         startAt: dayjs(slot.startAt).tz().format(DATETIME_FORMAT),
