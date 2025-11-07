@@ -1,3 +1,4 @@
+import { DATETIME_FORMAT } from '@/constants'
 import { COURT_SUBDIR } from '@/config'
 import { BadRequestException, NotFoundException } from '@/exceptions'
 import { validateHook } from '@/helpers/validate-hook'
@@ -6,6 +7,8 @@ import { db } from '@/lib/prisma'
 import buildFindManyOptions from '@/lib/query'
 import { ok } from '@/lib/response'
 import {
+  AvailableCourtSlotsQuerySchema,
+  availableCourtSlotsQuerySchema,
   CreateCourtSchema,
   createCourtSchema,
   IdSchema,
@@ -18,6 +21,8 @@ import {
 import { deleteFile, getFileUrl, uploadFile } from '@/services/upload.service'
 import { zValidator } from '@hono/zod-validator'
 import status from 'http-status'
+import { SlotType } from '@prisma/client'
+import dayjs from 'dayjs'
 
 export const getAllCourtHandler = factory.createHandlers(
   zValidator('query', searchQuerySchema, validateHook),
@@ -217,6 +222,73 @@ export const deleteCourtHandler = factory.createHandlers(
       return c.json(ok(null, 'Court item deleted successfully'), status.OK)
     } catch (error) {
       c.var.logger.fatal(`Error in deleteCourtHandler: ${error}`)
+      throw error
+    }
+  },
+)
+
+export const getAvailableCourtSlotsHandler = factory.createHandlers(
+  zValidator('query', availableCourtSlotsQuerySchema, validateHook),
+  async (c) => {
+    try {
+      const query = c.req.valid('query') as AvailableCourtSlotsQuerySchema & {
+        courtId?: string
+      }
+
+      const where: any = {
+        type: SlotType.COURT,
+        isAvailable: true,
+        bookingDetails: {
+          none: {},
+        },
+        court: {
+          isActive: true,
+        },
+      }
+
+      if (query.courtId) {
+        where.courtId = query.courtId
+      }
+
+      if (query.startAt && query.endAt) {
+        const startAt = dayjs(query.startAt).toDate()
+        const endAt = dayjs(query.endAt).toDate()
+
+        where.AND = [
+          {
+            startAt: {
+              lt: endAt,
+            },
+          },
+          {
+            endAt: {
+              gt: startAt,
+            },
+          },
+        ]
+      }
+
+      const slots = await db.slot.findMany({
+        where,
+        orderBy: {
+          startAt: 'asc',
+        },
+        include: {
+          court: true,
+        },
+      })
+
+      const formattedSlots = slots.map((slot) => ({
+        ...slot,
+        startAt: dayjs(slot.startAt).tz().format(DATETIME_FORMAT),
+        endAt: dayjs(slot.endAt).tz().format(DATETIME_FORMAT),
+        createdAt: dayjs(slot.createdAt).tz().format(DATETIME_FORMAT),
+        updatedAt: dayjs(slot.updatedAt).tz().format(DATETIME_FORMAT),
+      }))
+
+      return c.json(ok(formattedSlots), status.OK)
+    } catch (error) {
+      c.var.logger.fatal(`Error in getAvailableCourtSlotsHandler: ${error}`)
       throw error
     }
   },

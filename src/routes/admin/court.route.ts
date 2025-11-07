@@ -1,6 +1,7 @@
 import {
   createCourtHandler,
   deleteCourtHandler,
+  getAvailableCourtSlotsHandler,
   getAllCourtHandler,
   getCostHandler,
   getCourtHandler,
@@ -11,6 +12,7 @@ import { createRouter } from '@/lib/create-app'
 const adminCourtRoute = createRouter()
   .basePath('/courts')
   .get('/', ...getAllCourtHandler)
+  .get('/slots', ...getAvailableCourtSlotsHandler)
   .get('/:id', ...getCourtHandler)
   .get('/:id/costing', ...getCostHandler)
   .put('/:id', ...updateCourtHandler)
