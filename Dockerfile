@@ -1,0 +1,30 @@
+# Dockerfile for Quantum Sport Backend Development
+FROM oven/bun:1.3-alpine
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apk add --no-cache postgresql-client
+
+# Copy package files
+COPY package.json bun.lock* ./
+
+# Copy prisma schema BEFORE bun install (needed for postinstall script)
+COPY prisma ./prisma
+
+# Install dependencies (postinstall will run prisma generate)
+RUN bun install
+
+# Copy config files
+COPY tsconfig.json ./
+COPY prettier.config.js eslint.config.js ./
+
+# Copy source code and entry point
+COPY src ./src
+COPY serve.ts ./
+
+# Expose ports
+EXPOSE 3000 5555
+
+# Default command for development
+CMD ["bun", "run", "dev"]
