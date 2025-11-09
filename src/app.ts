@@ -12,6 +12,10 @@ import adminAnalyticsRoute from './routes/admin/analytics.route'
 import adminAuthRoute from './routes/admin/auth.route'
 import adminBallboyCostRoute from './routes/admin/ballboy-cost.route'
 import adminBannerRoute from './routes/admin/banner.route'
+import adminBookedCourtRoute from './routes/admin/booked-court.route'
+import adminBookedCoachRoute from './routes/admin/booked-coach.route'
+import adminBookedBallboyRoute from './routes/admin/booked-ballboy.route'
+import adminBookedInventoryRoute from './routes/admin/booked-inventory.route'
 import adminBookingRoute from './routes/admin/booking.route'
 import adminClassRoute from './routes/admin/class.route'
 import adminClassBookingRoute from './routes/admin/class-booking.route'
@@ -93,6 +97,10 @@ const adminRoutes = [
   adminCoachTypeRoute,
   adminBannerRoute,
   adminBookingRoute,
+  adminBookedCourtRoute,
+  adminBookedCoachRoute,
+  adminBookedBallboyRoute,
+  adminBookedInventoryRoute,
   adminClassRoute,
   adminClassBookingRoute,
   adminMembershipRoute,
