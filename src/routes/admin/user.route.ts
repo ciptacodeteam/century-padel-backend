@@ -16,6 +16,6 @@ const adminUserRoute = createRouter()
   .post('/:id/send-reset-password', ...sendResetPasswordLinkHandler)
   // .post('/:id/send-change-phone', ...sendChangePhoneLinkHandler) # salah
   .put('/:id/ban', ...banUserHandler)
-  .post('/unban', ...unbanUserHandler)
+  .post('/:id/unban', ...unbanUserHandler)
 
 export default adminUserRoute
