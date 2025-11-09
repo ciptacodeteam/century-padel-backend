@@ -33,11 +33,12 @@ import classRoute from './routes/class.route'
 import courtRoute from './routes/court.route'
 import healthRoute from './routes/health.route'
 import homeRoute from './routes/home.route'
-import membershipRoute from './routes/membership.route'
 import coachRoute from './routes/coach.route'
 import inventoryRoute from './routes/inventory.route'
 import invoiceRoute from './routes/invoice.route'
 import phoneVerificationRoute from './routes/phone.route'
+import paymentMethodRoute from './routes/payment-method.route'
+import membershipRoute from './routes/membership.route'
 import xenditWebhookRoute from './routes/xendit-webhook.route'
 import ballboyRoute from './routes/ballboy.route'
 import tournamentRoute from './routes/tournament.route'
@@ -67,6 +68,7 @@ const routes = [
   ballboyRoute,
   inventoryRoute,
   invoiceRoute,
+  paymentMethodRoute,
   checkoutRoute,
   tournamentRoute,
   xenditWebhookRoute,
