@@ -4,7 +4,7 @@ services:
   # PostgreSQL Database
   db:
     image: postgres:16-alpine
-    container_name: quantum-sport-db
+    container_name: db
     env_file:
       - .env
       - .env.local
@@ -27,7 +27,7 @@ services:
   # Redis Cache & Queue
   redis:
     image: redis:7-alpine
-    container_name: quantum-sport-redis
+    container_name: redis
     ports:
       - '6379:6379'
     volumes:
@@ -44,7 +44,7 @@ services:
   # Prisma Studio (Database GUI)
   prisma-studio:
     image: oven/bun:1.3-alpine
-    container_name: quantum-sport-prisma-studio
+    container_name: prisma-studio
     working_dir: /app
     env_file:
       - .env
@@ -61,14 +61,14 @@ services:
     networks:
       - quantum-sport-network
     command: >
-      sh -c "bun install && bun run prisma:studio"
+      sh -c "bun install && bun db:studio"
 
   # Application Server
   app:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: quantum-sport-app
+    container_name: app
     env_file:
       - .env
       - .env.local
@@ -96,7 +96,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: quantum-sport-email-worker
+    container_name: email-worker
     env_file:
       - .env
       - .env.local
@@ -115,8 +115,12 @@ services:
     networks:
       - quantum-sport-network
     command: bun run worker:email
-    profiles:
-      - workers
+    restart: unless-stopped
+    logging:
+      driver: 'json-file'
+      options:
+        max-size: '10m'
+        max-file: '3'
 
 volumes:
   postgres_data:

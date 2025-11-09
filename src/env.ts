@@ -33,4 +33,11 @@ export const env = {
   fazpassApiUrl: process.env.FAZPASS_API_URL ?? 'https://api.fazpass.com/v1',
   PWD_PEPPER: process.env.PWD_PEPPER ?? undefined,
   BLOB_READ_WRITE_TOKEN: process.env.BLOB_READ_WRITE_TOKEN ?? undefined,
+  smtp: {
+    host: process.env.SMTP_HOST ?? 'smtp.mailtrap.io',
+    port: parseInt(process.env.SMTP_PORT ?? '2525'),
+    user: process.env.SMTP_USER ?? '',
+    pass: process.env.SMTP_PASS ?? '',
+    from: process.env.SMTP_FROM ?? 'noreply@quantumsport.com',
+  },
 }
