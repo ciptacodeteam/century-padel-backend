@@ -64,9 +64,15 @@ export async function setCourtPricing({
       const dayNum = dayNumber(d)
       if (!days.includes(dayNum)) continue
 
-      // delete existing for this date
-      const startOfDay = d.startOf('day').tz().toDate()
-      const endOfDay = d.endOf('day').tz().toDate()
+      // delete existing for this date - use timezone-aware dates
+      const startOfDay = dayjs
+        .tz(d.format('YYYY-MM-DD'), JAKARTA_TZ)
+        .startOf('day')
+        .toDate()
+      const endOfDay = dayjs
+        .tz(d.format('YYYY-MM-DD'), JAKARTA_TZ)
+        .endOf('day')
+        .toDate()
 
       await db.$transaction(async (tx) => {
         await tx.courtCostSchedule.deleteMany({
@@ -409,8 +415,15 @@ export async function setStaffPricingRange(p: SetStaffPricingRangePayload) {
       const dayName = dayNumber(d)
       if (!p.days.includes(dayName)) continue
 
-      const dayStart = d.startOf('day').toDate()
-      const dayEnd = d.endOf('day').toDate()
+      // Use timezone-aware dates for consistency with Jakarta timezone
+      const dayStart = dayjs
+        .tz(d.format('YYYY-MM-DD'), JAKARTA_TZ)
+        .startOf('day')
+        .toDate()
+      const dayEnd = dayjs
+        .tz(d.format('YYYY-MM-DD'), JAKARTA_TZ)
+        .endOf('day')
+        .toDate()
 
       // remove existing slots for that staff+date+type, then rebuild
       await db.$transaction(async (tx) => {
