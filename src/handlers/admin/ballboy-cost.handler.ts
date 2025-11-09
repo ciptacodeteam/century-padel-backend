@@ -64,7 +64,7 @@ export const createBallboyCostHandler = factory.createHandlers(
     try {
       const validated = c.req.valid('json') as CreateBallboyCostSchema
       const {
-        ballboyId,
+        staffId,
         fromDate,
         toDate,
         days,
@@ -74,7 +74,7 @@ export const createBallboyCostHandler = factory.createHandlers(
       } = validated
 
       const existing = await db.staff.findUnique({
-        where: { id: ballboyId },
+        where: { id: staffId },
       })
 
       if (!existing) {
@@ -89,8 +89,9 @@ export const createBallboyCostHandler = factory.createHandlers(
       }
 
       const success = await setStaffPricingRange({
-        staffId: ballboyId,
-        type: SlotType.BALLBOY,
+        staffId,
+        type:
+          existing.role === Role.BALLBOY ? SlotType.BALLBOY : SlotType.COACH,
         days,
         fromDate,
         happyHourPrice,
@@ -143,7 +144,8 @@ export const updateBallboyCostHandler = factory.createHandlers(
 
       const updated = await updateStaffPricing({
         staffId: id,
-        type: SlotType.BALLBOY,
+        type:
+          existing.role === Role.BALLBOY ? SlotType.BALLBOY : SlotType.COACH,
         date,
         happyHourPrice,
         peakHourPrice,
@@ -170,10 +172,10 @@ export const overrideSingleBallboyCostHandler = factory.createHandlers(
   async (c) => {
     try {
       const validated = c.req.valid('json') as OverrideSingleBallboyCostSchema
-      const { date, ballboyId, hour, price } = validated
+      const { date, staffId, hour, price } = validated
 
       const existing = await db.staff.findUnique({
-        where: { id: ballboyId },
+        where: { id: staffId },
       })
 
       if (!existing) {
@@ -188,8 +190,9 @@ export const overrideSingleBallboyCostHandler = factory.createHandlers(
       }
 
       const updated = await overrideStaffHourPrice({
-        staffId: ballboyId,
-        type: SlotType.BALLBOY,
+        staffId,
+        type:
+          existing.role === Role.BALLBOY ? SlotType.BALLBOY : SlotType.COACH,
         date,
         price,
         hour,

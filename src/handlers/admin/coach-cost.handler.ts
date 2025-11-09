@@ -64,7 +64,7 @@ export const createCoachCostHandler = factory.createHandlers(
     try {
       const validated = c.req.valid('json') as CreateCoachCostSchema
       const {
-        coachId,
+        staffId,
         fromDate,
         toDate,
         days,
@@ -74,7 +74,7 @@ export const createCoachCostHandler = factory.createHandlers(
       } = validated
 
       const existing = await db.staff.findUnique({
-        where: { id: coachId },
+        where: { id: staffId },
       })
 
       if (!existing) {
@@ -89,8 +89,8 @@ export const createCoachCostHandler = factory.createHandlers(
       }
 
       const success = await setStaffPricingRange({
-        staffId: coachId,
-        type: SlotType.COACH,
+        staffId,
+        type: existing.role === Role.COACH ? SlotType.COACH : SlotType.BALLBOY,
         days,
         fromDate,
         happyHourPrice,
@@ -140,7 +140,7 @@ export const updateCoachCostHandler = factory.createHandlers(
 
       const updated = await updateStaffPricing({
         staffId: id,
-        type: SlotType.COACH,
+        type: existing.role === Role.COACH ? SlotType.COACH : SlotType.BALLBOY,
         date,
         happyHourPrice,
         peakHourPrice,
@@ -167,10 +167,10 @@ export const overrideSingleCoachCostHandler = factory.createHandlers(
   async (c) => {
     try {
       const validated = c.req.valid('json') as OverrideSingleCoachCostSchema
-      const { date, coachId, hour, price } = validated
+      const { date, staffId, hour, price } = validated
 
       const existing = await db.staff.findUnique({
-        where: { id: coachId },
+        where: { id: staffId },
       })
 
       if (!existing) {
@@ -185,7 +185,7 @@ export const overrideSingleCoachCostHandler = factory.createHandlers(
       }
 
       const updated = await overrideStaffHourPrice({
-        staffId: coachId,
+        staffId,
         type: SlotType.COACH,
         date,
         price,
