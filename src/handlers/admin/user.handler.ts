@@ -286,7 +286,7 @@ export const sendResetPasswordLinkHandler = factory.createHandlers(
       const { token, expiresIn, expiresAt } = await createPasswordResetToken(
         user.id,
       )
-      const resetLink = buildPasswordResetLink(token, env.baseUrl)
+      const resetLink = buildPasswordResetLink(token, env.frontEndUrl)
 
       // Track which channel was used
       const channels: string[] = []
@@ -368,7 +368,9 @@ export const sendResetPasswordLinkHandler = factory.createHandlers(
       throw error
     }
   },
-) // POST /admin/users/:id/send-change-phone
+)
+
+// POST /admin/users/:id/send-change-phone
 // Send change phone OTP link
 /**
  * !important
