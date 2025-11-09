@@ -54,14 +54,15 @@ services:
     ports:
       - '5555:5555'
     volumes:
-      - .:/app:ro
+      - .:/app
+      - /app/node_modules
     depends_on:
       db:
         condition: service_healthy
     networks:
       - quantum-sport-network
     command: >
-      sh -c "bun install && bun db:studio"
+      sh -c "bun install && bunx prisma studio"
 
   # Application Server
   app:

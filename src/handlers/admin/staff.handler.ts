@@ -350,3 +350,51 @@ export const revokeStaffTokenHandler = factory.createHandlers(
     }
   },
 )
+
+export const getStaffCostsHandler = factory.createHandlers(
+  zValidator('param', idSchema, validateHook),
+  async (c) => {
+    try {
+      const validated = c.req.valid('param') as IdSchema
+      const staffId = validated.id
+
+      const staff = await db.staff.findUnique({
+        where: { id: staffId },
+      })
+
+      if (!staff) {
+        throw new NotFoundException('Staff not found')
+      }
+
+      const staffCostSlot = await db.$queryRaw`
+        SELECT 
+          s."startAt"::date AS date,
+          json_agg(
+            json_build_object(
+              'id', s.id,
+              'staffId', s."staffId",
+              'startAt', s."startAt",
+              'endAt', s."endAt",
+              'price', s.price,
+              'isAvailable', s."isAvailable",
+              'createdAt', s."createdAt",
+              'updatedAt', s."updatedAt"
+            )
+          ) AS slots
+        FROM slots AS s
+        WHERE s."staffId" = ${staffId}
+        GROUP BY date
+        ORDER BY date DESC
+      `
+
+      if (!staffCostSlot) {
+        throw new NotFoundException(`${staff.role} cost slot not found`)
+      }
+
+      return c.json(ok(staffCostSlot), status.OK)
+    } catch (err) {
+      c.var.logger.fatal(`Error fetching staff costs: ${err}`)
+      throw err
+    }
+  },
+)
