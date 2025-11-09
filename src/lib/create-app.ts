@@ -9,7 +9,7 @@ import serveEmojiFavicon from '@/middlewares/serve-emoji-favicon'
 import type { AppEnv } from '@/types'
 import { Hono } from 'hono'
 import { requestId } from 'hono/request-id'
-import { corsMiddlewareOptions } from './cors'
+// import { corsMiddlewareOptions } from './cors'
 import { logger } from './logger'
 import { createFactory } from 'hono/factory'
 
@@ -27,7 +27,7 @@ export default function createApp() {
   const app = createRouter()
 
   app.use(serveEmojiFavicon('🏓'))
-  app.use(corsMiddlewareOptions)
+  // app.use(corsMiddlewareOptions)
   app.use(trimTrailingSlash())
   app.use(requestId())
   app.use(logger())
