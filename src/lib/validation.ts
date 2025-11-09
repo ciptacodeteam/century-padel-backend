@@ -525,3 +525,16 @@ export const updateUserSchema = z.object({
 })
 
 export type UpdateUserSchema = z.infer<typeof updateUserSchema>
+
+// Coach Type schemas
+export const createCoachTypeSchema = z.object({
+  name: z.string().min(3).max(100),
+  description: z.string().max(500).optional(),
+  isActive: z.coerce.boolean().optional().default(true),
+})
+
+export type CreateCoachTypeSchema = z.infer<typeof createCoachTypeSchema>
+
+export const updateCoachTypeSchema = createCoachTypeSchema.partial()
+
+export type UpdateCoachTypeSchema = z.infer<typeof updateCoachTypeSchema>
