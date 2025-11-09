@@ -111,7 +111,7 @@ export const resetPasswordWithTokenHandler = factory.createHandlers(
             variables: {
               name: user.name,
               message: 'Your password has been successfully changed.',
-              actionUrl: `${env.baseUrl}/login`,
+              actionUrl: `${env.baseUrl}?login=true`,
             },
           })
         }

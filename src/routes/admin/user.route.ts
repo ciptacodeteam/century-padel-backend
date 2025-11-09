@@ -2,6 +2,7 @@ import {
   banUserHandler,
   getAllUsersHandler,
   getUserDetailHandler,
+  sendResetPasswordLinkHandler,
   unbanUserHandler,
   updateUserHandler,
 } from '@/handlers/admin/user.handler'
@@ -12,7 +13,7 @@ const adminUserRoute = createRouter()
   .get('/', ...getAllUsersHandler)
   .get('/:id', ...getUserDetailHandler)
   .put('/:id', ...updateUserHandler)
-  // .post('/:id/send-reset-password', ...sendResetPasswordLinkHandler)
+  .post('/:id/send-reset-password', ...sendResetPasswordLinkHandler)
   // .post('/:id/send-change-phone', ...sendChangePhoneLinkHandler) # salah
   .put('/:id/ban', ...banUserHandler)
   .post('/unban', ...unbanUserHandler)
