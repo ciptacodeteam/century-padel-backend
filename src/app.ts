@@ -25,6 +25,7 @@ import adminMembershipRoute from './routes/admin/membership.route'
 import adminMembershipTransactionRoute from './routes/admin/membership-transaction.route'
 import adminPaymentMethodRoute from './routes/admin/payment-method.route'
 import adminStaffRoute from './routes/admin/staff.route'
+import adminStaffCostRoute from './routes/admin/staff-cost.route'
 import adminTournamentRoute from './routes/admin/tournament.route'
 import adminUserRoute from './routes/admin/user.route'
 import authRoute from './routes/auth.route'
@@ -88,6 +89,7 @@ const adminRoutes = [
   adminCourtCostRoute,
   adminBallboyCostRoute,
   adminCoachCostRoute,
+  adminStaffCostRoute,
   adminCoachTypeRoute,
   adminBannerRoute,
   adminBookingRoute,

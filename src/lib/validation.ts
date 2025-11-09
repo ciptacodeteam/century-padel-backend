@@ -266,6 +266,28 @@ export type OverrideSingleCoachCostSchema = z.infer<
   typeof overrideSingleCoachCostSchema
 >
 
+export const createStaffCostSchema = createCourtCostSchema
+  .omit({ courtId: true })
+  .extend({
+    staffId: z.string(),
+  })
+
+export type CreateStaffCostSchema = z.infer<typeof createStaffCostSchema>
+
+export const updateStaffCostSchema = updateCourtCostSchema
+
+export type UpdateStaffCostSchema = z.infer<typeof updateStaffCostSchema>
+
+export const overrideSingleStaffCostSchema = overrideSingleCourtCostSchema
+  .omit({ courtId: true })
+  .extend({
+    staffId: z.string(),
+  })
+
+export type OverrideSingleStaffCostSchema = z.infer<
+  typeof overrideSingleStaffCostSchema
+>
+
 // Banner Schemas
 export const createBannerSchema = z.object({
   image: z.file(),
