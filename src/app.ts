@@ -60,18 +60,6 @@ dayjs.tz.setDefault(JAKARTA_TZ)
 
 const app = createApp()
 
-app.use(
-  '*',
-  cors({
-    origin: [
-      'http://localhost:3000',            // allow local development
-    ],
-    allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowHeaders: ['Content-Type', 'Authorization'],
-    credentials: true, // set true if you use cookies or auth headers
-  })
-)
-
 app.use('/storage/*', serveStatic({ root: './src' }))
 
 // ADD NEW ROUTES HERE
