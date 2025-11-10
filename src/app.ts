@@ -49,6 +49,7 @@ import xenditWebhookRoute from './routes/xendit-webhook.route'
 import ballboyRoute from './routes/ballboy.route'
 import tournamentRoute from './routes/tournament.route'
 import passwordResetRoute from './routes/password-reset.route'
+import { cors } from 'hono/cors'
 
 dayjs.locale('id')
 dayjs.extend(utc)
@@ -58,6 +59,18 @@ dayjs.extend(isSameOrBefore)
 dayjs.tz.setDefault(JAKARTA_TZ)
 
 const app = createApp()
+
+app.use(
+  '*',
+  cors({
+    origin: [
+      'http://localhost:3000',            // allow local development
+    ],
+    allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowHeaders: ['Content-Type', 'Authorization'],
+    credentials: true, // set true if you use cookies or auth headers
+  })
+)
 
 app.use('/storage/*', serveStatic({ root: './src' }))
 
