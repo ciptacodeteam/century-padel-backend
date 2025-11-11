@@ -95,10 +95,15 @@ class XenditService {
     }
   }
 
-  private getHeaders() {
+  private getHeaders(apiVersion?: string) {
+    const version =
+      apiVersion ??
+      new Date().toISOString().slice(0, 10)
+
     return {
       Authorization: `Basic ${Buffer.from(`${this.apiKey}:`).toString('base64')}`,
       'Content-Type': 'application/json',
+      'x-api-version': version,
     }
   }
 
@@ -110,7 +115,7 @@ class XenditService {
 
       const response = await fetch(`${this.baseUrl}/v2/invoices`, {
         method: 'POST',
-        headers: this.getHeaders(),
+        headers: this.getHeaders('2022-07-31'),
         body: JSON.stringify({
           external_id: data.externalId,
           amount: data.amount,
@@ -153,7 +158,7 @@ class XenditService {
 
       const response = await fetch(`${this.baseUrl}/virtual_accounts`, {
         method: 'POST',
-        headers: this.getHeaders(),
+        headers: this.getHeaders('2022-07-31'),
         body: JSON.stringify({
           external_id: data.externalId,
           bank_code: data.bankCode,
