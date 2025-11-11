@@ -96,9 +96,7 @@ class XenditService {
   }
 
   private getHeaders(apiVersion?: string) {
-    const version =
-      apiVersion ??
-      new Date().toISOString().slice(0, 10)
+    const version = apiVersion ?? '2024-11-11'
 
     return {
       Authorization: `Basic ${Buffer.from(`${this.apiKey}:`).toString('base64')}`,
