@@ -79,7 +79,7 @@ services:
       DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-quantum_sport}
       REDIS_URL: redis://redis:6379
     ports:
-      - '8000:8000'
+      - '127.0.0.1:8000:8000'
     depends_on:
       db:
         condition: service_healthy
