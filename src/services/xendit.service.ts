@@ -103,7 +103,7 @@ class XenditService {
     return {
       Authorization: `Basic ${Buffer.from(`${this.apiKey}:`).toString('base64')}`,
       'Content-Type': 'application/json',
-      'x-api-version': version,
+      'api-version': version,
     }
   }
 
