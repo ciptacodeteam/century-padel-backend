@@ -102,7 +102,7 @@ export async function uploadFile(
       : sniffMime || 'application/octet-stream'
 
   // Upload to Vercel Blob if token is available
-  if (env.nodeEnv === 'production' && env.BLOB_READ_WRITE_TOKEN) {
+  if (env.nodeEnv === 'production' || env.BLOB_READ_WRITE_TOKEN) {
     try {
       const blob = await put(relativePath, outBuf, {
         access: 'public',
