@@ -41,4 +41,5 @@ export const env = {
     pass: process.env.SMTP_PASS ?? '',
     from: process.env.SMTP_FROM ?? 'noreply@quantumsport.com',
   },
+  storageStrategy: process.env.STORAGE_STRATEGY || 'local', // 'local' or 'blob'
 }

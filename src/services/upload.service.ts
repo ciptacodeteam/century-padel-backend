@@ -66,7 +66,7 @@ export async function uploadFile(
   // Prepare folder
   const dir = safeJoin(subdir)
 
-  if (env.nodeEnv !== 'production') {
+  if (env.storageStrategy === 'local') {
     await ensureDir(dir)
   }
 
@@ -102,7 +102,7 @@ export async function uploadFile(
       : sniffMime || 'application/octet-stream'
 
   // Upload to Vercel Blob if token is available
-  if (env.nodeEnv === 'production' || env.BLOB_READ_WRITE_TOKEN) {
+  if (env.storageStrategy === 'blob' && env.BLOB_READ_WRITE_TOKEN) {
     try {
       const blob = await put(relativePath, outBuf, {
         access: 'public',
@@ -169,7 +169,7 @@ export async function getFileUrl(relativePath: string | null): Promise<string> {
   }
 
   // If path starts with '/', try to construct Vercel Blob URL first (if token exists)
-  if (env.nodeEnv === 'production' && env.BLOB_READ_WRITE_TOKEN) {
+  if (env.storageStrategy === 'blob' && env.BLOB_READ_WRITE_TOKEN) {
     // The token format is: vercel_blob_rw_<storeId>_<randomString>
     const parts = env.BLOB_READ_WRITE_TOKEN.split('_')
     if (parts.length >= 4) {
