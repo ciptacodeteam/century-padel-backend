@@ -112,11 +112,11 @@ const adminRoutes = [
 ]
 
 routes.forEach((route) => {
-  app.route('/api', route)
+  app.route('/', route)
 })
 
 adminRoutes.forEach((route) => {
-  app.route('/api/admin', route)
+  app.route('/admin', route)
 })
 
 export default app
