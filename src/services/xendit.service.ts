@@ -246,8 +246,21 @@ class XenditService {
         log.error(`Xendit v3 API error: ${response.status} - ${errorText}`);
         throw new Error(`Xendit v3 API error: ${response.status}`);
       }
-      const result = (await response.json()) as any;
-      log.info(`Xendit v3 payment request created: ${result.id}`);
+      const rawResult = (await response.json()) as any;
+      const result = (rawResult?.data ?? rawResult) as XenditPaymentRequestV3Response;
+
+      if (!result?.id) {
+        log.warn(
+          {
+            referenceId: data.referenceId,
+            rawResult,
+          },
+          'Xendit v3 payment request response missing id field'
+        );
+      } else {
+        log.info(`Xendit v3 payment request created: ${result.id}`);
+      }
+
       return result;
     } catch (error) {
       log.fatal(`Error creating Xendit v3 payment request: ${error}`);
