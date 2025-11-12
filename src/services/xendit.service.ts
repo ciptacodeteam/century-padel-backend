@@ -269,7 +269,16 @@ class XenditService {
   }
 
   verifyCallbackToken(token: string): boolean {
-    return token === env.xendit.callbackToken
+    // Trim whitespace from both tokens to avoid issues with copy-paste
+    const receivedToken = token?.trim() || ''
+    const expectedToken = env.xendit.callbackToken?.trim() || ''
+    
+    if (!expectedToken) {
+      log.warn('XENDIT_CALLBACK_TOKEN is not set in environment variables')
+      return false
+    }
+    
+    return receivedToken === expectedToken
   }
 }
 

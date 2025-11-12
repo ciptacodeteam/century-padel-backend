@@ -32,10 +32,18 @@ interface XenditWebhookPayload {
 export const xenditWebhookHandler = factory.createHandlers(async (c) => {
   try {
     // Verify the callback token
-    const callbackToken = c.req.header('x-callback-token')
+    // Try both lowercase and original case for header name
+    const callbackToken = c.req.header('x-callback-token') || c.req.header('X-Callback-Token')
 
-    if (!xenditService.verifyCallbackToken(callbackToken || '')) {
-      c.var.logger.error('Invalid Xendit callback token')
+    if (!callbackToken) {
+      c.var.logger.error('Missing x-callback-token header')
+      return c.json({ error: 'Missing callback token' }, 401)
+    }
+
+    if (!xenditService.verifyCallbackToken(callbackToken)) {
+      c.var.logger.error(
+        `Invalid Xendit callback token. Token length: ${callbackToken.length}`,
+      )
       return c.json({ error: 'Invalid callback token' }, 401)
     }
 
