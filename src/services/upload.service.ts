@@ -7,12 +7,10 @@ import { env } from '@/env'
 import { sniffImageMime } from '@/helpers/sniff-mime'
 import { toWebp } from '@/lib/image'
 import { log } from '@/lib/logger'
-import { put } from '@vercel/blob'
+import { put, del } from '@vercel/blob'
 import { extension as extFromMime } from 'mime-types'
-import fs from 'node:fs/promises'
 import path from 'node:path'
 import { buildFilename } from '../lib/filename'
-import { ensureDir, safeJoin } from '../lib/fs'
 
 export type UploadOptions = {
   subdir?: string // e.g. "images", "avatars/2025/10"
@@ -33,6 +31,9 @@ export type UploadMeta = {
   width?: number
   height?: number
 }
+
+// Cache for Vercel Blob base URL (extracted from first upload)
+let blobBaseUrl: string | null = null
 
 export async function uploadFile(
   file: File,
@@ -63,13 +64,6 @@ export async function uploadFile(
     throw new Error('Only images are allowed')
   }
 
-  // Prepare folder
-  const dir = safeJoin(subdir)
-
-  if (env.storageStrategy === 'local') {
-    await ensureDir(dir)
-  }
-
   let outBuf = buf
   let outExt = ''
   let width: number | undefined
@@ -94,63 +88,73 @@ export async function uploadFile(
     prefix: opts.filenamePrefix,
   })
 
-  const absolutePath = path.join(dir, filename)
   const relativePath = path.join(subdir, filename).replaceAll('\\', '/')
   const finalMime =
     isImage && forceWebpForImages && !opts.unoptimized
       ? 'image/webp'
       : sniffMime || 'application/octet-stream'
 
-  // Upload to Vercel Blob if token is available
-  if (env.storageStrategy === 'blob' && env.BLOB_READ_WRITE_TOKEN) {
-    try {
-      const blob = await put(relativePath, outBuf, {
-        access: 'public',
-        token: env.BLOB_READ_WRITE_TOKEN,
-        contentType: finalMime,
-        addRandomSuffix: false,
-      })
-
-      return {
-        originalName: file.name,
-        mime: finalMime,
-        size: outBuf.length,
-        isImage,
-        relativePath: blob.pathname, // Store just the path (e.g., /banners/file.webp)
-        absolutePath: blob.url, // Store full URL for direct access if needed
-        width,
-        height,
-      }
-    } catch (error) {
-      log.error(`Failed to upload to Vercel Blob: ${error}`)
-      // Fall back to local storage if Vercel Blob upload fails
-    }
+  // Upload to Vercel Blob Storage
+  if (!env.BLOB_READ_WRITE_TOKEN) {
+    throw new Error('BLOB_READ_WRITE_TOKEN is required for file uploads')
   }
 
-  // Fallback to local file storage
-  const writeFlag = replaceExisting ? 'w' : 'wx'
-  await fs.writeFile(absolutePath, outBuf, { flag: writeFlag })
+  try {
+    const blob = await put(relativePath, outBuf, {
+      access: 'public',
+      token: env.BLOB_READ_WRITE_TOKEN,
+      contentType: finalMime,
+      addRandomSuffix: false,
+    })
 
-  return {
-    originalName: file.name,
-    mime: finalMime,
-    size: outBuf.length,
-    isImage,
-    relativePath, // example: subdir/filename.webp
-    absolutePath, // example: /full/path/to/storage/uploads/subdir/filename.webp
-    width,
-    height,
+    // Cache the base URL from the first upload
+    if (!blobBaseUrl && blob.url) {
+      // Extract base URL (everything before the pathname)
+      const url = new URL(blob.url)
+      blobBaseUrl = `${url.protocol}//${url.host}`
+      log.info(`Cached Vercel Blob base URL: ${blobBaseUrl}`)
+    }
+
+    return {
+      originalName: file.name,
+      mime: finalMime,
+      size: outBuf.length,
+      isImage,
+      relativePath: blob.pathname, // Store just the path (e.g., /banners/file.webp)
+      absolutePath: blob.url, // Store full URL for reference
+      width,
+      height,
+    }
+  } catch (error) {
+    log.error(`Failed to upload to Vercel Blob: ${error}`)
+    throw new Error('File upload failed. Please try again.')
   }
 }
 
-export async function deleteFile(relativePath: string): Promise<boolean> {
-  const fullPath = safeJoin(relativePath)
+export async function deleteFile(fileUrl: string): Promise<boolean> {
+  if (!fileUrl) {
+    return false
+  }
+
+  // Only delete if it's a Vercel Blob URL
+  if (!fileUrl.startsWith('https://') && !fileUrl.startsWith('http://')) {
+    log.warn(`Cannot delete non-URL file reference: ${fileUrl}`)
+    return false
+  }
+
+  if (!env.BLOB_READ_WRITE_TOKEN) {
+    log.error('BLOB_READ_WRITE_TOKEN is required to delete files')
+    return false
+  }
+
   try {
-    await fs.access(fullPath)
-    await fs.unlink(fullPath)
+    await del(fileUrl, {
+      token: env.BLOB_READ_WRITE_TOKEN,
+    })
+    log.info(`Successfully deleted file: ${fileUrl}`)
     return true
   } catch (err) {
-    log.error(`Failed to delete file: ${err}`)
+    log.error(`Failed to delete file from Vercel Blob: ${err}`)
     return false
   }
 }
@@ -160,7 +164,7 @@ export async function getFileUrl(relativePath: string | null): Promise<string> {
     return ''
   }
 
-  // If already a full URL, return as-is
+  // If already a full URL (external or legacy), return as-is
   if (
     relativePath.startsWith('http://') ||
     relativePath.startsWith('https://')
@@ -168,22 +172,21 @@ export async function getFileUrl(relativePath: string | null): Promise<string> {
     return relativePath
   }
 
-  // If path starts with '/', try to construct Vercel Blob URL first (if token exists)
-  if (env.storageStrategy === 'blob' && env.BLOB_READ_WRITE_TOKEN) {
-    // The token format is: vercel_blob_rw_<storeId>_<randomString>
-    const parts = env.BLOB_READ_WRITE_TOKEN.split('_')
-    if (parts.length >= 4) {
-      const storeId = parts[3] // Extract store ID from token
-      return `https://${storeId}.public.blob.vercel-storage.com${relativePath}`
-    }
+  // Construct Vercel Blob URL from cached base URL
+  if (blobBaseUrl) {
+    const cleanPath = relativePath.startsWith('/') ? relativePath : `/${relativePath}`
+    return `${blobBaseUrl}${cleanPath}`
   }
 
-  // Fallback to local file system check
-  const fullPath = safeJoin(relativePath)
-  try {
-    await fs.access(fullPath)
-    return `${env.baseUrl}/storage/uploads${relativePath.startsWith('/') ? '' : '/'}${relativePath}`
-  } catch {
-    throw new Error('File not found')
+  // If no cached URL yet, try to get it from env variable
+  const envBlobUrl = process.env.BLOB_STORE_URL
+  if (envBlobUrl) {
+    const cleanPath = relativePath.startsWith('/') ? relativePath : `/${relativePath}`
+    return `${envBlobUrl}${cleanPath}`
   }
+
+  // Fallback: return the path as-is
+  // This will happen on the first request before any upload
+  log.warn(`No blob base URL available yet for path: ${relativePath}`)
+  return relativePath
 }
