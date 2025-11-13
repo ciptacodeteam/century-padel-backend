@@ -1,17 +1,25 @@
 import { StatusCode } from 'hono/utils/http-status'
 import status from 'http-status'
 
+type ResponseSuccess = {
+  success: true
+  msg: string
+  code: StatusCode
+  data?: any
+}
+
 type ResponseError = {
-  success: number | false
+  success: false
   msg: string
   code: StatusCode
   errors?: unknown
 }
 
-export function ok(data: any, msg = 'Success') {
-  let res: any = {
+export function ok(data: any, msg = 'Success', code: StatusCode = status.OK): ResponseSuccess {
+  let res: ResponseSuccess = {
     success: true,
     msg,
+    code,
   }
 
   if (data) {

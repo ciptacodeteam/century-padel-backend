@@ -49,7 +49,9 @@ import xenditWebhookRoute from './routes/xendit-webhook.route'
 import ballboyRoute from './routes/ballboy.route'
 import tournamentRoute from './routes/tournament.route'
 import passwordResetRoute from './routes/password-reset.route'
+import clubRoute from './routes/club.route'
 import { cors } from 'hono/cors'
+import adminClubRoute from './routes/admin/club.route'
 
 dayjs.locale('id')
 dayjs.extend(utc)
@@ -79,6 +81,7 @@ const routes = [
   paymentMethodRoute,
   checkoutRoute,
   tournamentRoute,
+  clubRoute,
   xenditWebhookRoute,
   passwordResetRoute,
 ]
@@ -108,6 +111,7 @@ const adminRoutes = [
   adminMembershipTransactionRoute,
   adminPaymentMethodRoute,
   adminTournamentRoute,
+  adminClubRoute,
   adminUserRoute,
 ]
 

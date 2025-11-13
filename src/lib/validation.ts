@@ -360,9 +360,7 @@ export const createClubSchema = z.object({
   logo: z.file().optional(),
   description: z.string().min(3).max(500).optional(),
   rules: z.string().min(3).max(2000).optional(),
-  leaderId: z.string(),
   visibility: z.enum(['PUBLIC', 'PRIVATE']).default('PUBLIC'),
-  isActive: z.coerce.boolean().optional(),
 })
 
 export type CreateClubSchema = z.infer<typeof createClubSchema>
