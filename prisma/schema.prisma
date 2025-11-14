@@ -92,6 +92,7 @@ model User {
   classBookings       ClassBooking[]
   clubsLed            Club[]               @relation("ClubLeader")
   clubMember          ClubMember[]
+  clubJoinRequest     ClubJoinRequest[]
   invoice             Invoice[]
   passwordResetTokens PasswordResetToken[]
 
@@ -609,8 +610,9 @@ model Club {
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @default(now()) @updatedAt
 
-  leader     User         @relation("ClubLeader", fields: [leaderId], references: [id])
-  clubMember ClubMember[]
+  leader          User              @relation("ClubLeader", fields: [leaderId], references: [id])
+  clubMember      ClubMember[]
+  clubJoinRequest ClubJoinRequest[]
 
   @@unique([name])
   @@index([visibility, isActive])
@@ -631,6 +633,23 @@ model ClubMember {
 
   @@unique([clubId, userId])
   @@map("club_members")
+}
+
+model ClubJoinRequest {
+  id        String   @id @default(cuid())
+  clubId    String
+  userId    String
+  status    String   @default("PENDING") // PENDING, APPROVED, REJECTED
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  club Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([clubId, userId])
+  @@index([clubId, status])
+  @@index([userId, status])
+  @@map("club_join_requests")
 }
 
 model Tournament {

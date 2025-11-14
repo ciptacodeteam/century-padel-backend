@@ -30,6 +30,22 @@ export const getAllClubHandler = factory.createHandlers(
 
       const clubs = await db.club.findMany({
         ...queryOptions,
+        include: {
+          leader: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              phone: true,
+              image: true,
+            },
+          },
+          _count: {
+            select: {
+              clubMember: true,
+            },
+          },
+        },
       })
 
       for (const club of clubs) {
@@ -55,6 +71,35 @@ export const getClubHandler = factory.createHandlers(
 
       const club = await db.club.findUnique({
         where: { id },
+        include: {
+          leader: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              phone: true,
+              image: true,
+            },
+          },
+          clubMember: {
+            select: {
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                  phone: true,
+                  image: true,
+                },
+              },
+            },
+          },
+          _count: {
+            select: {
+              clubMember: true,
+            },
+          },
+        },
       })
 
       if (!club) {
