@@ -1,8 +1,7 @@
-import { JAKARTA_TZ } from '@/config'
 import { log } from '@/lib/logger'
 import { db } from '@/lib/prisma'
-import dayjs from 'dayjs'
 import { SlotType } from '@prisma/client'
+import dayjs from 'dayjs'
 
 type SetCourtPricingPayload = {
   courtId: string
@@ -60,14 +59,8 @@ export async function setCourtPricing({
       if (!days.includes(dayNum)) continue
 
       // delete existing for this date - use timezone-aware dates
-      const startOfDay = dayjs
-        .tz(d.format('YYYY-MM-DD'), JAKARTA_TZ)
-        .startOf('day')
-        .toDate()
-      const endOfDay = dayjs
-        .tz(d.format('YYYY-MM-DD'), JAKARTA_TZ)
-        .endOf('day')
-        .toDate()
+      const startOfDay = dayjs(d.format('YYYY-MM-DD')).startOf('day').toDate()
+      const endOfDay = dayjs(d.format('YYYY-MM-DD')).endOf('day').toDate()
 
       await db.$transaction(async (tx) => {
         await tx.courtCostSchedule.deleteMany({
@@ -95,12 +88,11 @@ export async function setCourtPricing({
       ].filter((r) => !closedHours.includes(r.hour))
 
       for (const { hour, price } of allHours) {
-        const startAt = d.hour(hour).minute(0).second(0).tz().toDate()
+        const startAt = d.hour(hour).minute(0).second(0).toDate()
         const endAt = d
           .hour(hour + 1)
           .minute(0)
           .second(0)
-          .tz()
           .toDate()
 
         slots.push({
@@ -176,8 +168,8 @@ export async function updateCourtPricing({
       const target = [...happy, ...peak].filter((x) => !closed.has(x.h)) // final intended open hours
 
       // 2) Compute UTC window of the day
-      const dayStart = dayjs.tz(date, JAKARTA_TZ).startOf('day').toDate()
-      const dayEnd = dayjs.tz(date, JAKARTA_TZ).endOf('day').toDate()
+      const dayStart = dayjs(date).startOf('day').toDate()
+      const dayEnd = dayjs(date).endOf('day').toDate()
 
       await db.$transaction(async (tx) => {
         // 3) Load existing COURT slots for that court+date
@@ -200,7 +192,7 @@ export async function updateCourtPricing({
         // Map existing by hour (local) -> support exact hour matching
         const existByHour = new Map<number, (typeof existingSlots)[number]>()
         for (const s of existingSlots) {
-          const localHour = dayjs(s.startAt).tz(JAKARTA_TZ).hour()
+          const localHour = dayjs(s.startAt).hour()
           existByHour.set(localHour, s)
         }
 
@@ -237,7 +229,7 @@ export async function updateCourtPricing({
         })
         const ccsByHour = new Map<number, (typeof existingCCS)[number]>()
         for (const r of existingCCS) {
-          const h = dayjs(r.startAt).tz(JAKARTA_TZ).hour()
+          const h = dayjs(r.startAt).hour()
           ccsByHour.set(h, r)
         }
 
@@ -411,14 +403,8 @@ export async function setStaffPricingRange(p: SetStaffPricingRangePayload) {
       if (!p.days.includes(dayName)) continue
 
       // Use timezone-aware dates for consistency with Jakarta timezone
-      const dayStart = dayjs
-        .tz(d.format('YYYY-MM-DD'), JAKARTA_TZ)
-        .startOf('day')
-        .toDate()
-      const dayEnd = dayjs
-        .tz(d.format('YYYY-MM-DD'), JAKARTA_TZ)
-        .endOf('day')
-        .toDate()
+      const dayStart = dayjs(d.format('YYYY-MM-DD')).startOf('day').toDate()
+      const dayEnd = dayjs(d.format('YYYY-MM-DD')).endOf('day').toDate()
 
       // remove existing slots for that staff+date+type, then rebuild
       await db.$transaction(async (tx) => {
@@ -517,7 +503,7 @@ export async function updateStaffPricing(p: UpdateStaffPricingPayload) {
       // index existing by local hour
       const byHour = new Map<number, (typeof existing)[number]>()
       for (const s of existing) {
-        const h = dayjs(s.startAt).tz(JAKARTA_TZ).hour()
+        const h = dayjs(s.startAt).hour()
         byHour.set(h, s)
       }
 
