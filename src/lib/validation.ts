@@ -332,12 +332,8 @@ export const createClassSchema = z.object({
     .refine((val) => dayjs(val, 'YYYY-MM-DD', true).isValid(), {
       message: 'Invalid date format, expected YYYY-MM-DD',
     }),
-  startTime: z.string().refine((val) => dayjs(val, 'HH:mm', true).isValid(), {
-    message: 'Invalid time format, expected HH:mm',
-  }),
-  endTime: z.string().refine((val) => dayjs(val, 'HH:mm', true).isValid(), {
-    message: 'Invalid time format, expected HH:mm',
-  }),
+  startTime: z.string(),
+  endTime: z.string(),
   price: z.number().min(0),
   sessions: z.number().min(1),
   capacity: z.number().min(1),
@@ -385,15 +381,15 @@ export const createTournamentSchema = z.object({
     .refine((val) => dayjs(val, 'YYYY-MM-DD', true).isValid(), {
       message: 'Invalid date format, expected YYYY-MM-DD',
     }),
-  startTime: z.string().refine((val) => dayjs(val, 'HH:mm', true).isValid(), {
+  startTime: z.string().regex(/^\d{2}:\d{2}$/, {
     message: 'Invalid time format, expected HH:mm',
   }),
-  endTime: z.string().refine((val) => dayjs(val, 'HH:mm', true).isValid(), {
+  endTime: z.string().regex(/^\d{2}:\d{2}$/, {
     message: 'Invalid time format, expected HH:mm',
   }),
-  maxTeams: z.number().min(2),
-  teamSize: z.number().min(1),
-  entryFee: z.number().min(0),
+  maxTeams: z.coerce.number().min(2),
+  teamSize: z.coerce.number().min(1),
+  entryFee: z.coerce.number().min(0),
   location: z.string().min(3).max(200),
   isActive: z.coerce.boolean(),
 })
