@@ -60,28 +60,28 @@ interface XenditVirtualAccountResponse {
 }
 
 export interface CreatePaymentRequestV3 {
-  referenceId: string;
-  requestAmount: number;
-  country?: string; // e.g., "ID"
-  currency?: string; // e.g., "IDR"
-  captureMethod?: string; // e.g., "AUTOMATIC"
-  channelCode: string;
-  channelProperties: Record<string, any>;
-  description?: string;
-  metadata?: Record<string, any>;
+  referenceId: string
+  requestAmount: number
+  country?: string // e.g., "ID"
+  currency?: string // e.g., "IDR"
+  captureMethod?: string // e.g., "AUTOMATIC"
+  channelCode: string
+  channelProperties: Record<string, any>
+  description?: string
+  metadata?: Record<string, any>
 }
 
 export interface XenditPaymentRequestV3Response {
-  id: string;
-  reference_id: string;
-  status: string;
-  currency: string;
-  request_amount: number;
-  channel_code: string;
-  channel_properties: any;
-  actions?: any;
-  description?: string;
-  metadata?: any;
+  id: string
+  reference_id: string
+  status: string
+  currency: string
+  request_amount: number
+  channel_code: string
+  channel_properties: any
+  actions?: any
+  description?: string
+  metadata?: any
 }
 
 class XenditService {
@@ -221,10 +221,12 @@ class XenditService {
   }
 
   async createPaymentRequestV3(
-    data: CreatePaymentRequestV3
+    data: CreatePaymentRequestV3,
   ): Promise<XenditPaymentRequestV3Response> {
     try {
-      log.info(`Creating Xendit v3 payment request for referenceId: ${data.referenceId}`);
+      log.info(
+        `Creating Xendit v3 payment request for referenceId: ${data.referenceId}`,
+      )
       const response = await fetch(`${this.baseUrl}/v3/payment_requests`, {
         method: 'POST',
         headers: this.getHeaders(),
@@ -240,14 +242,15 @@ class XenditService {
           description: data.description,
           metadata: data.metadata,
         }),
-      });
+      })
       if (!response.ok) {
-        const errorText = await response.text();
-        log.error(`Xendit v3 API error: ${response.status} - ${errorText}`);
-        throw new Error(`Xendit v3 API error: ${response.status}`);
+        const errorText = await response.text()
+        log.error(`Xendit v3 API error: ${response.status} - ${errorText}`)
+        throw new Error(`Xendit v3 API error: ${response.status}`)
       }
-      const rawResult = (await response.json()) as any;
-      const result = (rawResult?.data ?? rawResult) as XenditPaymentRequestV3Response;
+      const rawResult = (await response.json()) as any
+      const result = (rawResult?.data ??
+        rawResult) as XenditPaymentRequestV3Response
 
       if (!result?.id) {
         log.warn(
@@ -255,16 +258,16 @@ class XenditService {
             referenceId: data.referenceId,
             rawResult,
           },
-          'Xendit v3 payment request response missing id field'
-        );
+          'Xendit v3 payment request response missing id field',
+        )
       } else {
-        log.info(`Xendit v3 payment request created: ${result.id}`);
+        log.info(`Xendit v3 payment request created: ${result.id}`)
       }
 
-      return result;
+      return result
     } catch (error) {
-      log.fatal(`Error creating Xendit v3 payment request: ${error}`);
-      throw error;
+      log.fatal(`Error creating Xendit v3 payment request: ${error}`)
+      throw error
     }
   }
 
@@ -272,13 +275,42 @@ class XenditService {
     // Trim whitespace from both tokens to avoid issues with copy-paste
     const receivedToken = token?.trim() || ''
     const expectedToken = env.xendit.callbackToken?.trim() || ''
-    
+
     if (!expectedToken) {
       log.warn('XENDIT_CALLBACK_TOKEN is not set in environment variables')
       return false
     }
-    
+
     return receivedToken === expectedToken
+  }
+
+  async getPaymentRequestV3(
+    id: string,
+  ): Promise<XenditPaymentRequestV3Response | null> {
+    try {
+      log.info(`Fetching Xendit v3 payment request: ${id}`)
+      const response = await fetch(
+        `${this.baseUrl}/v3/payment_requests/${id}`,
+        {
+          method: 'GET',
+          headers: this.getHeaders(),
+        },
+      )
+      if (!response.ok) {
+        const errorText = await response.text()
+        log.error(
+          `Xendit v3 get payment request error: ${response.status} - ${errorText}`,
+        )
+        return null
+      }
+      const rawResult = (await response.json()) as any
+      const result = (rawResult?.data ??
+        rawResult) as XenditPaymentRequestV3Response
+      return result
+    } catch (error) {
+      log.error(`Error fetching Xendit payment request: ${error}`)
+      return null
+    }
   }
 }
 
