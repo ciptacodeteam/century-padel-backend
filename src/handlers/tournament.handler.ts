@@ -10,6 +10,7 @@ import {
   searchQuerySchema,
   SearchQuerySchema,
 } from '@/lib/validation'
+import { getFileUrl } from '@/services/upload.service'
 import { zValidator } from '@hono/zod-validator'
 import status from 'http-status'
 
@@ -57,6 +58,12 @@ export const getAllTournamentsHandler = factory.createHandlers(
         ...queryOptions,
       })
 
+      for (const tournament of tournaments) {
+        if (tournament.image) {
+          tournament.image = await getFileUrl(tournament.image)
+        }
+      }
+
       return c.json(ok(tournaments), status.OK)
     } catch (error) {
       c.var.logger.fatal(`Error in getAllTournamentsHandler: ${error}`)
@@ -79,6 +86,10 @@ export const getTournamentHandler = factory.createHandlers(
 
       if (!tournament) {
         throw new NotFoundException('Tournament not found')
+      }
+
+      if (tournament.image) {
+        tournament.image = await getFileUrl(tournament.image)
       }
 
       return c.json(ok(tournament), status.OK)
