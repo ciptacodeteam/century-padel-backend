@@ -163,8 +163,8 @@ export const getCourtSlotsHandler = factory.createHandlers(
         const startAt = dayjs.tz(query.startAt, JAKARTA_TZ).toDate()
         const endAt = dayjs.tz(query.endAt, JAKARTA_TZ).toDate()
         
-        // Find slots that overlap with the requested time range
-        // A slot overlaps if: slot.startAt < query.endAt AND slot.endAt > query.startAt
+      //   // Find slots that overlap with the requested time range
+      //   // A slot overlaps if: slot.startAt < query.endAt AND slot.endAt > query.startAt
         where.AND = [
           {
             startAt: {
@@ -190,11 +190,12 @@ export const getCourtSlotsHandler = factory.createHandlers(
       // Format datetime fields
       const formattedSlots = slots.map((slot) => ({
         ...slot,
-        startAt: dayjs(slot.startAt).tz().format(DATETIME_FORMAT),
-        endAt: dayjs(slot.endAt).tz().format(DATETIME_FORMAT),
+        startAt: slot.startAt,
+        endAt: slot.endAt,
         createdAt: dayjs(slot.createdAt).tz().format(DATETIME_FORMAT),
         updatedAt: dayjs(slot.updatedAt).tz().format(DATETIME_FORMAT),
       }))
+      console.log(formattedSlots)
 
       return c.json(ok(formattedSlots), status.OK)
     } catch (error) {
