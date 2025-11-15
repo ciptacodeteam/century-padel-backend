@@ -897,6 +897,7 @@ export const getMyMembershipHandler = factory.createHandlers(
         return c.json(err('Unauthorized', status.UNAUTHORIZED))
       }
 
+      // First, check if user is a member of a club
       const membership = await db.clubMember.findFirst({
         where: {
           userId: user.id,
@@ -924,18 +925,51 @@ export const getMyMembershipHandler = factory.createHandlers(
         },
       })
 
-      if (!membership) {
-        return c.json(ok(null, 'Not a member of any club', status.OK))
+      if (membership) {
+        const club = membership.club
+
+        if (club.logo) {
+          const logoUrl = await getFileUrl(club.logo)
+          club.logo = logoUrl
+        }
+
+        return c.json(ok(club, 'Success', status.OK))
       }
 
-      const club = membership.club
+      // If not a member, check if user is a leader of a club
+      const leadership = await db.club.findFirst({
+        where: {
+          leaderId: user.id,
+        },
+        include: {
+          leader: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              phone: true,
+              image: true,
+            },
+          },
+          _count: {
+            select: {
+              clubMember: true,
+            },
+          },
+        },
+      })
 
-      if (club.logo) {
-        const logoUrl = await getFileUrl(club.logo)
-        club.logo = logoUrl
+      if (leadership) {
+        if (leadership.logo) {
+          const logoUrl = await getFileUrl(leadership.logo)
+          leadership.logo = logoUrl
+        }
+
+        return c.json(ok(leadership, 'Success', status.OK))
       }
 
-      return c.json(ok(club, 'Success', status.OK))
+      // User is neither a member nor a leader of any club
+      return c.json(ok(null, 'Not a member or leader of any club', status.OK))
     } catch (error) {
       c.var.logger.fatal(`Error in getMyMembershipHandler: ${error}`)
       throw error
