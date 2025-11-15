@@ -192,7 +192,11 @@ export const getInvoiceDetailHandler = factory.createHandlers(
       let storedMeta: any = null
       if (invoice.payment?.meta) {
         try {
-          storedMeta = JSON.parse(invoice.payment.meta as any)
+          // Prisma already parses Json fields, no need to JSON.parse
+          storedMeta =
+            typeof invoice.payment.meta === 'string'
+              ? JSON.parse(invoice.payment.meta)
+              : invoice.payment.meta
         } catch (e) {
           c.var.logger.error(`Failed parsing payment meta: ${e}`)
         }

@@ -46,11 +46,11 @@ import phoneVerificationRoute from './routes/phone.route'
 import paymentMethodRoute from './routes/payment-method.route'
 import membershipRoute from './routes/membership.route'
 import xenditWebhookRoute from './routes/xendit-webhook.route'
+import xenditTestRoute from './routes/xendit-test.route'
 import ballboyRoute from './routes/ballboy.route'
 import tournamentRoute from './routes/tournament.route'
 import passwordResetRoute from './routes/password-reset.route'
 import clubRoute from './routes/club.route'
-import { cors } from 'hono/cors'
 import adminClubRoute from './routes/admin/club.route'
 
 dayjs.locale('id')
@@ -83,6 +83,7 @@ const routes = [
   tournamentRoute,
   clubRoute,
   xenditWebhookRoute,
+  xenditTestRoute,
   passwordResetRoute,
 ]
 

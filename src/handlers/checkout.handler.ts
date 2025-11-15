@@ -111,7 +111,11 @@ export const checkoutHandler = factory.createHandlers(
         }
 
         let totalPrice = 0
-        const xenditItems: Array<{ name: string; quantity: number; price: number }> = []
+        const xenditItems: Array<{
+          name: string
+          quantity: number
+          price: number
+        }> = []
 
         // Process court slots
         if (courtSlots && courtSlots.length > 0) {
@@ -294,7 +298,11 @@ export const checkoutHandler = factory.createHandlers(
         const processingFee = paymentMethod.fees
         const finalTotal = totalPrice + processingFee
         if (processingFee > 0) {
-          xenditItems.push({ name: 'Processing fee', quantity: 1, price: processingFee })
+          xenditItems.push({
+            name: 'Processing fee',
+            quantity: 1,
+            price: processingFee,
+          })
         }
 
         // Update booking with totals
@@ -306,11 +314,7 @@ export const checkoutHandler = factory.createHandlers(
           },
         })
 
-        // Get user details for Xendit
-        const userDetails = await tx.user.findUnique({
-          where: { id: user.id },
-          select: { name: true, email: true, phone: true },
-        })
+        // (User details fetched later per-channel when needed)
 
         // Generate invoice number
         const invoiceNumber = `INV-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`
@@ -358,74 +362,54 @@ export const checkoutHandler = factory.createHandlers(
         }
         */
 
-        // --- NEW v3 /payment_requests (enabled) ---
-        let xenditInvoiceResponse: any = null;
-        if (env.xendit.apiKey) {
+        // --- NEW v3 /payment_requests (mandatory for external payment) ---
+        let xenditInvoiceResponse: any = null
+        let xenditError: any = null
+        if (paymentMethod.channel) {
+          if (!env.xendit.apiKey) {
+            throw new BadRequestException(
+              'Payment gateway unavailable. Please try again later (missing API key).',
+            )
+          }
           try {
-            // Build channel_properties based on the payment method/channel
-            const channelCode = (paymentMethod as any).channel || '';
-            let channelProperties: Record<string, any> = {};
-
-            if (channelCode === 'CARDS') {
+            const channelCode = (paymentMethod as any).channel || ''
+            let channelProperties: Record<string, any> = {}
+            const userDetails = await tx.user.findUnique({
+              where: { id: user.id },
+              select: { name: true, email: true, phone: true },
+            })
+            if (channelCode === 'MANDIRI_VIRTUAL_ACCOUNT') {
               channelProperties = {
-                mid_label: 'mid_label_acquirer_1',
-                card_details: {
-                  cvn: '246',
-                  card_number: '2222444466668888',
-                  expiry_year: '2027',
-                  expiry_month: '12',
-                  cardholder_first_name: userDetails?.name?.split(' ')[0] || 'John',
-                  cardholder_last_name: userDetails?.name?.split(' ').slice(1).join(' ') || 'Doe',
-                  cardholder_email: userDetails?.email || 'payments@xendit.co',
-                  cardholder_phone_number: userDetails?.phone || '+6571234567',
-                },
-                skip_three_ds: false,
-                card_on_file_type: 'MERCHANT_UNSCHEDULED',
-                failure_return_url: `${env.baseUrl}/payment/failed`,
-                success_return_url: `${env.baseUrl}/payment/success`,
-                billing_information: {
-                  city: 'Singapore',
-                  country: 'SG',
-                  postal_code: '644228',
-                  street_line1: 'Merlion Bay Sands Suites',
-                  street_line2: '21-37',
-                  province_state: 'Singapore',
-                },
-                statement_descriptor: 'Goods & Services',
-                transaction_sequence: 'SUBSEQUENT',
-                network_transaction_id: 'MPL67M01P0628',
-                recurring_configuration: {
-                  recurring_expiry: '2025-12-01',
-                  recurring_frequency: 30,
-                },
-              };
-            } else if (channelCode === 'QR') {
+                expires_at: dayjs().add(24, 'hours').toISOString(),
+                display_name: userDetails?.name || 'Customer',
+              }
+            } else if (channelCode.includes('VIRTUAL_ACCOUNT')) {
+              // Other VA channels (BCA, BNI, BRI, etc.) also require display_name
               channelProperties = {
-                // Aligning with example; set reasonable expiry (10 minutes)
-                expires_at: dayjs().add(10, 'minutes').toISOString(),
-              };
-            } else if (channelCode === 'MANDIRI_VIRTUAL_ACCOUNT') {
+                expires_at: dayjs().add(24, 'hours').toISOString(),
+                display_name: userDetails?.name || 'Customer',
+              }
+            } else if (channelCode === 'QRIS' || channelCode === 'QR') {
               channelProperties = {
-                expires_at: dayjs().add(10, 'minutes').toISOString(),
-                display_name: userDetails?.name || 'John Doe',
-                // virtual_account_number: '88696969696988', // Optional: set if you manage VA numbers yourself
-                verification_data: {
-                  customer_name: userDetails?.name || 'John Doe',
-                  accepted_name_variations: [
-                    userDetails?.name?.split(' ')[0] || 'John',
-                    userDetails?.name || 'John Doe',
-                  ],
-                  allowed_bank_accounts: [
-                    {
-                      bank_name: 'BRI',
-                      account_number: '2876783233',
-                      account_name: userDetails?.name || 'John Doe',
-                    },
-                  ],
-                },
-              };
+                expires_at: dayjs().add(1, 'hour').toISOString(),
+              }
+            } else if (
+              channelCode.includes('EWALLET') ||
+              ['DANA', 'OVO', 'LINKAJA', 'SHOPEEPAY'].includes(channelCode)
+            ) {
+              channelProperties = {
+                success_return_url: `${env.frontEndUrl}/payment/success?invoice_id=${invoice.id}`,
+                failure_return_url: `${env.frontEndUrl}/payment/failed?invoice_id=${invoice.id}`,
+              }
+            } else {
+              channelProperties = {
+                expires_at: dayjs().add(1, 'hour').toISOString(),
+              }
             }
 
+            c.var.logger.info(
+              `Creating Xendit payment request channel=${channelCode} amount=${finalTotal}`,
+            )
             xenditInvoiceResponse = await xenditService.createPaymentRequestV3({
               referenceId: invoice.id,
               requestAmount: finalTotal,
@@ -438,11 +422,45 @@ export const checkoutHandler = factory.createHandlers(
               metadata: {
                 bookingId: booking.id,
                 userId: user.id,
-              }
-            });
-          } catch (error) {
-            c.var.logger.error(`Failed to create Xendit v3 payment request: ${error}`);
-            // Continue without Xendit integration
+                invoiceNumber: invoice.number,
+              },
+            })
+          } catch (errX: any) {
+            const errMsg = errX?.message || 'Payment gateway error'
+            xenditError = {
+              message: errMsg,
+              code:
+                errMsg.includes('IP allowlist') || errMsg.includes('allowlist')
+                  ? 'XENDIT_IP_NOT_ALLOWLIST'
+                  : errMsg.includes('channel_properties')
+                    ? 'XENDIT_CHANNEL_PROPERTIES_INVALID'
+                    : errMsg.includes('below the minimum limit') ||
+                        errMsg.includes('minimum amount')
+                      ? 'XENDIT_AMOUNT_TOO_LOW'
+                      : 'XENDIT_ERROR',
+            }
+            c.var.logger.error(
+              `Xendit error: ${xenditError.code} - ${xenditError.message}`,
+            )
+          }
+          if (!xenditInvoiceResponse) {
+            // Provide user-friendly error messages based on error code
+            let userMessage = xenditError?.message || 'Payment gateway error'
+            if (xenditError?.code === 'XENDIT_AMOUNT_TOO_LOW') {
+              userMessage = `Payment amount (Rp ${finalTotal.toLocaleString('id-ID')}) is below the minimum limit required by the payment method. Please add more items or choose a different payment method.`
+            } else if (xenditError?.code === 'XENDIT_IP_NOT_ALLOWLIST') {
+              userMessage =
+                'Payment gateway configuration error. Please contact support.'
+            } else if (
+              xenditError?.code === 'XENDIT_CHANNEL_PROPERTIES_INVALID'
+            ) {
+              userMessage =
+                'Payment method configuration error. Please try a different payment method or contact support.'
+            }
+
+            throw new BadRequestException(
+              `Unable to initialize payment. ${userMessage}`,
+            )
           }
         }
 
@@ -453,14 +471,21 @@ export const checkoutHandler = factory.createHandlers(
             amount: finalTotal,
             fees: paymentMethod.fees,
             status: PaymentStatus.PENDING,
-            dueDate: dayjs().add(10, 'minutes').toDate(),
+            dueDate: dayjs().add(24, 'hours').toDate(),
             externalRef: xenditInvoiceResponse?.id || null,
+            // Store as JSON object to Prisma Json column (not string)
             meta: xenditInvoiceResponse
-              ? JSON.stringify({
-                  invoiceId: xenditInvoiceResponse.id,
-                  invoiceUrl: xenditInvoiceResponse.invoice_url,
+              ? {
+                  payment_request_id: xenditInvoiceResponse.payment_request_id,
+                  reference_id: xenditInvoiceResponse.reference_id,
                   status: xenditInvoiceResponse.status,
-                })
+                  channel_code: xenditInvoiceResponse.channel_code,
+                  channel_properties: xenditInvoiceResponse.channel_properties,
+                  actions: xenditInvoiceResponse.actions,
+                  request_amount: xenditInvoiceResponse.request_amount,
+                  currency: xenditInvoiceResponse.currency,
+                  created: xenditInvoiceResponse.created,
+                }
               : undefined,
           },
         })
@@ -490,20 +515,47 @@ export const checkoutHandler = factory.createHandlers(
           booking,
           invoice,
           payment,
-          xenditInvoiceUrl: xenditInvoiceResponse?.actions?.mobile_web_checkout_url || xenditInvoiceResponse?.invoice_url || null,
+          xenditPaymentRequest: xenditInvoiceResponse,
         }
       })
+
+      // Extract payment actions for frontend
+      let paymentActions: any = null
+      let redirectUrl: string | null = null
+
+      if (
+        result.xenditPaymentRequest?.actions &&
+        result.xenditPaymentRequest.actions.length > 0
+      ) {
+        paymentActions = result.xenditPaymentRequest.actions.map(
+          (action: any) => ({
+            type: action.type,
+            value: action.value,
+            descriptor: action.descriptor,
+          }),
+        )
+
+        // Find redirect URL if available
+        const redirectAction = result.xenditPaymentRequest.actions.find(
+          (a: any) => a.type === 'REDIRECT_CUSTOMER',
+        )
+        redirectUrl = redirectAction?.value || null
+      }
 
       return c.json(
         ok(
           {
             bookingId: result.booking.id,
+            invoiceId: result.invoice.id,
             invoiceNumber: result.invoice.number,
             totalPrice: result.booking.totalPrice,
             processingFee: result.booking.processingFee,
             total: result.invoice.total,
             status: result.booking.status,
-            paymentUrl: result.xenditInvoiceUrl,
+            paymentStatus: result.xenditPaymentRequest?.status || 'PENDING',
+            paymentActions,
+            // Legacy support
+            paymentUrl: redirectUrl,
           },
           'Checkout successful',
         ),
