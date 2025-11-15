@@ -10,8 +10,8 @@ import {
 import { zValidator } from '@hono/zod-validator'
 import status from 'http-status'
 import z from 'zod'
-import argon2 from 'argon2'
 import { env } from '@/env'
+import { hashPassword } from '@/lib/password'
 
 // Validation schemas
 const resetPasswordWithTokenSchema = z
@@ -64,8 +64,7 @@ export const resetPasswordWithTokenHandler = factory.createHandlers(
       // Hash the new password
       let hashedPassword: string
       try {
-        const pepper = env.PWD_PEPPER || ''
-        hashedPassword = await argon2.hash(newPassword + pepper)
+        hashedPassword = await hashPassword(newPassword)
       } catch (error) {
         c.var.logger.error(
           { error, userId: user.id },
