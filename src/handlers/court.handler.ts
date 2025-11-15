@@ -18,6 +18,7 @@ import { getFileUrl } from '@/services/upload.service'
 import { SlotType } from '@prisma/client'
 import dayjs from 'dayjs'
 import { DATETIME_FORMAT } from '@/constants'
+import { JAKARTA_TZ } from '@/config'
 import z from 'zod'
 
 export const getAllCourtHandler = factory.createHandlers(
@@ -56,8 +57,8 @@ export const getAllCourtHandler = factory.createHandlers(
 
       // Add date range filter if provided
       if (query.startAt && query.endAt) {
-        const startAt = dayjs(query.startAt).toDate()
-        const endAt = dayjs(query.endAt).toDate()
+        const startAt = dayjs.tz(query.startAt, JAKARTA_TZ).toDate()
+        const endAt = dayjs.tz(query.endAt, JAKARTA_TZ).toDate()
         
         slotWhere.AND = [
           {
@@ -159,8 +160,8 @@ export const getCourtSlotsHandler = factory.createHandlers(
 
       // Add date range filter if provided
       if (query.startAt && query.endAt) {
-        const startAt = dayjs(query.startAt).toDate()
-        const endAt = dayjs(query.endAt).toDate()
+        const startAt = dayjs.tz(query.startAt, JAKARTA_TZ).toDate()
+        const endAt = dayjs.tz(query.endAt, JAKARTA_TZ).toDate()
         
         // Find slots that overlap with the requested time range
         // A slot overlaps if: slot.startAt < query.endAt AND slot.endAt > query.startAt
@@ -227,8 +228,8 @@ export const getAvailableCourtSlotsHandler = factory.createHandlers(
       }
 
       if (query.startAt && query.endAt) {
-        const startAt = dayjs(query.startAt).toDate()
-        const endAt = dayjs(query.endAt).toDate()
+        const startAt = dayjs.tz(query.startAt, JAKARTA_TZ).toDate()
+        const endAt = dayjs.tz(query.endAt, JAKARTA_TZ).toDate()
 
         where.AND = [
           {
