@@ -1,4 +1,5 @@
 import {
+  getInventoryAvailabilityHandler,
   createInventoryHandler,
   deleteInventoryHandler,
   getAllInventoryHandler,
@@ -9,6 +10,7 @@ import { createRouter } from '@/lib/create-app'
 
 const adminInventoryRoute = createRouter()
   .basePath('/inventory')
+  .get('/availability', ...getInventoryAvailabilityHandler)
   .get('/', ...getAllInventoryHandler)
   .get('/:id', ...getInventoryHandler)
   .post('/', ...createInventoryHandler)

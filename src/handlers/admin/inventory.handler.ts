@@ -5,6 +5,7 @@ import { db } from '@/lib/prisma'
 import buildFindManyOptions from '@/lib/query'
 import { err, ok } from '@/lib/response'
 import {
+  availableInventoryQuerySchema,
   createInventorySchema,
   CreateInventorySchema,
   idSchema,
@@ -15,6 +16,71 @@ import {
 } from '@/lib/validation'
 import { zValidator } from '@hono/zod-validator'
 import status from 'http-status'
+import { BookingStatus } from '@prisma/client'
+
+export const getInventoryAvailabilityHandler = factory.createHandlers(
+  zValidator('query', availableInventoryQuerySchema, validateHook),
+  async (c) => {
+    try {
+      c.req.valid('query')
+
+      const inventories = await db.inventory.findMany({
+        where: {
+          isActive: true,
+        },
+        orderBy: {
+          name: 'asc',
+        },
+      })
+
+      const availability = await Promise.all(
+        inventories.map(async (inventory) => {
+          const bookings = await db.bookingInventory.findMany({
+            where: {
+              inventoryId: inventory.id,
+              booking: {
+                status: {
+                  in: [BookingStatus.CONFIRMED, BookingStatus.HOLD],
+                },
+              },
+            },
+          })
+
+          const bookedQuantity = bookings.reduce(
+            (sum, booking) => sum + booking.quantity,
+            0,
+          )
+
+          const availableQuantity = Math.max(
+            0,
+            inventory.quantity - bookedQuantity,
+          )
+
+          return {
+            id: inventory.id,
+            name: inventory.name,
+            description: inventory.description,
+            price: inventory.price,
+            totalQuantity: inventory.quantity,
+            availableQuantity,
+            bookedQuantity,
+          }
+        }),
+      )
+
+      const filtered = availability.filter(
+        (item) => item.availableQuantity > 0,
+      )
+
+      return c.json(ok(filtered), status.OK)
+    } catch (error) {
+      c.var.logger.fatal(
+        `Error in getInventoryAvailabilityHandler: ${error}`,
+      )
+      throw error
+    }
+  },
+)
 
 export const getAllInventoryHandler = factory.createHandlers(
   zValidator('query', searchQuerySchema, validateHook),
