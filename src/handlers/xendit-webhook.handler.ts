@@ -189,12 +189,32 @@ async function handlePaymentWebhookV3(c: any, webhook: XenditPaymentWebhook) {
   // Handle membership purchases
   if (invoice.membershipUserId) {
     if (event === 'payment.capture') {
+      // Membership is already active (created during checkout)
+      // Just ensure it's not suspended or expired
+      await db.membershipUser.update({
+        where: { id: invoice.membershipUserId },
+        data: {
+          isExpired: false,
+          isSuspended: false,
+          suspensionReason: null,
+          suspensionEndDate: null,
+        },
+      })
       c.var.logger.info(
-        `Membership payment confirmed: ${invoice.membershipUserId}`,
+        `Membership activated for user: ${invoice.membershipUserId}`,
       )
     } else if (event === 'payment.failure') {
+      // Suspend the membership due to payment failure
+      await db.membershipUser.update({
+        where: { id: invoice.membershipUserId },
+        data: {
+          isSuspended: true,
+          suspensionReason: `Payment failed: ${data.failure_code || 'Unknown error'}`,
+          suspensionEndDate: null, // Suspended indefinitely until payment is resolved
+        },
+      })
       c.var.logger.warn(
-        `Membership payment failed: ${invoice.membershipUserId}`,
+        `Membership suspended due to payment failure: ${invoice.membershipUserId}`,
       )
     }
   }
@@ -315,14 +335,32 @@ async function handleInvoiceWebhookV2(c: any, payload: XenditWebhookPayload) {
 
     if (membershipUser) {
       if (payload.status === 'PAID') {
-        // Membership is already activated, no need to change status
+        // Membership is already active (created during checkout)
+        // Just ensure it's not suspended or expired
+        await db.membershipUser.update({
+          where: { id: invoice.membershipUserId },
+          data: {
+            isExpired: false,
+            isSuspended: false,
+            suspensionReason: null,
+            suspensionEndDate: null,
+          },
+        })
         c.var.logger.info(
-          `Membership payment confirmed: ${invoice.membershipUserId}`,
+          `Membership activated for user: ${invoice.membershipUserId}`,
         )
       } else if (payload.status === 'EXPIRED') {
-        // You might want to handle this differently for memberships
+        // Suspend the membership due to payment expiration
+        await db.membershipUser.update({
+          where: { id: invoice.membershipUserId },
+          data: {
+            isSuspended: true,
+            suspensionReason: 'Payment expired',
+            suspensionEndDate: null, // Suspended indefinitely
+          },
+        })
         c.var.logger.warn(
-          `Membership payment expired: ${invoice.membershipUserId}`,
+          `Membership suspended due to payment expiration: ${invoice.membershipUserId}`,
         )
       }
     }
