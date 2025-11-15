@@ -476,6 +476,7 @@ model Membership {
   name        String
   description String?
   content     String?
+  contentHtml String?
   price       Int      @db.Integer
   sessions    Int // how many sessions included (e.g., court bookings) in hours
   duration    Int // how many days valid after applying membership in days

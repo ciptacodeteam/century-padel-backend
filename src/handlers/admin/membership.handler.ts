@@ -11,6 +11,7 @@ import {
   IdSchema,
   searchQuerySchema,
   SearchQuerySchema,
+  UpdateMembershipSchema,
   updateMembershipSchema,
 } from '@/lib/validation'
 import { zValidator } from '@hono/zod-validator'
@@ -74,6 +75,7 @@ export const createMembershipHandler = factory.createHandlers(
           description: membershipData.description,
           price: membershipData.price,
           content: membershipData.content,
+          contentHtml: membershipData.contentHtml,
           sessions: membershipData.sessions,
           duration: membershipData.duration,
           sequence: membershipData.sequence,
@@ -105,7 +107,7 @@ export const updateMembershipHandler = factory.createHandlers(
       const { id } = c.req.valid('param') as IdSchema
       const membershipData = c.req.valid(
         'json',
-      ) as Partial<CreateMembershipSchema>
+      ) as Partial<UpdateMembershipSchema>
 
       const existingMembership = await db.membership.findUnique({
         where: { id },
@@ -140,6 +142,7 @@ export const updateMembershipHandler = factory.createHandlers(
           description: membershipData.description,
           price: membershipData.price,
           content: membershipData.content,
+          contentHtml: membershipData.contentHtml,
           sessions: membershipData.sessions,
           duration: membershipData.duration,
           sequence: membershipData.sequence,
