@@ -59,21 +59,16 @@ export const emailTemplates = {
     `,
   }),
 
-  verificationCode: (variables: Record<string, any>) => ({
-    subject: 'Your Verification Code',
+  passwordResetSuccess: (variables: Record<string, any>) => ({
+    subject: 'Password Reset Successfully',
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2>Verification Code</h2>
+        <h2>Password Reset Successfully</h2>
         <p>Hi ${variables.name},</p>
-        <p>Your verification code is:</p>
-        <p style="margin: 30px 0; font-size: 24px; font-weight: bold; letter-spacing: 5px; text-align: center; background: #f5f5f5; padding: 20px; border-radius: 4px;">
-          ${variables.code}
-        </p>
-        <p style="color: #666; font-size: 12px;">
-          This code will expire in ${variables.expiresIn || '10 minutes'}.
-          <br />
-          Never share this code with anyone.
-        </p>
+        <p>Your password has been reset successfully.</p>
+        <p>You can now login to your account using your new password.</p>
+        <p>Thank you for using Quantum Sport.</p>
+      </div>
         <hr style="margin-top: 30px; border: none; border-top: 1px solid #ddd;" />
         <p style="color: #999; font-size: 11px; text-align: center;">
           Quantum Sport © 2024. All rights reserved.

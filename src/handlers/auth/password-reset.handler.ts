@@ -106,7 +106,7 @@ export const resetPasswordWithTokenHandler = factory.createHandlers(
           await queueEmail({
             to: userEmail,
             subject: 'Password Changed Successfully',
-            template: 'passwordReset',
+            template: 'passwordResetSuccess',
             variables: {
               name: user.name,
               message: 'Your password has been successfully changed.',
