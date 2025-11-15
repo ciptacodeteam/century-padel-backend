@@ -37,6 +37,20 @@ async function seedUsers() {
       phoneVerified: true,
       password: hashedPassword,
     },
+    {
+      name: 'David Lee',
+      email: 'david.lee@example.com',
+      phone: '+6281234567894',
+      phoneVerified: true,
+      password: hashedPassword,
+    },
+    {
+      name: 'Lisa Anderson',
+      email: 'lisa.anderson@example.com',
+      phone: '+6281234567895',
+      phoneVerified: true,
+      password: hashedPassword,
+    },
   ]
 
   const createdUsers: User[] = []
@@ -62,35 +76,21 @@ async function seedClubs(users: User[]) {
       description: 'A premier tennis club for professionals and enthusiasts. Join us for competitive matches and training sessions.',
       rules: '1. Respect all members\n2. Book courts in advance\n3. Proper attire required\n4. No-show policy applies',
       visibility: 'PUBLIC' as const,
-      leaderId: users[0].id,
+      leaderId: users[0].id, // John Smith leads
     },
     {
-      name: 'Weekend Warriors Badminton',
-      description: 'Casual badminton club for weekend players. All skill levels welcome!',
-      rules: '1. Have fun!\n2. Be on time for bookings\n3. Share equipment\n4. Clean up after play',
-      visibility: 'PUBLIC' as const,
-      leaderId: users[1].id,
-    },
-    {
-      name: 'Pro Squash Academy',
-      description: 'Professional squash training and competitive play. Advanced players only.',
-      rules: '1. Minimum skill level required\n2. Monthly membership fee\n3. Attend weekly training\n4. Respect coaches',
+      name: 'VIP Badminton Circle',
+      description: 'Exclusive badminton club for serious players. Invitation and approval required.',
+      rules: '1. Professional conduct required\n2. Minimum skill level: Advanced\n3. Monthly fee applies\n4. Commitment to weekly games',
       visibility: 'PRIVATE' as const,
-      leaderId: users[2].id,
+      leaderId: users[1].id, // Sarah Johnson leads
     },
     {
       name: 'Community Sports Hub',
       description: 'A diverse sports community welcoming all ages and skill levels. We play tennis, badminton, and table tennis.',
       rules: '1. Open to all\n2. Respect diversity\n3. Follow booking rules\n4. Maintain equipment',
       visibility: 'PUBLIC' as const,
-      leaderId: users[3].id,
-    },
-    {
-      name: 'Morning Fitness Tennis',
-      description: 'Early morning tennis club focused on fitness and health. Join us for 6 AM sessions!',
-      rules: '1. Arrive by 5:55 AM\n2. Warm up properly\n3. Bring water\n4. 3-strike absence policy',
-      visibility: 'PUBLIC' as const,
-      leaderId: users[0].id,
+      leaderId: users[2].id, // Michael Chen leads
     },
   ]
 
@@ -102,36 +102,26 @@ async function seedClubs(users: User[]) {
       create: clubData,
     })
     createdClubs.push(club)
-    console.info(`✅ Created club: ${club.name} (Leader: ${clubData.leaderId})`)
+    console.info(`✅ Created ${club.visibility} club: ${club.name} (Leader: ${users.find(u => u.id === clubData.leaderId)?.name})`)
   }
 
   return createdClubs
 }
 
 async function seedClubMembers(clubs: Club[], users: User[]) {
-  console.info('👥 Seeding club members...')
+  console.info('👥 Seeding club members and join requests...')
 
-  // Add some members to clubs
+  // ONE member per club rule enforced
+  // Club 0: Elite Tennis Club (PUBLIC) - John leads, Emma is member
+  // Club 1: VIP Badminton Circle (PRIVATE) - Sarah leads, has pending requests
+  // Club 2: Community Sports Hub (PUBLIC) - Michael leads, David is member
+
   const memberships = [
-    // Elite Tennis Club members
-    { clubId: clubs[0].id, userId: users[1].id },
-    { clubId: clubs[0].id, userId: users[2].id },
+    // Elite Tennis Club (PUBLIC) - Emma joined
+    { clubId: clubs[0].id, userId: users[3].id }, // Emma Williams
     
-    // Weekend Warriors Badminton members
-    { clubId: clubs[1].id, userId: users[0].id },
-    { clubId: clubs[1].id, userId: users[3].id },
-    
-    // Pro Squash Academy members
-    { clubId: clubs[2].id, userId: users[0].id },
-    
-    // Community Sports Hub members
-    { clubId: clubs[3].id, userId: users[0].id },
-    { clubId: clubs[3].id, userId: users[1].id },
-    { clubId: clubs[3].id, userId: users[2].id },
-    
-    // Morning Fitness Tennis members
-    { clubId: clubs[4].id, userId: users[2].id },
-    { clubId: clubs[4].id, userId: users[3].id },
+    // Community Sports Hub (PUBLIC) - David joined
+    { clubId: clubs[2].id, userId: users[4].id }, // David Lee
   ]
 
   for (const membership of memberships) {
@@ -146,8 +136,27 @@ async function seedClubMembers(clubs: Club[], users: User[]) {
       create: membership,
     })
   }
-
   console.info(`✅ Created ${memberships.length} club memberships`)
+
+  // Create join requests for PRIVATE club
+  const joinRequests = [
+    // Pending request for VIP Badminton Circle
+    { clubId: clubs[1].id, userId: users[5].id, status: 'PENDING' }, // Lisa requesting to join
+  ]
+
+  for (const request of joinRequests) {
+    await db.clubJoinRequest.upsert({
+      where: {
+        clubId_userId: {
+          clubId: request.clubId,
+          userId: request.userId,
+        },
+      },
+      update: {},
+      create: request,
+    })
+  }
+  console.info(`✅ Created ${joinRequests.length} pending join requests`)
 }
 
 async function main() {
@@ -160,11 +169,25 @@ async function main() {
   console.info('\n📊 Seeding Summary:')
   console.info(`   Users created: ${users.length}`)
   console.info(`   Clubs created: ${clubs.length}`)
-  console.info('\n🔑 Test Credentials:')
-  console.info('   Email: john.smith@example.com')
-  console.info('   Email: sarah.johnson@example.com')
-  console.info('   Email: michael.chen@example.com')
-  console.info('   Email: emma.williams@example.com')
+  console.info('\n🏆 Club Structure:')
+  console.info('   1. Elite Tennis Club (PUBLIC)')
+  console.info('      Leader: John Smith')
+  console.info('      Member: Emma Williams')
+  console.info('\n   2. VIP Badminton Circle (PRIVATE)')
+  console.info('      Leader: Sarah Johnson')
+  console.info('      Pending Request: Lisa Anderson')
+  console.info('\n   3. Community Sports Hub (PUBLIC)')
+  console.info('      Leader: Michael Chen')
+  console.info('      Member: David Lee')
+  console.info('\n👥 Available Users (not in any club):')
+  console.info('   - No club: None (all users are either leaders or members)')
+  console.info('\n🔑 Test Credentials (all users):')
+  console.info('   john.smith@example.com - Leader of Elite Tennis Club')
+  console.info('   sarah.johnson@example.com - Leader of VIP Badminton Circle (PRIVATE)')
+  console.info('   michael.chen@example.com - Leader of Community Sports Hub')
+  console.info('   emma.williams@example.com - Member of Elite Tennis Club')
+  console.info('   david.lee@example.com - Member of Community Sports Hub')
+  console.info('   lisa.anderson@example.com - Has pending request for VIP Badminton Circle')
   console.info('   Password: Password123!')
   
   console.info('\n🌱 Database seeding complete')
