@@ -276,6 +276,19 @@ export const logoutHandler = factory.createHandlers(async (c) => {
 
 export const refreshTokenHandler = factory.createHandlers(async (c) => {
   try {
+    const admin = c.get('admin')
+
+    // Check if an admin token is being used on a user endpoint
+    if (admin) {
+      return c.json(
+        err(
+          'Admin detected. Please use /admin/auth/refresh-token instead',
+          status.FORBIDDEN,
+        ),
+        status.FORBIDDEN,
+      )
+    }
+
     const refreshToken = getCookie(c, 'refreshToken')
 
     if (!refreshToken) {
@@ -573,6 +586,18 @@ export const loginWithEmailHandler = factory.createHandlers(
 export const getProfileHandler: AppRouteHandler = async (c) => {
   try {
     const user = c.get('user')
+    const admin = c.get('admin')
+
+    // Check if an admin token is being used on a user endpoint
+    if (admin && !user) {
+      return c.json(
+        err(
+          'Admin token detected. Please use /admin/auth/profile instead',
+          status.FORBIDDEN,
+        ),
+        status.FORBIDDEN,
+      )
+    }
 
     if (!user || !user.id) {
       throw new UnauthorizedException()
