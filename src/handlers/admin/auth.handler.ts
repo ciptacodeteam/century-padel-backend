@@ -412,14 +412,14 @@ export const refreshTokenAdminHandler = factory.createHandlers(async (c) => {
       include: { staff: true },
     })
 
-    if (!authToken || !authToken.staff) {
+    if (!authToken?.staff) {
       throw new UnauthorizedException()
     }
 
-    if (
-      authToken.type === AuthTokenType.USER ||
-      dayjs().isAfter(authToken.refreshExpiresAt)
-    ) {
+    const isTokenExpired = dayjs().isAfter(authToken.refreshExpiresAt)
+    const isInvalidTokenType = authToken.type !== AuthTokenType.STAFF
+
+    if (isTokenExpired || isInvalidTokenType) {
       deleteCookie(c, 'token')
       deleteCookie(c, 'refreshToken')
 
