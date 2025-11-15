@@ -17,6 +17,7 @@ import {
 import { deleteFile, getFileUrl, uploadFile } from '@/services/upload.service'
 import { zValidator } from '@hono/zod-validator'
 import status from 'http-status'
+import { z } from 'zod'
 
 /**
  * Get all clubs created by the authenticated user
@@ -972,6 +973,79 @@ export const getMyMembershipHandler = factory.createHandlers(
       return c.json(ok(null, 'Not a member or leader of any club', status.OK))
     } catch (error) {
       c.var.logger.fatal(`Error in getMyMembershipHandler: ${error}`)
+      throw error
+    }
+  },
+)
+
+/**
+ * Remove a member from the club (leader only)
+ */
+export const removeMemberHandler = factory.createHandlers(
+  zValidator('param', z.object({ id: z.string(), userId: z.string() }), validateHook),
+  async (c) => {
+    try {
+      const user = c.get('user')
+      
+      if (!user) {
+        return c.json(err('Unauthorized', status.UNAUTHORIZED))
+      }
+
+      const { id: clubId, userId } = c.req.valid('param') as { id: string; userId: string }
+
+      // Check if the club exists and user is the leader
+      const club = await db.club.findUnique({
+        where: { id: clubId },
+      })
+
+      if (!club) {
+        throw new NotFoundException('Club not found')
+      }
+
+      if (club.leaderId !== user.id) {
+        return c.json(
+          err('Only the club leader can remove members', status.FORBIDDEN),
+        )
+      }
+
+      // Check if the target user is a member
+      const membership = await db.clubMember.findUnique({
+        where: {
+          clubId_userId: {
+            clubId: clubId,
+            userId: userId,
+          },
+        },
+      })
+
+      if (!membership) {
+        return c.json(
+          err('User is not a member of this club', status.BAD_REQUEST),
+        )
+      }
+
+      // Delete membership and join request in a transaction
+      await db.$transaction([
+        db.clubMember.delete({
+          where: {
+            clubId_userId: {
+              clubId: clubId,
+              userId: userId,
+            },
+          },
+        }),
+        // Delete the join request if it exists
+        db.clubJoinRequest.deleteMany({
+          where: {
+            clubId: clubId,
+            userId: userId,
+          },
+        }),
+      ])
+
+      return c.json(ok(null, 'Member removed successfully', status.OK))
+    } catch (error) {
+      c.var.logger.fatal(`Error in removeMemberHandler: ${error}`)
       throw error
     }
   },

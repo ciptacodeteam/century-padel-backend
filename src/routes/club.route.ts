@@ -13,6 +13,7 @@ import {
   joinClubHandler,
   leaveClubHandler,
   rejectJoinRequestHandler,
+  removeMemberHandler,
   updateMyClubHandler,
 } from '@/handlers/club.handler'
 
@@ -28,6 +29,7 @@ const clubRoute = createRouter()
   .post('/:id/requests/:userId/approve', requireAuth, ...approveJoinRequestHandler)
   .delete('/:id/requests/:userId/reject', requireAuth, ...rejectJoinRequestHandler)
   .delete('/:id/leave', requireAuth, ...leaveClubHandler)
+  .delete('/:id/members/:userId', requireAuth, ...removeMemberHandler)
   .put('/:id', requireAuth, ...updateMyClubHandler)
   .delete('/:id', requireAuth, ...deleteMyClubHandler)
   // Public routes - anyone can view public clubs
