@@ -24,16 +24,11 @@ function hoursForBand(start: number, end: number) {
 }
 
 function toUtcRange(dateISO: string, hour: number) {
-  const startAt = dayjs
-    .tz(dateISO, JAKARTA_TZ)
-    .hour(hour)
-    .minute(0)
-    .second(0)
-    .millisecond(0)
+  const startAt = dayjs(dateISO).hour(hour).minute(0).second(0).millisecond(0)
   const next =
     hour + 1 === 24
-      ? dayjs.tz(dateISO, JAKARTA_TZ).add(1, 'day').hour(0)
-      : dayjs.tz(dateISO, JAKARTA_TZ).hour(hour + 1)
+      ? dayjs(dateISO).add(1, 'day').hour(0)
+      : dayjs(dateISO).hour(hour + 1)
   const endAt = next.minute(0).second(0).millisecond(0)
   return { startAt: startAt.toDate(), endAt: endAt.toDate() }
 }

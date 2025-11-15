@@ -234,6 +234,9 @@ export const getAvailableCourtSlotsHandler = factory.createHandlers(
       const query = c.req.valid('query') as AvailableCourtSlotsQuerySchema & {
         courtId?: string
       }
+      c.var.logger.info(
+        `AvailableCourtSlotsQuerySchema: ${JSON.stringify(query)}`,
+      )
 
       const where: any = {
         type: SlotType.COURT,
@@ -280,10 +283,10 @@ export const getAvailableCourtSlotsHandler = factory.createHandlers(
 
       const formattedSlots = slots.map((slot) => ({
         ...slot,
-        startAt: dayjs(slot.startAt).tz().format(DATETIME_FORMAT),
-        endAt: dayjs(slot.endAt).tz().format(DATETIME_FORMAT),
-        createdAt: dayjs(slot.createdAt).tz().format(DATETIME_FORMAT),
-        updatedAt: dayjs(slot.updatedAt).tz().format(DATETIME_FORMAT),
+        startAt: dayjs(slot.startAt).format(DATETIME_FORMAT),
+        endAt: dayjs(slot.endAt).format(DATETIME_FORMAT),
+        createdAt: dayjs(slot.createdAt).format(DATETIME_FORMAT),
+        updatedAt: dayjs(slot.updatedAt).format(DATETIME_FORMAT),
       }))
 
       return c.json(ok(formattedSlots), status.OK)

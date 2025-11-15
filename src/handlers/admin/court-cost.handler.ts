@@ -41,8 +41,10 @@ export const getCourtCostHandler = factory.createHandlers(
       })
 
       for (const item of items) {
-        item['startAt'] = dayjs(item.startAt).tz().format(DATETIME_FORMAT)
-        item['endAt'] = dayjs(item.endAt).tz().format(DATETIME_FORMAT)
+        item['startAt'] = dayjs(item.startAt)
+          .startOf('day')
+          .format(DATETIME_FORMAT)
+        item['endAt'] = dayjs(item.endAt).endOf('day').format(DATETIME_FORMAT)
       }
 
       return c.json(ok(items, 'Court cost endpoint is working'), status.OK)

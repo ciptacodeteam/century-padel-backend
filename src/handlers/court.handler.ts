@@ -1,3 +1,4 @@
+import { DATETIME_FORMAT } from '@/constants'
 import { NotFoundException } from '@/exceptions'
 import { validateHook } from '@/helpers/validate-hook'
 import { factory } from '@/lib/create-app'
@@ -5,36 +6,46 @@ import { db } from '@/lib/prisma'
 import buildFindManyOptions from '@/lib/query'
 import { ok } from '@/lib/response'
 import {
+  availableCourtSlotsQuerySchema,
+  AvailableCourtSlotsQuerySchema,
   idSchema,
   IdSchema,
   searchQuerySchema,
   SearchQuerySchema,
-  availableCourtSlotsQuerySchema,
-  AvailableCourtSlotsQuerySchema,
 } from '@/lib/validation'
-import { zValidator } from '@hono/zod-validator'
-import status from 'http-status'
 import { getFileUrl } from '@/services/upload.service'
+import { zValidator } from '@hono/zod-validator'
 import { SlotType } from '@prisma/client'
 import dayjs from 'dayjs'
-import { DATETIME_FORMAT } from '@/constants'
-import { JAKARTA_TZ } from '@/config'
+import status from 'http-status'
 import z from 'zod'
 
 export const getAllCourtHandler = factory.createHandlers(
-  zValidator('query', searchQuerySchema.extend({
-    startAt: z.string().refine((val) => dayjs(val).isValid(), {
-      message: 'Invalid datetime format for startAt',
-    }).optional(),
-    endAt: z.string().refine((val) => dayjs(val).isValid(), {
-      message: 'Invalid datetime format for endAt',
-    }).optional(),
-  }).refine(
-    (vals) =>
-      (!vals.startAt && !vals.endAt) ||
-      (vals.startAt !== undefined && vals.endAt !== undefined),
-    { message: 'Both startAt and endAt must be provided together' },
-  ), validateHook),
+  zValidator(
+    'query',
+    searchQuerySchema
+      .extend({
+        startAt: z
+          .string()
+          .refine((val) => dayjs(val).isValid(), {
+            message: 'Invalid datetime format for startAt',
+          })
+          .optional(),
+        endAt: z
+          .string()
+          .refine((val) => dayjs(val).isValid(), {
+            message: 'Invalid datetime format for endAt',
+          })
+          .optional(),
+      })
+      .refine(
+        (vals) =>
+          (!vals.startAt && !vals.endAt) ||
+          (vals.startAt !== undefined && vals.endAt !== undefined),
+        { message: 'Both startAt and endAt must be provided together' },
+      ),
+    validateHook,
+  ),
   async (c) => {
     try {
       const query = c.req.valid('query') as SearchQuerySchema & {
@@ -57,18 +68,18 @@ export const getAllCourtHandler = factory.createHandlers(
 
       // Add date range filter if provided
       if (query.startAt && query.endAt) {
-        const startAt = dayjs.tz(query.startAt, JAKARTA_TZ).toDate()
-        const endAt = dayjs.tz(query.endAt, JAKARTA_TZ).toDate()
-        
+        const startAt = dayjs(query.startAt).startOf('day').toDate()
+        const endAt = dayjs(query.endAt).endOf('day').toDate()
+
         slotWhere.AND = [
           {
             startAt: {
-              lt: endAt,
+              gte: startAt,
             },
           },
           {
-            endAt: {
-              gt: startAt,
+            startAt: {
+              lte: endAt,
             },
           },
         ]
@@ -160,11 +171,11 @@ export const getCourtSlotsHandler = factory.createHandlers(
 
       // Add date range filter if provided
       if (query.startAt && query.endAt) {
-        const startAt = dayjs.tz(query.startAt, JAKARTA_TZ).toDate()
-        const endAt = dayjs.tz(query.endAt, JAKARTA_TZ).toDate()
-        
-      //   // Find slots that overlap with the requested time range
-      //   // A slot overlaps if: slot.startAt < query.endAt AND slot.endAt > query.startAt
+        const startAt = dayjs(query.startAt).toDate()
+        const endAt = dayjs(query.endAt).toDate()
+
+        // Find slots that overlap with the requested time range
+        // A slot overlaps if: slot.startAt < query.endAt AND slot.endAt > query.startAt
         where.AND = [
           {
             startAt: {
@@ -190,10 +201,10 @@ export const getCourtSlotsHandler = factory.createHandlers(
       // Format datetime fields
       const formattedSlots = slots.map((slot) => ({
         ...slot,
-        startAt: slot.startAt,
-        endAt: slot.endAt,
-        createdAt: dayjs(slot.createdAt).tz().format(DATETIME_FORMAT),
-        updatedAt: dayjs(slot.updatedAt).tz().format(DATETIME_FORMAT),
+        startAt: dayjs(slot.startAt).format(DATETIME_FORMAT),
+        endAt: dayjs(slot.endAt).format(DATETIME_FORMAT),
+        createdAt: dayjs(slot.createdAt).format(DATETIME_FORMAT),
+        updatedAt: dayjs(slot.updatedAt).format(DATETIME_FORMAT),
       }))
       console.log(formattedSlots)
 
@@ -229,8 +240,8 @@ export const getAvailableCourtSlotsHandler = factory.createHandlers(
       }
 
       if (query.startAt && query.endAt) {
-        const startAt = dayjs.tz(query.startAt, JAKARTA_TZ).toDate()
-        const endAt = dayjs.tz(query.endAt, JAKARTA_TZ).toDate()
+        const startAt = dayjs(query.startAt).startOf('day').toDate()
+        const endAt = dayjs(query.endAt).endOf('day').toDate()
 
         where.AND = [
           {
@@ -265,10 +276,10 @@ export const getAvailableCourtSlotsHandler = factory.createHandlers(
 
       const formattedSlots = slots.map((slot) => ({
         ...slot,
-        startAt: dayjs(slot.startAt).tz().format(DATETIME_FORMAT),
-        endAt: dayjs(slot.endAt).tz().format(DATETIME_FORMAT),
-        createdAt: dayjs(slot.createdAt).tz().format(DATETIME_FORMAT),
-        updatedAt: dayjs(slot.updatedAt).tz().format(DATETIME_FORMAT),
+        startAt: dayjs(slot.startAt).format(DATETIME_FORMAT),
+        endAt: dayjs(slot.endAt).format(DATETIME_FORMAT),
+        createdAt: dayjs(slot.createdAt).format(DATETIME_FORMAT),
+        updatedAt: dayjs(slot.updatedAt).format(DATETIME_FORMAT),
       }))
 
       return c.json(ok(formattedSlots), status.OK)
