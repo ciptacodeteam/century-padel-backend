@@ -6,6 +6,7 @@ import {
   getBookingTransactionDetailHandler,
   rejectBookingTransactionHandler,
 } from '@/handlers/admin/booking.handler'
+import { cancelBookingHandler } from '@/handlers/admin/booked-court.handler'
 
 const adminBookingRoute = createRouter()
   .basePath('/bookings')
@@ -13,7 +14,7 @@ const adminBookingRoute = createRouter()
   .get('/export/excel', ...exportBookingTransactionsToExcelHandler)
   .get('/:id', ...getBookingTransactionDetailHandler)
   .put('/:id/approve', ...approveBookingTransactionHandler)
+  .put('/:id/cancel', ...cancelBookingHandler)
   .put('/:id/reject', ...rejectBookingTransactionHandler)
 
 export default adminBookingRoute
-
