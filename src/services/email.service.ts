@@ -102,6 +102,38 @@ export const emailTemplates = {
       </div>
     `,
   }),
+
+  paymentReceipt: (variables: Record<string, any>) => ({
+    subject: `Payment Receipt - ${variables.invoiceNumber}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin:0 auto;">
+        <h2 style="color:#2c3e50;">Payment Successful</h2>
+        <p>Hi ${variables.name},</p>
+        <p>Thank you for your payment. Your transaction has been processed successfully.</p>
+        <table style="width:100%; border-collapse:collapse; margin:20px 0;">
+          <tr>
+            <td style="padding:8px; border:1px solid #eee;">Invoice Number</td>
+            <td style="padding:8px; border:1px solid #eee; font-weight:600;">${variables.invoiceNumber}</td>
+          </tr>
+          <tr>
+            <td style="padding:8px; border:1px solid #eee;">Amount Paid</td>
+            <td style="padding:8px; border:1px solid #eee; font-weight:600;">Rp ${variables.total.toLocaleString('id-ID')}</td>
+          </tr>
+          <tr>
+            <td style="padding:8px; border:1px solid #eee;">Status</td>
+            <td style="padding:8px; border:1px solid #eee; font-weight:600;">PAID</td>
+          </tr>
+        </table>
+        <p>You can view the full invoice details in the app.</p>
+        <p style="margin:25px 0;">
+          <a href="${variables.invoiceUrl}" style="background:#16a34a; color:#fff; padding:12px 20px; text-decoration:none; border-radius:4px;">View Invoice</a>
+        </p>
+        <p style="font-size:12px; color:#666;">If you have questions reply to this email.</p>
+        <hr style="margin-top:30px; border:none; border-top:1px solid #ddd;" />
+        <p style="color:#999; font-size:11px; text-align:center;">Quantum Sport © 2025. All rights reserved.</p>
+      </div>
+    `,
+  }),
 }
 
 /**

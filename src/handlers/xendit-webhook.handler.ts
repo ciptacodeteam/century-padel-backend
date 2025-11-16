@@ -2,7 +2,15 @@ import { factory } from '@/lib/create-app'
 import { db } from '@/lib/prisma'
 import { ok } from '@/lib/response'
 import { XenditPaymentWebhook, xenditService } from '@/services/xendit.service'
-import { BookingStatus, PaymentStatus } from '@prisma/client'
+import {
+  BookingStatus,
+  PaymentStatus,
+  NotificationAudience,
+  NotificationType,
+} from '@prisma/client'
+import { notificationService } from '@/services/notification.service'
+import { sendTemplatedEmail } from '@/services/email.service'
+import { env } from '@/env'
 
 interface XenditWebhookPayload {
   id: string
@@ -92,7 +100,10 @@ async function handlePaymentWebhookV3(c: any, webhook: XenditPaymentWebhook) {
     },
     include: {
       booking: true,
+      classBooking: true,
+      membershipUser: true,
       payment: true,
+      user: true,
     },
   })
 
@@ -103,7 +114,7 @@ async function handlePaymentWebhookV3(c: any, webhook: XenditPaymentWebhook) {
 
   // Determine payment status based on event
   const paymentStatus =
-    event === 'payment.capture' ? PaymentStatus.PAID : PaymentStatus.FAILED
+    event === 'payment.capture' ? PaymentStatus.PAID : PaymentStatus.CANCELLED
 
   const paidAt =
     event === 'payment.capture'
@@ -227,6 +238,61 @@ async function handlePaymentWebhookV3(c: any, webhook: XenditPaymentWebhook) {
     }
   }
 
+  // Notifications & Email (v3 payment)
+  try {
+    if (event === 'payment.capture') {
+      await notificationService.createPaymentSuccessNotifications({
+        invoiceId: invoice.id,
+        invoiceNumber: invoice.number,
+        userId: invoice.userId,
+        total: invoice.total,
+        paymentStatus: PaymentStatus.PAID,
+        bookingId: invoice.bookingId || undefined,
+        membershipUserId: invoice.membershipUserId || undefined,
+        classBookingId: invoice.classBookingId || undefined,
+      })
+      if (invoice.membershipUserId) {
+        await notificationService.create({
+          userId: invoice.userId,
+          audience: NotificationAudience.USER,
+          type: NotificationType.MEMBERSHIP_ACTIVATED,
+          title: 'Membership Activated',
+          message: 'Your membership is now active.',
+          data: {
+            membershipUserId: invoice.membershipUserId,
+            invoiceId: invoice.id,
+          },
+        })
+      }
+      if (invoice.user?.email) {
+        const invoiceUrl = `${env.frontEndUrl}/invoices/${invoice.id}`
+        try {
+          await sendTemplatedEmail(invoice.user.email, 'paymentReceipt', {
+            name: invoice.user.name || 'User',
+            invoiceNumber: invoice.number,
+            total: invoice.total,
+            invoiceUrl,
+          })
+        } catch (emailErr) {
+          c.var.logger.error(
+            `Failed sending payment receipt email: ${emailErr}`,
+          )
+        }
+      }
+    } else if (event === 'payment.failure') {
+      await notificationService.create({
+        userId: invoice.userId,
+        audience: NotificationAudience.USER,
+        type: NotificationType.PAYMENT_FAILED,
+        title: 'Payment Failed',
+        message: `Payment for invoice ${invoice.number} failed.`,
+        data: { invoiceId: invoice.id, invoiceNumber: invoice.number },
+      })
+    }
+  } catch (notifyErr) {
+    c.var.logger.error(`Notification/email processing error: ${notifyErr}`)
+  }
+
   return c.json(ok(null, 'Webhook processed successfully'))
 }
 
@@ -249,7 +315,10 @@ async function handleInvoiceWebhookV2(c: any, payload: XenditWebhookPayload) {
     },
     include: {
       booking: true,
+      classBooking: true,
+      membershipUser: true,
       payment: true,
+      user: true,
     },
   })
 
@@ -380,6 +449,61 @@ async function handleInvoiceWebhookV2(c: any, payload: XenditWebhookPayload) {
         )
       }
     }
+  }
+
+  // Notifications & Email (v2 invoice)
+  try {
+    if (payload.status === 'PAID') {
+      await notificationService.createPaymentSuccessNotifications({
+        invoiceId: invoice.id,
+        invoiceNumber: invoice.number,
+        userId: invoice.userId,
+        total: invoice.total,
+        paymentStatus: PaymentStatus.PAID,
+        bookingId: invoice.bookingId || undefined,
+        membershipUserId: invoice.membershipUserId || undefined,
+        classBookingId: invoice.classBookingId || undefined,
+      })
+      if (invoice.membershipUserId) {
+        await notificationService.create({
+          userId: invoice.userId,
+          audience: NotificationAudience.USER,
+          type: NotificationType.MEMBERSHIP_ACTIVATED,
+          title: 'Membership Activated',
+          message: 'Your membership is now active.',
+          data: {
+            membershipUserId: invoice.membershipUserId,
+            invoiceId: invoice.id,
+          },
+        })
+      }
+      if (invoice.user?.email) {
+        const invoiceUrl = `${env.frontEndUrl}/invoices/${invoice.id}`
+        try {
+          await sendTemplatedEmail(invoice.user.email, 'paymentReceipt', {
+            name: invoice.user.name || 'User',
+            invoiceNumber: invoice.number,
+            total: invoice.total,
+            invoiceUrl,
+          })
+        } catch (emailErr) {
+          c.var.logger.error(
+            `Failed sending payment receipt email: ${emailErr}`,
+          )
+        }
+      }
+    } else if (payload.status === 'EXPIRED') {
+      await notificationService.create({
+        userId: invoice.userId,
+        audience: NotificationAudience.USER,
+        type: NotificationType.PAYMENT_FAILED,
+        title: 'Payment Expired',
+        message: `Payment for invoice ${invoice.number} expired.`,
+        data: { invoiceId: invoice.id, invoiceNumber: invoice.number },
+      })
+    }
+  } catch (notifyErr) {
+    c.var.logger.error(`Notification/email processing error (v2): ${notifyErr}`)
   }
 
   return c.json(ok(null, 'Webhook processed successfully'))
@@ -538,6 +662,7 @@ export const xenditPaymentRequestWebhookHandler = factory.createHandlers(
           booking: true,
           classBooking: true,
           membershipUser: true,
+          user: true,
         },
       })
 
@@ -553,7 +678,7 @@ export const xenditPaymentRequestWebhookHandler = factory.createHandlers(
           paymentStatus = PaymentStatus.PAID
           break
         case 'FAILED':
-          paymentStatus = PaymentStatus.FAILED
+          paymentStatus = PaymentStatus.CANCELLED
           break
         case 'EXPIRED':
           paymentStatus = PaymentStatus.EXPIRED
@@ -666,6 +791,69 @@ export const xenditPaymentRequestWebhookHandler = factory.createHandlers(
           })
           c.var.logger.warn(`Membership suspended: ${invoice.membershipUserId}`)
         }
+      }
+
+      // Notifications & Email (payment request)
+      try {
+        if (payload.data.status === 'COMPLETED') {
+          await notificationService.createPaymentSuccessNotifications({
+            invoiceId: invoice.id,
+            invoiceNumber: invoice.number,
+            userId: invoice.userId,
+            total: invoice.total,
+            paymentStatus: PaymentStatus.PAID,
+            bookingId: invoice.bookingId || undefined,
+            membershipUserId: invoice.membershipUserId || undefined,
+            classBookingId: invoice.classBookingId || undefined,
+          })
+          if (invoice.membershipUserId) {
+            await notificationService.create({
+              userId: invoice.userId,
+              audience: NotificationAudience.USER,
+              type: NotificationType.MEMBERSHIP_ACTIVATED,
+              title: 'Membership Activated',
+              message: 'Your membership is now active.',
+              data: {
+                membershipUserId: invoice.membershipUserId,
+                invoiceId: invoice.id,
+              },
+            })
+          }
+          if (invoice.user?.email) {
+            const invoiceUrl = `${env.frontEndUrl}/invoices/${invoice.id}`
+            try {
+              await sendTemplatedEmail(invoice.user.email, 'paymentReceipt', {
+                name: invoice.user.name || 'User',
+                invoiceNumber: invoice.number,
+                total: invoice.total,
+                invoiceUrl,
+              })
+            } catch (emailErr) {
+              c.var.logger.error(
+                `Failed sending payment receipt email: ${emailErr}`,
+              )
+            }
+          }
+        } else if (
+          payload.data.status === 'FAILED' ||
+          payload.data.status === 'EXPIRED'
+        ) {
+          await notificationService.create({
+            userId: invoice.userId,
+            audience: NotificationAudience.USER,
+            type: NotificationType.PAYMENT_FAILED,
+            title:
+              payload.data.status === 'FAILED'
+                ? 'Payment Failed'
+                : 'Payment Expired',
+            message: `Payment for invoice ${invoice.number} ${payload.data.status.toLowerCase()}.`,
+            data: { invoiceId: invoice.id, invoiceNumber: invoice.number },
+          })
+        }
+      } catch (notifyErr) {
+        c.var.logger.error(
+          `Notification/email processing error (payment request): ${notifyErr}`,
+        )
       }
 
       return c.json(ok(null, 'Payment request webhook processed'))

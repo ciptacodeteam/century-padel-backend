@@ -6,6 +6,7 @@ import { err, ok } from '@/lib/response'
 import { generateInvoiceNumber } from '@/lib/utils'
 import { checkoutSchema, CheckoutSchema } from '@/lib/validation'
 import { xenditService } from '@/services/xendit.service'
+import { notificationService } from '@/services/notification.service'
 import { zValidator } from '@hono/zod-validator'
 import { BookingStatus, PaymentStatus, SlotType } from '@prisma/client'
 import dayjs from 'dayjs'
@@ -496,6 +497,16 @@ export const checkoutHandler = factory.createHandlers(
           where: { id: invoice.id },
           data: { paymentId: payment.id },
         })
+
+        // Admin notification about new booking (non-blocking)
+        try {
+          await notificationService.createBookingAdminNotification(
+            booking.id,
+            invoice.number,
+          )
+        } catch (e) {
+          c.var.logger.warn(`Failed to create booking admin notification: ${e}`)
+        }
 
         // Set hold expiry (if payment method requires it)
         const holdExpiresAt =

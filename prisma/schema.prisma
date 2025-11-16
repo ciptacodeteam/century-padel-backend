@@ -65,6 +65,23 @@ enum ClubVisibility {
 }
 
 // ------------------------------
+// Notifications
+// ------------------------------
+enum NotificationAudience {
+  USER // visible only to a specific user (userId set)
+  ADMIN // visible to admins (global if userId null)
+  ALL // broadcast to all users (userId null)
+}
+
+enum NotificationType {
+  BOOKING_CREATED // booking initiated (admin/global)
+  PAYMENT_SUCCESS // payment captured (user + admin)
+  PAYMENT_FAILED // payment failure/expiry (user)
+  ADMIN_PUSH // manual push from admin
+  MEMBERSHIP_ACTIVATED // membership activated
+}
+
+// ------------------------------
 // Users & Auth
 // ------------------------------
 model User {
@@ -95,6 +112,7 @@ model User {
   clubJoinRequest     ClubJoinRequest[]
   invoice             Invoice[]
   passwordResetTokens PasswordResetToken[]
+  notifications       Notification[]
 
   @@map("user")
 }
@@ -692,4 +710,27 @@ model PasswordResetToken {
   @@index([userId])
   @@index([expiresAt])
   @@map("password_reset_tokens")
+}
+
+// ------------------------------
+// Notification Model
+// ------------------------------
+model Notification {
+  id        String               @id @default(cuid())
+  userId    String? // null for global/admin/all broadcast
+  audience  NotificationAudience @default(USER)
+  type      NotificationType     @default(ADMIN_PUSH)
+  title     String
+  message   String?
+  data      Json?
+  isRead    Boolean              @default(false)
+  readAt    DateTime?
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @default(now()) @updatedAt
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, audience, isRead])
+  @@index([type, createdAt])
+  @@map("notifications")
 }

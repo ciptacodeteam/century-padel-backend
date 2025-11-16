@@ -55,6 +55,8 @@ import tournamentRoute from './routes/tournament.route'
 import passwordResetRoute from './routes/password-reset.route'
 import clubRoute from './routes/club.route'
 import adminClubRoute from './routes/admin/club.route'
+import notificationRoute from './routes/notification.route'
+import adminNotificationRoute from './routes/admin/notification.route'
 
 dayjs.locale('id')
 dayjs.extend(utc)
@@ -83,6 +85,7 @@ const routes = [
   invoiceRoute,
   paymentMethodRoute,
   checkoutRoute,
+  notificationRoute,
   tournamentRoute,
   clubRoute,
   xenditWebhookRoute,
@@ -120,6 +123,7 @@ const adminRoutes = [
   adminUserRoute,
   adminCheckoutRoute,
   adminInvoiceRoute,
+  adminNotificationRoute,
 ]
 
 routes.forEach((route) => {
