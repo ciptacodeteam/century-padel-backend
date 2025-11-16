@@ -14,7 +14,7 @@ const ARGON2_OPTS: argon2.Options & { secret?: Buffer } = {
   parallelism: 1,
   hashLength: 32,
   // Optional pepper: keep it in an env var, rotate with care.
-  secret: env.PWD_PEPPER ? Buffer.from(env.PWD_PEPPER, 'utf8') : undefined,
+  secret: env.pwdPepper ? Buffer.from(env.pwdPepper, 'utf8') : undefined,
 }
 
 /**

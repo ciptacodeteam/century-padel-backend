@@ -32,8 +32,8 @@ export const env = {
   fazpassGatewayKey: process.env.FAZPASS_GATEWAY_KEY ?? '',
   fazpassMerchantKey: process.env.FAZPASS_MERCHANT_KEY ?? '',
   fazpassApiUrl: process.env.FAZPASS_API_URL ?? 'https://api.fazpass.com/v1',
-  PWD_PEPPER: process.env.PWD_PEPPER ?? undefined,
-  BLOB_READ_WRITE_TOKEN: process.env.BLOB_READ_WRITE_TOKEN ?? undefined,
+  pwdPepper: process.env.PWD_PEPPER ?? undefined,
+  blobToken: process.env.BLOB_READ_WRITE_TOKEN ?? undefined,
   smtp: {
     host: process.env.SMTP_HOST ?? 'smtp.mailtrap.io',
     port: parseInt(process.env.SMTP_PORT ?? '2525'),

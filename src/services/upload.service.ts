@@ -95,14 +95,14 @@ export async function uploadFile(
       : sniffMime || 'application/octet-stream'
 
   // Upload to Vercel Blob Storage
-  if (!env.BLOB_READ_WRITE_TOKEN) {
+  if (!env.blobToken) {
     throw new Error('BLOB_READ_WRITE_TOKEN is required for file uploads')
   }
 
   try {
     const blob = await put(relativePath, outBuf, {
       access: 'public',
-      token: env.BLOB_READ_WRITE_TOKEN,
+      token: env.blobToken,
       contentType: finalMime,
       addRandomSuffix: false,
     })
@@ -142,14 +142,14 @@ export async function deleteFile(fileUrl: string): Promise<boolean> {
     return false
   }
 
-  if (!env.BLOB_READ_WRITE_TOKEN) {
+  if (!env.blobToken) {
     log.error('BLOB_READ_WRITE_TOKEN is required to delete files')
     return false
   }
 
   try {
     await del(fileUrl, {
-      token: env.BLOB_READ_WRITE_TOKEN,
+      token: env.blobToken,
     })
     log.info(`Successfully deleted file: ${fileUrl}`)
     return true
@@ -177,9 +177,11 @@ export async function getFileUrl(relativePath: string | null): Promise<string> {
     : `/${relativePath}`
 
   // If no cached URL yet, try to get it from env variable
-  const envBlobUrl = process.env.BLOB_STORE_URL
-  if (envBlobUrl || blobBaseUrl) {
-    return `${envBlobUrl}${cleanPath}`
+  const envBlobUrl = env.blobToken
+  if (envBlobUrl) {
+    const token = envBlobUrl.split('_')[3]
+    const baseUrl = `${token}.public.blob.vercel-storage.com⁠`
+    return `https://${baseUrl.toLowerCase()}${cleanPath}`
   }
 
   // Fallback: return the path as-is
