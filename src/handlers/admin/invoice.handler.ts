@@ -1,0 +1,232 @@
+import { NotFoundException } from '@/exceptions'
+import { validateHook } from '@/helpers/validate-hook'
+import { factory } from '@/lib/create-app'
+import { db } from '@/lib/prisma'
+import buildFindManyOptions from '@/lib/query'
+import { ok } from '@/lib/response'
+import { SearchQuerySchema, searchQuerySchema } from '@/lib/validation'
+import { zValidator } from '@hono/zod-validator'
+import status from 'http-status'
+import dayjs from 'dayjs'
+import { z } from 'zod'
+
+const idSchema = z.object({ id: z.string() })
+type IdSchema = z.infer<typeof idSchema>
+
+export const getAllInvoicesAdminHandler = factory.createHandlers(
+  zValidator('query', searchQuerySchema, validateHook),
+  async (c) => {
+    const query = c.req.valid('query') as SearchQuerySchema
+    const queryOptions = buildFindManyOptions(query, {
+      defaultOrderBy: { issuedAt: 'desc' },
+      searchableFields: ['number'],
+    })
+
+    const invoices = await db.invoice.findMany({
+      ...queryOptions,
+      include: {
+        user: {
+          select: { id: true, name: true, email: true, phone: true },
+        },
+        payment: {
+          select: {
+            id: true,
+            status: true,
+            amount: true,
+            fees: true,
+            dueDate: true,
+            paidAt: true,
+          },
+        },
+        booking: {
+          select: { id: true, status: true, totalPrice: true },
+        },
+        classBooking: {
+          select: { id: true, status: true, totalPrice: true },
+        },
+        membershipUser: {
+          select: { id: true },
+        },
+      },
+    })
+
+    const data = invoices.map((inv) => {
+      const type = inv.bookingId
+        ? 'BOOKING'
+        : inv.classBookingId
+          ? 'CLASS_BOOKING'
+          : inv.membershipUserId
+            ? 'MEMBERSHIP'
+            : 'UNKNOWN'
+      return {
+        id: inv.id,
+        number: inv.number,
+        type,
+        user: inv.user,
+        subtotal: inv.subtotal,
+        processingFee: inv.processingFee,
+        total: inv.total,
+        status: inv.status,
+        issuedAt: inv.issuedAt,
+        dueDate: inv.dueDate,
+        paidAt: inv.paidAt,
+        paymentStatus: inv.payment?.status ?? inv.status,
+        paymentId: inv.payment?.id ?? null,
+        related: {
+          bookingId: inv.booking?.id ?? null,
+          classBookingId: inv.classBooking?.id ?? null,
+          membershipUserId: inv.membershipUser?.id ?? null,
+        },
+      }
+    })
+
+    return c.json(ok(data), status.OK)
+  },
+)
+
+export const getInvoiceDetailAdminHandler = factory.createHandlers(
+  zValidator('param', idSchema, validateHook),
+  async (c) => {
+    const { id } = c.req.valid('param') as IdSchema
+
+    const invoice = await db.invoice.findUnique({
+      where: { id },
+      include: {
+        user: {
+          select: { id: true, name: true, email: true, phone: true, image: true },
+        },
+        payment: true,
+        booking: {
+          include: {
+            user: {
+              select: { id: true, name: true, email: true, phone: true },
+            },
+            details: {
+              include: {
+                court: { select: { id: true, name: true, image: true } },
+                slot: true,
+              },
+            },
+            coaches: {
+              include: {
+                slot: {
+                  include: {
+                    staff: { select: { id: true, name: true, phone: true } },
+                  },
+                },
+                bookingCoachType: true,
+              },
+            },
+            ballboys: {
+              include: {
+                slot: {
+                  include: {
+                    staff: { select: { id: true, name: true, phone: true } },
+                  },
+                },
+              },
+            },
+            inventories: {
+              include: {
+                inventory: { select: { id: true, name: true, price: true } },
+              },
+            },
+          },
+        },
+        classBooking: {
+          include: {
+            user: { select: { id: true, name: true, email: true, phone: true } },
+            class: true,
+            details: true,
+          },
+        },
+        membershipUser: {
+          include: {
+            user: { select: { id: true, name: true, email: true, phone: true } },
+            membership: true,
+          },
+        },
+      },
+    })
+
+    if (!invoice) {
+      throw new NotFoundException('Invoice not found')
+    }
+
+    const type = invoice.bookingId
+      ? 'BOOKING'
+      : invoice.classBookingId
+        ? 'CLASS_BOOKING'
+        : invoice.membershipUserId
+          ? 'MEMBERSHIP'
+          : 'UNKNOWN'
+
+    const response = {
+      id: invoice.id,
+      number: invoice.number,
+      type,
+      user: invoice.user,
+      subtotal: invoice.subtotal,
+      processingFee: invoice.processingFee,
+      total: invoice.total,
+      status: invoice.status,
+      issuedAt: invoice.issuedAt,
+      dueDate: invoice.dueDate,
+      paidAt: invoice.paidAt,
+      cancelledAt: invoice.cancelledAt,
+      payment: invoice.payment,
+      booking:
+        invoice.booking &&
+        {
+          ...invoice.booking,
+          courts: invoice.booking.details.map((d) => ({
+            court: d.court,
+            slot: {
+              ...d.slot,
+              date: dayjs(d.slot.startAt).format('YYYY-MM-DD'),
+              startTime: dayjs(d.slot.startAt).format('HH:mm'),
+              endTime: dayjs(d.slot.endAt).format('HH:mm'),
+            },
+            price: d.price,
+          })),
+          coaches: invoice.booking.coaches.map((c) => ({
+            staff: c.slot.staff,
+            coachType: c.bookingCoachType,
+            slot: {
+              ...c.slot,
+              date: dayjs(c.slot.startAt).format('YYYY-MM-DD'),
+              startTime: dayjs(c.slot.startAt).format('HH:mm'),
+              endTime: dayjs(c.slot.endAt).format('HH:mm'),
+            },
+            price: c.price,
+          })),
+          ballboys: invoice.booking.ballboys.map((b) => ({
+            staff: b.slot.staff,
+            slot: {
+              ...b.slot,
+              date: dayjs(b.slot.startAt).format('YYYY-MM-DD'),
+              startTime: dayjs(b.slot.startAt).format('HH:mm'),
+              endTime: dayjs(b.slot.endAt).format('HH:mm'),
+            },
+            price: b.price,
+          })),
+          inventories: invoice.booking.inventories.map((i) => ({
+            inventory: i.inventory,
+            quantity: i.quantity,
+            price: i.price,
+          })),
+        },
+      classBooking: invoice.classBooking,
+      membership: invoice.membershipUser
+        ? {
+            ...invoice.membershipUser,
+            // keep structure explicit for readability on client side
+          }
+        : null,
+    }
+
+    return c.json(ok(response), status.OK)
+  },
+)
+
+
