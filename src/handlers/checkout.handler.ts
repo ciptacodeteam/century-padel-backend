@@ -3,6 +3,7 @@ import { validateHook } from '@/helpers/validate-hook'
 import { factory } from '@/lib/create-app'
 import { db } from '@/lib/prisma'
 import { err, ok } from '@/lib/response'
+import { generateInvoiceNumber } from '@/lib/utils'
 import { checkoutSchema, CheckoutSchema } from '@/lib/validation'
 import { xenditService } from '@/services/xendit.service'
 import { zValidator } from '@hono/zod-validator'
@@ -317,7 +318,7 @@ export const checkoutHandler = factory.createHandlers(
         // (User details fetched later per-channel when needed)
 
         // Generate invoice number
-        const invoiceNumber = `INV-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`
+        const invoiceNumber = generateInvoiceNumber()
 
         // Create invoice
         const invoice = await tx.invoice.create({

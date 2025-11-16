@@ -3,6 +3,7 @@ import { validateHook } from '@/helpers/validate-hook'
 import { factory } from '@/lib/create-app'
 import { db } from '@/lib/prisma'
 import { ok } from '@/lib/response'
+import { generateInvoiceNumber } from '@/lib/utils'
 import { xenditService } from '@/services/xendit.service'
 import { zValidator } from '@hono/zod-validator'
 import { PaymentStatus } from '@prisma/client'
@@ -65,7 +66,7 @@ export const membershipCheckoutHandler = factory.createHandlers(
         const finalTotal = subtotal + processingFee
 
         // Generate invoice number
-        const invoiceNumber = `INV-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`
+        const invoiceNumber = generateInvoiceNumber()
 
         // Create MembershipUser record
         const startDate = dayjs().toDate()
