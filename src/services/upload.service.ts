@@ -7,7 +7,7 @@ import { env } from '@/env'
 import { sniffImageMime } from '@/helpers/sniff-mime'
 import { toWebp } from '@/lib/image'
 import { log } from '@/lib/logger'
-import { put, del } from '@vercel/blob'
+import { del, put } from '@vercel/blob'
 import { extension as extFromMime } from 'mime-types'
 import path from 'node:path'
 import { buildFilename } from '../lib/filename'
@@ -44,7 +44,7 @@ export async function uploadFile(
     .replace(/\.\./g, '')
   const allowNonImages = opts.allowNonImages ?? false
   const forceWebpForImages = opts.forceWebpForImages ?? true
-  const replaceExisting = opts.replaceExisting ?? true
+  // const replaceExisting = opts.replaceExisting ?? true
 
   // Read into memory (consider streaming for huge files)
   if (file.size > MAX_FILE_SIZE_BYTES) {
@@ -172,21 +172,18 @@ export async function getFileUrl(relativePath: string | null): Promise<string> {
     return relativePath
   }
 
-  // Construct Vercel Blob URL from cached base URL
-  if (blobBaseUrl) {
-    const cleanPath = relativePath.startsWith('/') ? relativePath : `/${relativePath}`
-    return `${blobBaseUrl}${cleanPath}`
-  }
+  const cleanPath = relativePath.startsWith('/')
+    ? relativePath
+    : `/${relativePath}`
 
   // If no cached URL yet, try to get it from env variable
   const envBlobUrl = process.env.BLOB_STORE_URL
-  if (envBlobUrl) {
-    const cleanPath = relativePath.startsWith('/') ? relativePath : `/${relativePath}`
+  if (envBlobUrl || blobBaseUrl) {
     return `${envBlobUrl}${cleanPath}`
   }
 
   // Fallback: return the path as-is
   // This will happen on the first request before any upload
   log.warn(`No blob base URL available yet for path: ${relativePath}`)
-  return relativePath
+  return `${env.baseUrl}/storage${cleanPath}`
 }
