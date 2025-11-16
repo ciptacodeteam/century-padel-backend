@@ -3,34 +3,48 @@ import { validateHook } from '@/helpers/validate-hook'
 import { factory } from '@/lib/create-app'
 import { db } from '@/lib/prisma'
 import { ok } from '@/lib/response'
-import { generateInvoiceNumber } from '@/lib/utils'
+import { generateInvoiceNumber, formatPhone } from '@/lib/utils'
 import { zValidator } from '@hono/zod-validator'
 import { BookingStatus, PaymentStatus, SlotType } from '@prisma/client'
 import dayjs from 'dayjs'
 import status from 'http-status'
 import { z } from 'zod'
+import { hashPassword } from '@/lib/password'
 
-const adminCheckoutSchema = z.object({
-  userId: z.string(),
-  courtSlots: z.array(z.string()).optional(),
-  coachSlots: z.array(z.string()).optional(),
-  ballboySlots: z.array(z.string()).optional(),
-  inventories: z
-    .array(
-      z.object({
-        inventoryId: z.string(),
-        quantity: z.number().int().positive(),
-      }),
-    )
-    .optional(),
-})
+const adminCheckoutSchema = z
+  .object({
+    userId: z.string().optional(),
+    name: z.string().min(1).optional(),
+    phone: z.string().min(5).optional(),
+    courtSlots: z.array(z.string()).optional(),
+    coachSlots: z.array(z.string()).optional(),
+    ballboySlots: z.array(z.string()).optional(),
+    inventories: z
+      .array(
+        z.object({
+          inventoryId: z.string(),
+          quantity: z.number().int().positive(),
+        }),
+      )
+      .optional(),
+  })
+  .refine(
+    (data) => {
+      // Must provide either userId or (name and phone)
+      return !!data.userId || (!!data.name && !!data.phone)
+    },
+    {
+      message: 'Provide either userId or both name and phone for a new customer',
+      path: ['userId'],
+    },
+  )
 
 type AdminCheckoutSchema = z.infer<typeof adminCheckoutSchema>
 
 export const adminCheckoutHandler = factory.createHandlers(
   zValidator('json', adminCheckoutSchema, validateHook),
   async (c) => {
-    const { userId, courtSlots, coachSlots, ballboySlots, inventories } =
+    const { userId: inputUserId, name, phone, courtSlots, coachSlots, ballboySlots, inventories } =
       c.req.valid('json') as AdminCheckoutSchema
 
     // Ensure at least one item is provided
@@ -52,19 +66,45 @@ export const adminCheckoutHandler = factory.createHandlers(
 
     try {
       const result = await db.$transaction(async (tx) => {
-        // Validate user exists
-        const user = await tx.user.findUnique({
-          where: { id: userId },
-          select: { id: true },
-        })
-        if (!user) {
-          throw new NotFoundException('User not found')
+        // Resolve or create user
+        let resolvedUserId = inputUserId
+        if (!resolvedUserId) {
+          const formattedPhone = await formatPhone(phone!)
+          // Try find by phone
+          const existingByPhone = await tx.user.findUnique({
+            where: { phone: formattedPhone },
+            select: { id: true },
+          })
+          if (existingByPhone) {
+            resolvedUserId = existingByPhone.id
+          } else {
+            // Create new user with password set to phone number
+            const hashed = await hashPassword(formattedPhone)
+            const created = await tx.user.create({
+              data: {
+                name: name!,
+                phone: formattedPhone,
+                password: hashed,
+              },
+              select: { id: true },
+            })
+            resolvedUserId = created.id
+          }
+        } else {
+          // Validate provided userId exists
+          const user = await tx.user.findUnique({
+            where: { id: resolvedUserId },
+            select: { id: true },
+          })
+          if (!user) {
+            throw new NotFoundException('User not found')
+          }
         }
 
         // Create booking in CONFIRMED state (admin bypasses payment)
         const booking = await tx.booking.create({
           data: {
-            userId: userId,
+            userId: resolvedUserId!,
             status: BookingStatus.CONFIRMED,
             totalPrice: 0,
             processingFee: 0,
@@ -239,7 +279,7 @@ export const adminCheckoutHandler = factory.createHandlers(
         const invoiceNumber = generateInvoiceNumber()
         const invoice = await tx.invoice.create({
           data: {
-            userId: userId,
+            userId: resolvedUserId!,
             bookingId: booking.id,
             number: invoiceNumber,
             subtotal: totalPrice,
