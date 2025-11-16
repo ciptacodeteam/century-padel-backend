@@ -19,6 +19,7 @@
     "db:truncate": "tsx prisma/truncate.ts",
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
+    "db:resolve-failed": "tsx prisma/resolve-failed-migration.ts",
     "postinstall": "prisma generate",
     "typecheck": "tsc --noEmit",
     "vercel:deploy": "vercel",

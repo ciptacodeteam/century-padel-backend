@@ -14,7 +14,32 @@ The migration was attempting to alter `tournament_registrations.status` column b
 ### Fix Applied
 - Removed the unnecessary `ALTER TABLE "public"."tournament_registrations" ALTER COLUMN "status" DROP DEFAULT;` line from the migration
 
-## Recovery Steps
+## Quick Fix (Recommended)
+
+The easiest way to resolve this is to use the automated resolution script:
+
+```bash
+# Run the resolution script
+docker-compose -f docker-compose.prod.yml run --rm app bun run db:resolve-failed
+
+# Or if using bun directly
+bun run db:resolve-failed
+```
+
+This script will:
+1. Check the migration status
+2. Clean up any partial migration state
+3. Mark the failed migration as rolled back
+4. Check for DRAFT status records that need to be updated
+
+After running the script, you can re-run migrations:
+```bash
+docker-compose -f docker-compose.prod.yml run --rm app bunx prisma migrate deploy
+```
+
+## Manual Recovery Steps
+
+If you prefer to do it manually:
 
 ### Step 1: Check Migration Status
 
