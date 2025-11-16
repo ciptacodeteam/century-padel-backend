@@ -12,6 +12,7 @@ import adminAnalyticsRoute from './routes/admin/analytics.route'
 import adminAuthRoute from './routes/admin/auth.route'
 import adminBallboyCostRoute from './routes/admin/ballboy-cost.route'
 import adminBannerRoute from './routes/admin/banner.route'
+import adminPartnershipRoute from './routes/admin/partnership.route'
 import adminBookedCourtRoute from './routes/admin/booked-court.route'
 import adminBookedCoachRoute from './routes/admin/booked-coach.route'
 import adminBookedBallboyRoute from './routes/admin/booked-ballboy.route'
@@ -38,6 +39,7 @@ import adminCheckoutRoute from './routes/admin/checkout.route'
 import adminInvoiceRoute from './routes/admin/invoice.route'
 import authRoute from './routes/auth.route'
 import bannerRoute from './routes/banner.route'
+import partnershipRoute from './routes/partnership.route'
 import checkoutRoute from './routes/checkout.route'
 import classRoute from './routes/class.route'
 import courtRoute from './routes/court.route'
@@ -77,6 +79,7 @@ const routes = [
   phoneVerificationRoute,
   authRoute,
   bannerRoute,
+  partnershipRoute,
   courtRoute,
   classRoute,
   membershipRoute,
@@ -110,6 +113,7 @@ const adminRoutes = [
   adminStaffCostRoute,
   adminCoachTypeRoute,
   adminBannerRoute,
+  adminPartnershipRoute,
   adminBookingRoute,
   adminBookedCourtRoute,
   adminBookedCoachRoute,

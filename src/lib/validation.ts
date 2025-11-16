@@ -314,6 +314,20 @@ export const updateBannerSchema = createBannerSchema.partial()
 
 export type UpdateBannerSchema = z.infer<typeof updateBannerSchema>
 
+// Partnership Schemas
+export const createPartnershipSchema = z.object({
+  name: z.string().min(2).max(120),
+  description: z.string().max(1000).optional(),
+  logo: z.file().optional(),
+  isActive: z.coerce.boolean().optional(),
+})
+
+export type CreatePartnershipSchema = z.infer<typeof createPartnershipSchema>
+
+export const updatePartnershipSchema = createPartnershipSchema.partial()
+
+export type UpdatePartnershipSchema = z.infer<typeof updatePartnershipSchema>
+
 // Class schema
 export const createClassSchema = z.object({
   name: z.string().min(3).max(100),

@@ -186,6 +186,19 @@ model Banner {
   @@map("banners")
 }
 
+model Partnership {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  logo        String
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+
+  @@unique([name])
+  @@map("partnerships")
+}
+
 model Court {
   id          String   @id @default(cuid())
   name        String
