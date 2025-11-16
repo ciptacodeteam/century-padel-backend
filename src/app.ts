@@ -21,6 +21,7 @@ import adminClassRoute from './routes/admin/class.route'
 import adminClassBookingRoute from './routes/admin/class-booking.route'
 import adminCoachCostRoute from './routes/admin/coach-cost.route'
 import adminCoachRoute from './routes/admin/coach.route'
+import adminCoachScheduleRoute from './routes/admin/coach-schedule.route'
 import adminCoachTypeRoute from './routes/admin/coach-type.route'
 import adminCourtCostRoute from './routes/admin/court-cost.route'
 import adminCourtRoute from './routes/admin/court.route'
@@ -105,6 +106,7 @@ const adminRoutes = [
   adminBallboyCostRoute,
   adminCoachCostRoute,
   adminCoachRoute,
+  adminCoachScheduleRoute,
   adminStaffCostRoute,
   adminCoachTypeRoute,
   adminBannerRoute,

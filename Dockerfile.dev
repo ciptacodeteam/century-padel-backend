@@ -19,12 +19,10 @@ RUN bun install
 
 # Copy config files
 COPY tsconfig.json ./
-COPY prettier.config.js eslint.config.js ./
 
 # Copy source code and entry point
 COPY src ./src
 COPY serve.ts ./
-COPY index.ts ./
 
 # Expose ports (app + prisma studio)
 EXPOSE 3000 5555
