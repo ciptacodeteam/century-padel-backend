@@ -657,7 +657,7 @@ model Tournament {
   id          String   @id @default(cuid())
   name        String
   description String?
-  rules       String?
+  rules       Json?
   rulesHtml   String?
   image       String?
   startDate   DateTime @db.Date

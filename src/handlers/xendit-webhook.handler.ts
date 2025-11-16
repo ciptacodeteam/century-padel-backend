@@ -79,9 +79,17 @@ async function handlePaymentWebhookV3(c: any, webhook: XenditPaymentWebhook) {
     `Processing v3 payment webhook: ${event} for reference_id: ${data.reference_id}`,
   )
 
-  // Find the invoice by reference_id (which is our invoice ID)
-  const invoice = await db.invoice.findUnique({
-    where: { id: data.reference_id },
+  // Reference id should point to our invoice identifier (id or number)
+  if (!data.reference_id) {
+    c.var.logger.error('Missing reference_id in v3 payment webhook payload')
+    return c.json({ error: 'Missing reference_id' }, 400)
+  }
+
+  // Find invoice by id or by number (supports either mapping)
+  const invoice = await db.invoice.findFirst({
+    where: {
+      OR: [{ id: data.reference_id }, { number: data.reference_id }],
+    },
     include: {
       booking: true,
       payment: true,
@@ -228,9 +236,17 @@ async function handleInvoiceWebhookV2(c: any, payload: XenditWebhookPayload) {
     `Processing v2 invoice webhook: ${payload.status} for ${payload.external_id}`,
   )
 
-  // Find the invoice by external_id (which is our invoice ID)
-  const invoice = await db.invoice.findUnique({
-    where: { id: payload.external_id },
+  // external_id should point to our invoice identifier (id or number)
+  if (!payload.external_id) {
+    c.var.logger.error('Missing external_id in v2 invoice webhook payload')
+    return c.json({ error: 'Missing external_id' }, 400)
+  }
+
+  // Find invoice by id or by number (supports either mapping)
+  const invoice = await db.invoice.findFirst({
+    where: {
+      OR: [{ id: payload.external_id }, { number: payload.external_id }],
+    },
     include: {
       booking: true,
       payment: true,
@@ -368,3 +384,331 @@ async function handleInvoiceWebhookV2(c: any, payload: XenditWebhookPayload) {
 
   return c.json(ok(null, 'Webhook processed successfully'))
 }
+
+// ==================== NEW V3 WEBHOOK HANDLERS ====================
+
+// Payment Token Webhook Types
+interface XenditPaymentTokenWebhook {
+  created: string
+  business_id: string
+  event: 'payment_token.activation' | 'payment_token.deactivation'
+  api_version: string
+  data: {
+    status: 'ACTIVE' | 'INACTIVE'
+    payment_token_id: string
+    reference_id: string
+    currency: string
+    country: string
+    created: string
+    updated: string
+    channel_code: string
+    channel_properties: any
+    token_details?: any
+  }
+}
+
+// Payment Request Webhook Types
+interface XenditPaymentRequestWebhook {
+  created: string
+  business_id: string
+  event:
+    | 'payment_request.created'
+    | 'payment_request.completed'
+    | 'payment_request.failed'
+    | 'payment_request.expired'
+  api_version: string
+  data: {
+    id: string
+    reference_id: string
+    status: 'PENDING' | 'COMPLETED' | 'FAILED' | 'EXPIRED'
+    amount: number
+    currency: string
+    country: string
+    payment_method: any
+    created: string
+    updated: string
+  }
+}
+
+// Payment Status Webhook Types (existing)
+interface XenditPaymentStatusWebhook {
+  created: string
+  business_id: string
+  event: 'payment.capture' | 'payment.failure'
+  api_version: string
+  data: {
+    id: string
+    reference_id: string
+    payment_request_id: string
+    status: 'SUCCEEDED' | 'FAILED'
+    amount: number
+    currency: string
+    channel_code: string
+    created: string
+    updated?: string
+    failure_code?: string
+  }
+}
+
+// Handler for Payment Token Status webhooks
+export const xenditPaymentTokenWebhookHandler = factory.createHandlers(
+  async (c) => {
+    try {
+      // Verify callback token
+      const callbackToken =
+        c.req.header('x-callback-token') || c.req.header('X-Callback-Token')
+
+      c.var.logger.info(
+        `Xendit Payment Token webhook received. Has token: ${!!callbackToken}`,
+      )
+
+      if (!callbackToken) {
+        c.var.logger.error('Missing x-callback-token header')
+        return c.json({ error: 'Missing callback token' }, 401)
+      }
+
+      if (!xenditService.verifyCallbackToken(callbackToken)) {
+        c.var.logger.error(`Invalid Xendit callback token`)
+        return c.json({ error: 'Invalid callback token' }, 401)
+      }
+
+      const payload: XenditPaymentTokenWebhook = await c.req.json()
+
+      c.var.logger.info(
+        `Payment Token webhook received: ${payload.event} for token: ${payload.data.payment_token_id}`,
+      )
+
+      // Log the payment token event
+      // In the future, you might want to store these tokens for recurring payments
+      c.var.logger.info(
+        `Payment Token ${payload.data.status}: ${payload.data.reference_id}`,
+      )
+
+      return c.json(ok(null, 'Payment token webhook processed'))
+    } catch (error) {
+      c.var.logger.fatal(`Error processing payment token webhook: ${error}`)
+      return c.json({ error: 'Webhook processing failed' }, 500)
+    }
+  },
+)
+
+// Handler for Payment Request Status webhooks
+export const xenditPaymentRequestWebhookHandler = factory.createHandlers(
+  async (c) => {
+    try {
+      // Verify callback token
+      const callbackToken =
+        c.req.header('x-callback-token') || c.req.header('X-Callback-Token')
+
+      c.var.logger.info(
+        `Xendit Payment Request webhook received. Has token: ${!!callbackToken}`,
+      )
+
+      if (!callbackToken) {
+        c.var.logger.error('Missing x-callback-token header')
+        return c.json({ error: 'Missing callback token' }, 401)
+      }
+
+      if (!xenditService.verifyCallbackToken(callbackToken)) {
+        c.var.logger.error(`Invalid Xendit callback token`)
+        return c.json({ error: 'Invalid callback token' }, 401)
+      }
+
+      const payload: XenditPaymentRequestWebhook = await c.req.json()
+
+      c.var.logger.info(
+        `Payment Request webhook received: ${payload.event} for reference: ${payload.data.reference_id}`,
+      )
+
+      // Find invoice by reference_id
+      if (!payload.data.reference_id) {
+        c.var.logger.error('Missing reference_id in payment request webhook')
+        return c.json({ error: 'Missing reference_id' }, 400)
+      }
+
+      const invoice = await db.invoice.findFirst({
+        where: {
+          OR: [
+            { id: payload.data.reference_id },
+            { number: payload.data.reference_id },
+          ],
+        },
+        include: {
+          payment: true,
+          booking: true,
+          classBooking: true,
+          membershipUser: true,
+        },
+      })
+
+      if (!invoice) {
+        c.var.logger.error(`Invoice not found: ${payload.data.reference_id}`)
+        return c.json({ error: 'Invoice not found' }, 404)
+      }
+
+      // Map payment request status to our payment status
+      let paymentStatus: PaymentStatus
+      switch (payload.data.status) {
+        case 'COMPLETED':
+          paymentStatus = PaymentStatus.PAID
+          break
+        case 'FAILED':
+          paymentStatus = PaymentStatus.FAILED
+          break
+        case 'EXPIRED':
+          paymentStatus = PaymentStatus.EXPIRED
+          break
+        default:
+          paymentStatus = PaymentStatus.PENDING
+      }
+
+      // Update invoice
+      await db.invoice.update({
+        where: { id: invoice.id },
+        data: {
+          status: paymentStatus,
+          paidAt:
+            payload.data.status === 'COMPLETED'
+              ? new Date(payload.data.updated)
+              : undefined,
+        },
+      })
+
+      // Update payment record
+      if (invoice.payment) {
+        await db.payment.update({
+          where: { id: invoice.payment.id },
+          data: {
+            status: paymentStatus,
+            paidAt:
+              payload.data.status === 'COMPLETED'
+                ? new Date(payload.data.updated)
+                : undefined,
+            meta: {
+              ...(typeof invoice.payment.meta === 'object'
+                ? invoice.payment.meta
+                : {}),
+              payment_request_id: payload.data.id,
+              payment_request_status: payload.data.status,
+              payment_request_event: payload.event,
+            },
+          },
+        })
+      }
+
+      // Handle business logic based on status
+      if (payload.data.status === 'COMPLETED') {
+        // Update booking status
+        if (invoice.bookingId) {
+          await db.booking.update({
+            where: { id: invoice.bookingId },
+            data: { status: BookingStatus.CONFIRMED },
+          })
+          c.var.logger.info(`Booking confirmed: ${invoice.bookingId}`)
+        }
+
+        // Update class booking status
+        if (invoice.classBookingId) {
+          await db.classBooking.update({
+            where: { id: invoice.classBookingId },
+            data: { status: BookingStatus.CONFIRMED },
+          })
+          c.var.logger.info(
+            `Class booking confirmed: ${invoice.classBookingId}`,
+          )
+        }
+
+        // Activate membership
+        if (invoice.membershipUserId) {
+          await db.membershipUser.update({
+            where: { id: invoice.membershipUserId },
+            data: {
+              isExpired: false,
+              isSuspended: false,
+              suspensionReason: null,
+              suspensionEndDate: null,
+            },
+          })
+          c.var.logger.info(`Membership activated: ${invoice.membershipUserId}`)
+        }
+      } else if (
+        payload.data.status === 'FAILED' ||
+        payload.data.status === 'EXPIRED'
+      ) {
+        // Cancel bookings
+        if (invoice.bookingId) {
+          await db.booking.update({
+            where: { id: invoice.bookingId },
+            data: { status: BookingStatus.CANCELLED },
+          })
+          c.var.logger.warn(`Booking cancelled: ${invoice.bookingId}`)
+        }
+
+        if (invoice.classBookingId) {
+          await db.classBooking.update({
+            where: { id: invoice.classBookingId },
+            data: { status: BookingStatus.CANCELLED },
+          })
+          c.var.logger.warn(
+            `Class booking cancelled: ${invoice.classBookingId}`,
+          )
+        }
+
+        // Suspend membership
+        if (invoice.membershipUserId) {
+          await db.membershipUser.update({
+            where: { id: invoice.membershipUserId },
+            data: {
+              isSuspended: true,
+              suspensionReason: `Payment ${payload.data.status.toLowerCase()}`,
+              suspensionEndDate: null,
+            },
+          })
+          c.var.logger.warn(`Membership suspended: ${invoice.membershipUserId}`)
+        }
+      }
+
+      return c.json(ok(null, 'Payment request webhook processed'))
+    } catch (error) {
+      c.var.logger.fatal(`Error processing payment request webhook: ${error}`)
+      return c.json({ error: 'Webhook processing failed' }, 500)
+    }
+  },
+)
+
+// Handler for Payment Status webhooks (renamed from existing)
+export const xenditPaymentStatusWebhookHandler = factory.createHandlers(
+  async (c) => {
+    try {
+      // Verify callback token
+      const callbackToken =
+        c.req.header('x-callback-token') || c.req.header('X-Callback-Token')
+
+      c.var.logger.info(
+        `Xendit Payment Status webhook received. Has token: ${!!callbackToken}`,
+      )
+
+      if (!callbackToken) {
+        c.var.logger.error('Missing x-callback-token header')
+        return c.json({ error: 'Missing callback token' }, 401)
+      }
+
+      if (!xenditService.verifyCallbackToken(callbackToken)) {
+        c.var.logger.error(`Invalid Xendit callback token`)
+        return c.json({ error: 'Invalid callback token' }, 401)
+      }
+
+      const payload: XenditPaymentStatusWebhook = await c.req.json()
+
+      c.var.logger.info(
+        `Payment Status webhook received: ${payload.event} for reference: ${payload.data.reference_id}`,
+      )
+
+      // Use the existing v3 payment handler
+      return await handlePaymentWebhookV3(c, payload as any)
+    } catch (error) {
+      c.var.logger.fatal(`Error processing payment status webhook: ${error}`)
+      return c.json({ error: 'Webhook processing failed' }, 500)
+    }
+  },
+)
