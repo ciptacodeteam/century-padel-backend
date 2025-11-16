@@ -6,6 +6,19 @@
 
 set -e
 
+# Prefer Docker Compose v2 (`docker compose`) with fallback to legacy `docker-compose`
+compose() {
+    if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+        docker compose "$@"
+    elif command -v docker-compose >/dev/null 2>&1; then
+        docker-compose "$@"
+    else
+        echo "Error: docker compose/docker-compose not found. Install Docker Engine and the compose plugin:"
+        echo "  sudo apt-get update && sudo apt-get install -y docker.io docker-compose-plugin"
+        exit 1
+    fi
+}
+
 echo "🚀 Starting Production Deployment..."
 
 # Colors for output
@@ -38,16 +51,16 @@ git pull origin main
 
 # Build and start containers
 echo -e "${GREEN}🏗️  Building Docker images...${NC}"
-docker-compose -f docker-compose.prod.yml build --no-cache
+compose -f docker-compose.prod.yml build --no-cache
 
 echo -e "${GREEN}🗄️  Running database migrations...${NC}"
-docker-compose -f docker-compose.prod.yml run --rm app bunx prisma migrate deploy
+compose -f docker-compose.prod.yml run --rm app bunx prisma migrate deploy
 
 echo -e "${GREEN}🌱 Generating Prisma Client...${NC}"
-docker-compose -f docker-compose.prod.yml run --rm app bunx prisma generate
+compose -f docker-compose.prod.yml run --rm app bunx prisma generate
 
 echo -e "${GREEN}🚀 Starting production containers...${NC}"
-docker-compose -f docker-compose.prod.yml up -d
+compose -f docker-compose.prod.yml up -d
 
 # Wait for services to be healthy
 echo -e "${GREEN}⏳ Waiting for services to be healthy...${NC}"
@@ -55,17 +68,17 @@ sleep 10
 
 # Check container status
 echo -e "${GREEN}📊 Container Status:${NC}"
-docker-compose -f docker-compose.prod.yml ps
+compose -f docker-compose.prod.yml ps
 
 # Check logs
 echo -e "${GREEN}📋 Recent logs:${NC}"
-docker-compose -f docker-compose.prod.yml logs --tail=50
+compose -f docker-compose.prod.yml logs --tail=50
 
 echo -e "${GREEN}✅ Deployment completed successfully!${NC}"
 echo -e "${GREEN}🌐 Application is running at: ${BASE_URL}${NC}"
 echo ""
 echo "Useful commands:"
-echo "  View logs:       docker-compose -f docker-compose.prod.yml logs -f"
-echo "  Stop services:   docker-compose -f docker-compose.prod.yml down"
-echo "  Restart service: docker-compose -f docker-compose.prod.yml restart app"
-echo "  Shell access:    docker-compose -f docker-compose.prod.yml exec app sh"
+echo "  View logs:       $(command -v docker >/dev/null 2>&1 && echo 'docker compose' || echo 'docker-compose') -f docker-compose.prod.yml logs -f"
+echo "  Stop services:   $(command -v docker >/null 2>&1 && docker compose version >/dev/null 2>&1 && echo 'docker compose' || echo 'docker-compose') -f docker-compose.prod.yml down"
+echo "  Restart service: $(command -v docker >/null 2>&1 && docker compose version >/dev/null 2>&1 && echo 'docker compose' || echo 'docker-compose') -f docker-compose.prod.yml restart app"
+echo "  Shell access:    $(command -v docker >/null 2>&1 && docker compose version >/dev/null 2>&1 && echo 'docker compose' || echo 'docker-compose') -f docker-compose.prod.yml exec app sh"
