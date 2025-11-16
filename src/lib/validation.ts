@@ -368,8 +368,9 @@ export type UpdateClubSchema = z.infer<typeof updateClubSchema>
 // Tournament schema
 export const createTournamentSchema = z.object({
   name: z.string().min(3).max(100),
-  description: z.string().min(3).max(500).optional(),
-  rules: z.string().min(3).max(2000).optional(),
+  description: z.string().max(500).optional(),
+  rules: z.string().optional(),
+  rulesHtml: z.string().optional(),
   image: z.file().optional(),
   startDate: z
     .string()

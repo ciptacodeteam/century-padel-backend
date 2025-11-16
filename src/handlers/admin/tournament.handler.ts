@@ -17,6 +17,7 @@ import {
 } from '@/lib/validation'
 import { deleteFile, getFileUrl, uploadFile } from '@/services/upload.service'
 import { zValidator } from '@hono/zod-validator'
+import dayjs from 'dayjs'
 import status from 'http-status'
 
 export const getAllTournamentHandler = factory.createHandlers(
@@ -94,9 +95,10 @@ export const createTournamentHandler = factory.createHandlers(
           name: tournamentData.name,
           description: tournamentData.description,
           rules: tournamentData.rules,
+          rulesHtml: tournamentData.rulesHtml,
           image: imageUrl,
-          startDate: new Date(tournamentData.startDate),
-          endDate: new Date(tournamentData.endDate),
+          startDate: dayjs(tournamentData.startDate).toDate(),
+          endDate: dayjs(tournamentData.endDate).toDate(),
           startTime: tournamentData.startTime,
           endTime: tournamentData.endTime,
           maxTeams: tournamentData.maxTeams,
@@ -121,7 +123,9 @@ export const updateTournamentHandler = factory.createHandlers(
   async (c) => {
     try {
       const { id } = c.req.valid('param') as IdSchema
-      const tournamentData = c.req.valid('form') as Partial<UpdateTournamentSchema>
+      const tournamentData = c.req.valid(
+        'form',
+      ) as Partial<UpdateTournamentSchema>
 
       const existingTournament = await db.tournament.findUnique({
         where: { id },
@@ -149,6 +153,7 @@ export const updateTournamentHandler = factory.createHandlers(
           name: tournamentData.name,
           description: tournamentData.description,
           rules: tournamentData.rules,
+          rulesHtml: tournamentData.rulesHtml,
           image: imageUrl,
           startDate: tournamentData.startDate
             ? new Date(tournamentData.startDate)
@@ -203,4 +208,3 @@ export const deleteTournamentHandler = factory.createHandlers(
     }
   },
 )
-

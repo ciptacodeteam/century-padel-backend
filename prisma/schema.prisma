@@ -658,6 +658,7 @@ model Tournament {
   name        String
   description String?
   rules       String?
+  rulesHtml   String?
   image       String?
   startDate   DateTime @db.Date
   endDate     DateTime @db.Date
