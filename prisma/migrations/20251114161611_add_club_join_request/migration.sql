@@ -10,7 +10,6 @@
 -- AlterEnum
 BEGIN;
 CREATE TYPE "BookingStatus_new" AS ENUM ('HOLD', 'CONFIRMED', 'CANCELLED');
-ALTER TABLE "public"."tournament_registrations" ALTER COLUMN "status" DROP DEFAULT;
 ALTER TABLE "public"."bookings" ALTER COLUMN "status" DROP DEFAULT;
 ALTER TABLE "public"."class_bookings" ALTER COLUMN "status" DROP DEFAULT;
 ALTER TABLE "bookings" ALTER COLUMN "status" TYPE "BookingStatus_new" USING ("status"::text::"BookingStatus_new");
