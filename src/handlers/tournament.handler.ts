@@ -15,7 +15,7 @@ import { zValidator } from '@hono/zod-validator'
 import status from 'http-status'
 
 // GET /tournaments/active
-// Returns all active tournaments
+// Returns all ongoing tournaments (current date is between startDate and endDate)
 export const getActiveTournamentsHandler = factory.createHandlers(
   zValidator('query', searchQuerySchema, validateHook),
   async (c) => {
@@ -26,13 +26,28 @@ export const getActiveTournamentsHandler = factory.createHandlers(
         searchableFields: ['name', 'description', 'location'],
       })
 
+      const today = new Date()
+      today.setHours(0, 0, 0, 0) // Start of today
+
       const tournaments = await db.tournament.findMany({
         ...queryOptions,
         where: {
           ...queryOptions.where,
           isActive: true,
+          startDate: {
+            lte: today,
+          },
+          endDate: {
+            gte: today,
+          },
         },
       })
+
+      for (const tournament of tournaments) {
+        if (tournament.image) {
+          tournament.image = await getFileUrl(tournament.image)
+        }
+      }
 
       return c.json(ok(tournaments), status.OK)
     } catch (error) {
@@ -99,4 +114,3 @@ export const getTournamentHandler = factory.createHandlers(
     }
   },
 )
-
