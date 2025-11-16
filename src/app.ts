@@ -33,6 +33,7 @@ import adminStaffRoute from './routes/admin/staff.route'
 import adminStaffCostRoute from './routes/admin/staff-cost.route'
 import adminTournamentRoute from './routes/admin/tournament.route'
 import adminUserRoute from './routes/admin/user.route'
+import adminCheckoutRoute from './routes/admin/checkout.route'
 import authRoute from './routes/auth.route'
 import bannerRoute from './routes/banner.route'
 import checkoutRoute from './routes/checkout.route'
@@ -116,6 +117,7 @@ const adminRoutes = [
   adminTournamentRoute,
   adminClubRoute,
   adminUserRoute,
+  adminCheckoutRoute,
 ]
 
 routes.forEach((route) => {
