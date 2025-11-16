@@ -150,7 +150,7 @@ export const createClubHandler = factory.createHandlers(
           logo: imageUrl,
           description: clubData.description,
           rules: clubData.rules,
-          leaderId: clubData.leaderId,
+          leaderId: clubData.leaderId!,
           visibility: clubData.visibility,
         },
       })

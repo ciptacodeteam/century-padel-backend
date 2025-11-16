@@ -371,6 +371,11 @@ export const createClubSchema = z.object({
   description: z.string().min(3).max(500).optional(),
   rules: z.string().min(3).max(2000).optional(),
   visibility: z.enum(['PUBLIC', 'PRIVATE']).default('PUBLIC'),
+  // For admin flows: explicitly choose a leader
+  // For user flows: this will typically be omitted and set from the authenticated user
+  leaderId: z.string().optional(),
+  // Allow toggling active state (mainly for admin)
+  isActive: z.coerce.boolean().optional(),
 })
 
 export type CreateClubSchema = z.infer<typeof createClubSchema>

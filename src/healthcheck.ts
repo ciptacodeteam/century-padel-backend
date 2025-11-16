@@ -11,7 +11,10 @@ const checkHealth = async () => {
     })
 
     if (response.ok) {
-      const data = await response.json()
+      const data = (await response.json()) as {
+        status?: string
+        message?: string
+      }
       if (data.status === 'ok' || data.message === 'OK') {
         process.exit(0)
       }
@@ -20,7 +23,9 @@ const checkHealth = async () => {
     console.error('Health check failed: Invalid response')
     process.exit(1)
   } catch (error) {
-    console.error('Health check failed:', error.message)
+    const message =
+      error instanceof Error ? error.message : String(error)
+    console.error('Health check failed:', message)
     process.exit(1)
   }
 }
