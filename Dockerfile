@@ -34,7 +34,6 @@ RUN bun install --frozen-lockfile
 COPY tsconfig.json ./
 COPY src ./src
 COPY serve.ts ./
-COPY index.ts ./
 
 # Build TypeScript
 RUN bun run build
