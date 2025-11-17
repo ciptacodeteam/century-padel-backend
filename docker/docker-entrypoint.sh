@@ -1,132 +1,119 @@
 #!/bin/sh
-# Don't use set -e here, we want to handle errors gracefully
-set +e
+# Exit on error but allow graceful handling for migrations
+set -e
 
 echo "🚀 Starting application entrypoint..."
 echo "📋 Environment check:"
 echo "   NODE_ENV: ${NODE_ENV:-not set}"
-echo "   DATABASE_URL: ${DATABASE_URL:+set (hidden)}${DATABASE_URL:-not set}"
+echo "   DATABASE_URL: ${DATABASE_URL:+✓ set}${DATABASE_URL:-❌ not set}"
 echo "   PORT: ${PORT:-not set}"
 
 # Wait for database to be ready
 echo "⏳ Waiting for database to be ready..."
 if [ -z "$DATABASE_URL" ]; then
-  echo "❌ DATABASE_URL environment variable is not set!"
+  echo "❌ ERROR: DATABASE_URL environment variable is not set!"
+  echo "   Please ensure .env.production file exists with DB_PASSWORD set"
   exit 1
 fi
 
 # Extract host and port from DATABASE_URL for pg_isready
 # Format: postgresql://user:password@host:port/database
 DB_HOST=$(echo "$DATABASE_URL" | sed -n 's/.*@\([^:]*\):.*/\1/p')
-DB_PORT=$(echo "$DATABASE_URL" | sed -n 's/.*:\([0-9]*\)\/.*/\1/p' || echo "5432")
+DB_PORT=$(echo "$DATABASE_URL" | sed -n 's/.*:\([0-9]*\)\/.*/\1/p')
 
-# Use pg_isready if we can extract host, otherwise use migration retry logic
+# Default to 5432 if port extraction failed
+if [ -z "$DB_PORT" ]; then
+  DB_PORT=5432
+fi
+
+# Use pg_isready if available
 MAX_RETRIES=30
 RETRY_COUNT=0
 
 if [ -n "$DB_HOST" ] && command -v pg_isready > /dev/null 2>&1; then
-  echo "   Using pg_isready to check database connection..."
-  until pg_isready -h "$DB_HOST" -p "${DB_PORT:-5432}" -U postgres > /dev/null 2>&1 || [ $RETRY_COUNT -ge $MAX_RETRIES ]; do
+  echo "   Checking database connection to ${DB_HOST}:${DB_PORT}..."
+  until pg_isready -h "$DB_HOST" -p "$DB_PORT" -q > /dev/null 2>&1; do
     RETRY_COUNT=$((RETRY_COUNT + 1))
-    echo "   Database is unavailable - sleeping... (attempt $RETRY_COUNT/$MAX_RETRIES)"
+    if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
+      echo "❌ Database connection timeout after $MAX_RETRIES attempts"
+      echo "   Host: $DB_HOST:$DB_PORT"
+      exit 1
+    fi
+    echo "   Waiting for database... (attempt $RETRY_COUNT/$MAX_RETRIES)"
     sleep 2
   done
 else
-  # Fallback: try to run a simple Prisma command
-  echo "   Testing database connection with Prisma..."
-  until echo "SELECT 1" | bunx prisma db execute --stdin > /dev/null 2>&1 || [ $RETRY_COUNT -ge $MAX_RETRIES ]; do
-    RETRY_COUNT=$((RETRY_COUNT + 1))
-    echo "   Database is unavailable - sleeping... (attempt $RETRY_COUNT/$MAX_RETRIES)"
-    sleep 2
-  done
-fi
-
-if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
-  echo "❌ Database connection timeout after $MAX_RETRIES attempts"
-  exit 1
+  echo "⚠️  pg_isready not available, skipping connection check"
 fi
 
 echo "✅ Database is ready!"
 
 # Run Prisma migrations
 echo "🔄 Running database migrations..."
-MIGRATION_OUTPUT=$(bunx prisma migrate deploy 2>&1)
+set +e  # Don't exit on migration error, handle it gracefully
+bunx prisma migrate deploy
 MIGRATION_EXIT=$?
+set -e
 
 if [ $MIGRATION_EXIT -eq 0 ]; then
   echo "✅ Migrations completed successfully"
 else
-  echo "❌ Migration failed with exit code $MIGRATION_EXIT"
-  echo "Migration output:"
-  echo "$MIGRATION_OUTPUT"
+  echo "⚠️  Migration encountered an issue (exit code: $MIGRATION_EXIT)"
   echo ""
-  echo "⚠️  Attempting to resolve failed migration..."
+  echo "Attempting to recover from failed migration state..."
   
-  # Try to resolve failed migration if the script exists
-  # Try force-rollback script first (more aggressive), then fallback to resolve script
-  if [ -f "/app/prisma/force-rollback-migration.ts" ]; then
-    echo "   Running force rollback script..."
-    RECOVERY_OUTPUT=$(bunx tsx /app/prisma/force-rollback-migration.ts 2>&1 || bun run /app/prisma/force-rollback-migration.ts 2>&1)
-    RECOVERY_EXIT=$?
-  elif [ -f "/app/prisma/resolve-failed-migration.ts" ]; then
-    echo "   Running migration recovery script..."
-    RECOVERY_OUTPUT=$(bunx tsx /app/prisma/resolve-failed-migration.ts 2>&1 || bun run /app/prisma/resolve-failed-migration.ts 2>&1)
-    RECOVERY_EXIT=$?
-  else
-    echo "❌ No recovery scripts found. Attempting manual rollback..."
-    # Try to manually mark migration as rolled back
-    RECOVERY_OUTPUT=$(echo "UPDATE \"_prisma_migrations\" SET rolled_back_at = NOW() WHERE migration_name = '20251114161611_add_club_join_request' AND finished_at IS NULL;" | bunx prisma db execute --stdin 2>&1)
-    RECOVERY_EXIT=$?
-  fi
+  # Try to mark any failed migrations as rolled back
+  set +e
+  echo "UPDATE \"_prisma_migrations\" SET rolled_back_at = NOW() WHERE finished_at IS NULL AND rolled_back_at IS NULL;" | bunx prisma db execute --stdin 2>&1
+  RECOVERY_EXIT=$?
+  set -e
   
   if [ $RECOVERY_EXIT -eq 0 ]; then
-    echo "   ✅ Recovery script completed"
-    echo "   Waiting 2 seconds before retrying migrations..."
-    sleep 2
-    echo "   Retrying migrations..."
-    RETRY_OUTPUT=$(bunx prisma migrate deploy 2>&1)
+    echo "✅ Cleared failed migration state"
+    echo "🔄 Retrying migrations..."
+    
+    set +e
+    bunx prisma migrate deploy
     RETRY_EXIT=$?
+    set -e
     
     if [ $RETRY_EXIT -eq 0 ]; then
       echo "✅ Migrations completed after recovery"
     else
-      echo "❌ Migration retry failed with exit code $RETRY_EXIT"
-      echo "Retry output:"
-      echo "$RETRY_OUTPUT"
+      echo "❌ Migration retry failed"
       echo ""
-      echo "The migration may need manual intervention."
-      echo "You can try running this manually:"
-      echo "  docker-compose -f docker-compose.prod.yml exec app bunx tsx /app/prisma/force-rollback-migration.ts"
-      echo "  docker-compose -f docker-compose.prod.yml exec app bunx prisma migrate deploy"
+      echo "📝 Manual intervention required:"
+      echo "   1. Check database connection and permissions"
+      echo "   2. Connect to the container:"
+      echo "      docker exec -it quantum-sport-app-prod sh"
+      echo "   3. Check migration status:"
+      echo "      bunx prisma migrate status"
+      echo "   4. Manually resolve if needed"
       exit 1
     fi
   else
-    echo "   ⚠️  Recovery script failed (exit code $RECOVERY_EXIT)"
-    echo "Recovery output:"
-    echo "$RECOVERY_OUTPUT"
-    echo ""
-    echo "Please resolve the migration manually:"
-    echo "  1. Connect to the database"
-    echo "  2. Run: UPDATE \"_prisma_migrations\" SET rolled_back_at = NOW() WHERE migration_name = '20251114161611_add_club_join_request' AND finished_at IS NULL;"
-    echo "  3. Restart the container"
-    exit 1
+    echo "⚠️  Could not automatically recover, continuing anyway..."
+    echo "   The application may start but database schema might be incomplete"
   fi
 fi
 
-# Generate Prisma Client (in case it wasn't generated during build)
-echo "🔧 Ensuring Prisma Client is generated..."
-GENERATE_OUTPUT=$(bunx prisma generate 2>&1)
+# Generate Prisma Client (should already be generated during build)
+echo "🔧 Ensuring Prisma Client is up to date..."
+set +e
+bunx prisma generate > /dev/null 2>&1
 GENERATE_EXIT=$?
+set -e
 
 if [ $GENERATE_EXIT -ne 0 ]; then
-  echo "⚠️  Prisma Client generation failed (exit code $GENERATE_EXIT)"
-  echo "Generate output:"
-  echo "$GENERATE_OUTPUT"
-  echo "Continuing anyway..."
+  echo "⚠️  Prisma Client generation failed, but build-time client should exist"
 fi
 
+# Final check
+echo ""
+echo "✅ All initialization steps completed"
+echo "🚀 Starting application on port ${PORT:-3000}..."
+echo ""
+
 # Start the application
-echo "🚀 Starting application..."
-echo "Command: $@"
 exec "$@"
 

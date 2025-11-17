@@ -1,75 +1,107 @@
-# Dependencies
-node_modules
+# ============================================
+# Docker Build Context Ignore File
+# ============================================
+# Minimize build context for faster builds
+
+# Dependencies (will be installed in container)
+node_modules/
 npm-debug.log
 yarn-error.log
+.bun/
 
-# Build outputs
-dist
-.next
-out
-build
+# Build outputs (will be generated in container)
+dist/
+.next/
+out/
+build/
 
-# Environment files
+# Environment files (will be mounted or set via env_file)
 .env
-.env.local
-.env.*.local
-.env.production
-.env.development
+.env.*
+!.env.production  # Keep production template for reference
 
-# Git
-.git
+# Git (not needed in container)
+.git/
+.github/
 .gitignore
 .gitattributes
+.gitmodules
 
-# IDE
-.vscode
-.idea
+# IDE & Editor files
+.vscode/
+.idea/
 *.swp
 *.swo
+*.swn
 *~
+.editorconfig
 
-# OS
+# OS files
 .DS_Store
 Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
 
-# Documentation
+# Documentation (not needed in production)
 *.md
+!README.md  # Keep README for reference
 docs/
-README*.md
+documentation/
 
-# Docker files (don't need in image)
+# Docker files (already in context when building)
 docker-compose*.yml
 Dockerfile*
 .dockerignore
 
-# Scripts (not needed in production image)
+# Development scripts
 scripts/
 Makefile
+*.sh
 
-# Tests
+# Tests (not needed in production)
 **/*.test.ts
 **/*.test.js
 **/*.spec.ts
 **/*.spec.js
+**/__tests__/
+**/__mocks__/
 coverage/
-.nyc_output
+.nyc_output/
+test/
+tests/
 
-# Logs
+# Logs & temporary files
 logs/
 *.log
 storage/logs/
-
-# Temporary files
 tmp/
 temp/
 *.tmp
+*.cache
 
 # Deployment files
 deploy.sh
 vercel.json
+.vercel/
+netlify.toml
+.netlify/
 
-# Development files
+# Development configuration
 .eslintrc*
 .prettierrc*
-# Note: tsconfig.json is needed for TypeScript build, so don't exclude it
+.eslintignore
+.prettierignore
 vitest.config.*
+jest.config.*
+
+# CI/CD
+.circleci/
+.travis.yml
+.gitlab-ci.yml
+azure-pipelines.yml
+
+# Package manager locks (keep only one)
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+# Keep bun.lockb for reproducible builds

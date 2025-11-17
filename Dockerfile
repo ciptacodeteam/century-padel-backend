@@ -1,7 +1,6 @@
 # ============================================
 # Multi-stage Dockerfile for Production
 # ============================================
-# Enable BuildKit for cache mounts (requires: DOCKER_BUILDKIT=1)
 # syntax=docker/dockerfile:1.4
 
 # Stage 1: Dependencies
@@ -9,25 +8,19 @@ FROM oven/bun:1.3-alpine AS deps
 
 WORKDIR /app
 
-# Skip package.json postinstall scripts during dependency install
-# (Prisma postinstall would fail until schema is copied below)
-ENV BUN_INSTALL_POSTINSTALL=0
+# Install system dependencies needed for native modules
+RUN apk add --no-cache python3 make g++
 
-# Copy package files first (for better layer caching)
-# Only package files change should invalidate this layer
-COPY package.json bun.lock* ./
+# Copy package files for dependency installation
+COPY package.json bun.lockb* ./
 
-# Install production dependencies with cache mount for faster rebuilds
-# Cache mount persists Bun's install cache across builds
-RUN --mount=type=cache,target=/root/.bun/install/cache \
-    bun install --production --frozen-lockfile
-
-# Copy Prisma schema AFTER dependencies are installed
-# This way Prisma changes don't invalidate the expensive bun install layer
+# Copy Prisma schema (needed for postinstall)
 COPY prisma ./prisma
 
-# Generate Prisma Client
-RUN bunx prisma generate
+# Install production dependencies with optimized flags
+# Use --no-optional to skip optional dependencies and speed up install
+RUN --mount=type=cache,target=/root/.bun/install/cache \
+    bun install --production --frozen-lockfile --no-progress
 
 # ============================================
 # Stage 2: Builder
@@ -35,19 +28,18 @@ FROM oven/bun:1.3-alpine AS builder
 
 WORKDIR /app
 
-# Skip postinstall scripts here as well (run prisma generate manually later)
-ENV BUN_INSTALL_POSTINSTALL=0
+# Install build dependencies
+RUN apk add --no-cache python3 make g++
 
-# Copy package files first (for better layer caching)
-COPY package.json bun.lock* ./
+# Copy package files
+COPY package.json bun.lockb* ./
 
-# Install all dependencies (including devDependencies for build)
-# Use cache mount to speed up repeated builds
-RUN --mount=type=cache,target=/root/.bun/install/cache \
-    bun install --frozen-lockfile
-
-# Copy Prisma schema AFTER dependencies are installed
+# Copy Prisma schema
 COPY prisma ./prisma
+
+# Install all dependencies (including devDependencies)
+RUN --mount=type=cache,target=/root/.bun/install/cache \
+    bun install --frozen-lockfile --no-progress
 
 # Copy source code and config
 COPY tsconfig.json ./

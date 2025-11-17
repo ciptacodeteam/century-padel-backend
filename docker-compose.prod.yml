@@ -4,10 +4,12 @@ services:
     image: postgres:16-alpine
     container_name: quantum-sport-db-prod
     restart: unless-stopped
+    env_file:
+      - .env.production
     environment:
       POSTGRES_DB: ${DB_NAME:-quantum_sport}
       POSTGRES_USER: ${DB_USER:-postgres}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
       POSTGRES_INITDB_ARGS: '-E UTF8'
     ports:
       - '${DB_PORT:-5432}:5432'
@@ -15,11 +17,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./docker/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
     healthcheck:
-      test:
-        [
-          'CMD-SHELL',
-          'pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-quantum_sport}',
-        ]
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
       interval: 10s
       timeout: 5s
       retries: 5
@@ -40,6 +38,8 @@ services:
     image: redis:7-alpine
     container_name: quantum-sport-redis-prod
     restart: unless-stopped
+    env_file:
+      - .env.production
     ports:
       - '${REDIS_PORT:-6379}:6379'
     volumes:
@@ -68,7 +68,7 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        NODE_ENV: production
+        BUILDKIT_INLINE_CACHE: 1
     image: quantum-sport-backend:latest
     container_name: quantum-sport-app-prod
     restart: unless-stopped
@@ -76,8 +76,9 @@ services:
       - .env.production
     environment:
       NODE_ENV: production
-      PORT: ${PORT:-3000}
-      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD}@db:5432/${DB_NAME:-quantum_sport}?schema=public&connection_limit=10&pool_timeout=20
+      PORT: 3000
+      # Construct DATABASE_URL using variables from .env.production
+      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/${DB_NAME:-quantum_sport}?schema=public&connection_limit=10&pool_timeout=20
       REDIS_URL: redis://redis:6379
     ports:
       - '${PORT:-3000}:3000'
@@ -90,8 +91,11 @@ services:
       - quantum-sport-network
     volumes:
       - app_storage:/app/storage
+      # Make storage writable (override read_only for this path)
+      - type: tmpfs
+        target: /app/.bun
     healthcheck:
-      test: ['CMD', 'bun', 'run', '--bun', '/app/dist/healthcheck.js']
+      test: ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://localhost:3000/health', '||', 'exit', '1']
       interval: 30s
       timeout: 10s
       retries: 3
@@ -103,7 +107,6 @@ services:
         max-file: '10'
     security_opt:
       - no-new-privileges:true
-    read_only: true
     tmpfs:
       - /tmp
     deploy:
@@ -117,11 +120,6 @@ services:
 
   # Email Queue Worker
   email-worker:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        NODE_ENV: production
     image: quantum-sport-backend:latest
     container_name: quantum-sport-email-worker-prod
     restart: unless-stopped
@@ -129,9 +127,11 @@ services:
       - .env.production
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD}@db:5432/${DB_NAME:-quantum_sport}?schema=public
+      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/${DB_NAME:-quantum_sport}?schema=public&connection_limit=5
       REDIS_URL: redis://redis:6379
     depends_on:
+      app:
+        condition: service_healthy
       db:
         condition: service_healthy
       redis:

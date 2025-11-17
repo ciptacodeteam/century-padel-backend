@@ -127,23 +127,41 @@ make dev-down
 
 ## Production Deployment
 
-For production deployment with Docker, see the comprehensive guide: **[DOCKER_PRODUCTION.md](./DOCKER_PRODUCTION.md)**
+For production deployment with Docker, see the comprehensive guides:
+- **[DOCKER_DEPLOYMENT_GUIDE.md](./DOCKER_DEPLOYMENT_GUIDE.md)** - Complete deployment guide
+- **[DOCKER_QUICK_REFERENCE.md](./DOCKER_QUICK_REFERENCE.md)** - Quick commands
+- **[docker/GETTING_STARTED.md](./docker/GETTING_STARTED.md)** - 5-minute quick start
 
 ### Quick Production Setup
 
 1. **Configure Environment**
    ```bash
-   cp .env.production.example .env.production
-   # Edit .env.production with production values
+   cp docker/env.production.template .env.production
+   # Edit .env.production with your production values
+   # REQUIRED: DB_PASSWORD, JWT_SECRET, JWT_REFRESH_SECRET
    ```
 
-2. **Deploy**
+2. **Deploy (Automated - Recommended)**
    ```bash
    chmod +x deploy.sh
    ./deploy.sh
    ```
+   
+   The script automatically:
+   - ✅ Validates environment variables
+   - ✅ Pulls latest code
+   - ✅ Builds optimized Docker images
+   - ✅ Runs database migrations
+   - ✅ Starts all services
+   - ✅ Verifies deployment health
 
-3. **Or use Make commands**
+3. **Or Deploy Manually**
+   ```bash
+   DOCKER_BUILDKIT=1 docker-compose -f docker-compose.prod.yml build
+   docker-compose -f docker-compose.prod.yml up -d
+   ```
+
+4. **Or Use Make Commands**
    ```bash
    make prod-build
    make prod-up
