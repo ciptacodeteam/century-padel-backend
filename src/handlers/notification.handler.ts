@@ -4,7 +4,7 @@ import { validateHook } from '@/helpers/validate-hook'
 import { notificationService } from '@/services/notification.service'
 import { ok } from '@/lib/response'
 import status from 'http-status'
-import { requireAuth } from '@/middlewares/auth'
+import { requireAuth, requireAdminAuth } from '@/middlewares/auth'
 import z from 'zod'
 import { NotificationAudience, NotificationType } from '@prisma/client'
 
@@ -69,6 +69,7 @@ export const markUserNotificationReadHandler = factory.createHandlers(
 )
 
 export const pushAdminNotificationHandler = factory.createHandlers(
+  requireAdminAuth,
   zValidator('json', adminPushSchema, validateHook),
   async (c) => {
     try {
@@ -90,16 +91,47 @@ export const pushAdminNotificationHandler = factory.createHandlers(
 )
 
 export const getAdminNotificationsHandler = factory.createHandlers(
+  requireAdminAuth,
   zValidator('query', paginationSchema, validateHook),
   async (c) => {
     try {
+      const admin = c.get('admin')
+      if (!admin?.id) {
+        return c.json(ok([], 'Unauthorized'), status.UNAUTHORIZED)
+      }
       const { cursor, take } = c.req.valid('query') as z.infer<
         typeof paginationSchema
       >
-      const notifications = await notificationService.listForAdmin(take, cursor)
+      // Get notifications for this specific admin (userId = admin.id) or broadcast notifications
+      const notifications = await notificationService.listForAdminUser(
+        admin.id,
+        take,
+        cursor,
+      )
       return c.json(ok(notifications), status.OK)
     } catch (error) {
       c.var.logger.error(`Error in getAdminNotificationsHandler: ${error}`)
+      throw error
+    }
+  },
+)
+
+export const markAdminNotificationReadHandler = factory.createHandlers(
+  requireAdminAuth,
+  async (c) => {
+    try {
+      const admin = c.get('admin')
+      if (!admin?.id) {
+        return c.json(ok(null, 'Unauthorized'), status.UNAUTHORIZED)
+      }
+      const id = c.req.param('id')
+      if (!id) {
+        return c.json(ok(null, 'Notification id required'), status.BAD_REQUEST)
+      }
+      const updated = await notificationService.markRead(id, admin.id)
+      return c.json(ok(updated), status.OK)
+    } catch (error) {
+      c.var.logger.error(`Error in markAdminNotificationReadHandler: ${error}`)
       throw error
     }
   },
