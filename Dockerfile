@@ -7,12 +7,13 @@ FROM oven/bun:1.3-alpine AS deps
 
 WORKDIR /app
 
-# Copy package files
-COPY package.json ./
+# Copy package files (copy lock file first for better caching)
+COPY package.json bun.lock* ./
 COPY prisma ./prisma
 
 # Install production dependencies only
-RUN bun install --production 
+# Use --frozen-lockfile for faster, deterministic installs
+RUN bun install --production --frozen-lockfile
 
 # Generate Prisma Client
 RUN bunx prisma generate

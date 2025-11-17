@@ -51,7 +51,15 @@ git pull origin main
 
 # Build and start containers
 echo -e "${GREEN}🏗️  Building Docker images...${NC}"
-compose -f docker-compose.prod.yml build --no-cache
+# Use --no-cache only if explicitly requested via CLEAN_BUILD env var
+if [ "${CLEAN_BUILD}" = "true" ]; then
+  echo -e "${YELLOW}⚠️  Performing clean build (no cache)...${NC}"
+  compose -f docker-compose.prod.yml build --no-cache
+else
+  echo -e "${GREEN}📦 Using Docker cache for faster builds...${NC}"
+  echo -e "${YELLOW}   (Set CLEAN_BUILD=true for a clean build)${NC}"
+  compose -f docker-compose.prod.yml build
+fi
 
 echo -e "${GREEN}🚀 Starting production containers (migrations will run automatically on startup)...${NC}"
 compose -f docker-compose.prod.yml up -d
