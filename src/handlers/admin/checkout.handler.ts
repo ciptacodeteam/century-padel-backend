@@ -34,7 +34,8 @@ const adminCheckoutSchema = z
       return !!data.userId || (!!data.name && !!data.phone)
     },
     {
-      message: 'Provide either userId or both name and phone for a new customer',
+      message:
+        'Provide either userId or both name and phone for a new customer',
       path: ['userId'],
     },
   )
@@ -44,8 +45,19 @@ type AdminCheckoutSchema = z.infer<typeof adminCheckoutSchema>
 export const adminCheckoutHandler = factory.createHandlers(
   zValidator('json', adminCheckoutSchema, validateHook),
   async (c) => {
-    const { userId: inputUserId, name, phone, courtSlots, coachSlots, ballboySlots, inventories } =
-      c.req.valid('json') as AdminCheckoutSchema
+    const {
+      userId: inputUserId,
+      name,
+      phone,
+      courtSlots,
+      coachSlots,
+      ballboySlots,
+      inventories,
+    } = c.req.valid('json') as AdminCheckoutSchema
+
+    // Get the admin (cashier) creating this booking
+    const admin = c.get('admin')
+    const cashierId = admin?.id || null
 
     // Ensure at least one item is provided
     const hasItems =
@@ -109,6 +121,7 @@ export const adminCheckoutHandler = factory.createHandlers(
             totalPrice: 0,
             processingFee: 0,
             holdExpiresAt: null,
+            cashierId: cashierId,
           },
         })
 

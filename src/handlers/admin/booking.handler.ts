@@ -39,6 +39,14 @@ export const getAllBookingTransactionsHandler = factory.createHandlers(
               phone: true,
             },
           },
+          cashier: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              role: true,
+            },
+          },
           details: {
             include: {
               court: {
@@ -141,6 +149,14 @@ export const getBookingTransactionDetailHandler = factory.createHandlers(
               email: true,
               phone: true,
               image: true,
+            },
+          },
+          cashier: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              role: true,
             },
           },
           details: {
@@ -668,6 +684,14 @@ export const getOngoingBookingScheduleHandler = factory.createHandlers(
               image: true,
             },
           },
+          cashier: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              role: true,
+            },
+          },
           details: {
             include: {
               court: {
@@ -813,6 +837,7 @@ export const getOngoingBookingScheduleHandler = factory.createHandlers(
               createdAt: booking.createdAt,
             },
             user: booking.user,
+            cashier: booking.cashier,
             schedule: {
               startAt: earliestSlot,
               endAt: slotEnd || earliestSlot,
