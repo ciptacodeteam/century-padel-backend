@@ -9,6 +9,10 @@ FROM oven/bun:1.3-alpine AS deps
 
 WORKDIR /app
 
+# Skip package.json postinstall scripts during dependency install
+# (Prisma postinstall would fail until schema is copied below)
+ENV BUN_INSTALL_POSTINSTALL=0
+
 # Copy package files first (for better layer caching)
 # Only package files change should invalidate this layer
 COPY package.json bun.lock* ./
@@ -30,6 +34,9 @@ RUN bunx prisma generate
 FROM oven/bun:1.3-alpine AS builder
 
 WORKDIR /app
+
+# Skip postinstall scripts here as well (run prisma generate manually later)
+ENV BUN_INSTALL_POSTINSTALL=0
 
 # Copy package files first (for better layer caching)
 COPY package.json bun.lock* ./
