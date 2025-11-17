@@ -156,6 +156,10 @@ services:
           memory: 512M
 
   # Nginx Reverse Proxy (Optional but recommended)
+  # NOTE: If you have system nginx running on port 80, either:
+  # 1. Stop system nginx: sudo systemctl stop nginx
+  # 2. Or comment out this service and configure system nginx to proxy to the app
+  # 3. Or change the port mapping (e.g., '8080:80')
   nginx:
     image: nginx:alpine
     container_name: quantum-sport-nginx-prod

@@ -1,7 +1,12 @@
 #!/bin/sh
-set -e
+# Don't use set -e here, we want to handle errors gracefully
+set +e
 
 echo "🚀 Starting application entrypoint..."
+echo "📋 Environment check:"
+echo "   NODE_ENV: ${NODE_ENV:-not set}"
+echo "   DATABASE_URL: ${DATABASE_URL:+set (hidden)}${DATABASE_URL:-not set}"
+echo "   PORT: ${PORT:-not set}"
 
 # Wait for database to be ready
 echo "⏳ Waiting for database to be ready..."
@@ -45,32 +50,51 @@ echo "✅ Database is ready!"
 
 # Run Prisma migrations
 echo "🔄 Running database migrations..."
-if bunx prisma migrate deploy; then
+MIGRATION_OUTPUT=$(bunx prisma migrate deploy 2>&1)
+MIGRATION_EXIT=$?
+
+if [ $MIGRATION_EXIT -eq 0 ]; then
   echo "✅ Migrations completed successfully"
 else
-  echo "❌ Migration failed!"
+  echo "❌ Migration failed with exit code $MIGRATION_EXIT"
+  echo "Migration output:"
+  echo "$MIGRATION_OUTPUT"
+  echo ""
   echo "⚠️  Attempting to resolve failed migration..."
   
   # Try to resolve failed migration if the script exists
   if [ -f "/app/prisma/resolve-failed-migration.ts" ]; then
     echo "   Running migration recovery script..."
     # Try to run the script (tsx should be available via bunx)
-    if bunx tsx /app/prisma/resolve-failed-migration.ts 2>/dev/null || bun run /app/prisma/resolve-failed-migration.ts 2>/dev/null; then
+    RECOVERY_OUTPUT=$(bunx tsx /app/prisma/resolve-failed-migration.ts 2>&1 || bun run /app/prisma/resolve-failed-migration.ts 2>&1)
+    RECOVERY_EXIT=$?
+    
+    if [ $RECOVERY_EXIT -eq 0 ]; then
       echo "   ✅ Recovery script completed"
       echo "   Retrying migrations..."
-      if bunx prisma migrate deploy; then
+      RETRY_OUTPUT=$(bunx prisma migrate deploy 2>&1)
+      RETRY_EXIT=$?
+      
+      if [ $RETRY_EXIT -eq 0 ]; then
         echo "✅ Migrations completed after recovery"
       else
-        echo "❌ Migration retry failed. Please check the logs and resolve manually."
+        echo "❌ Migration retry failed with exit code $RETRY_EXIT"
+        echo "Retry output:"
+        echo "$RETRY_OUTPUT"
+        echo ""
+        echo "Please check the logs and resolve manually."
         exit 1
       fi
     else
-      echo "   ⚠️  Could not run recovery script (tsx may not be available)"
-      echo "   Please resolve the migration manually and restart the container."
+      echo "   ⚠️  Could not run recovery script (exit code $RECOVERY_EXIT)"
+      echo "Recovery output:"
+      echo "$RECOVERY_OUTPUT"
+      echo ""
+      echo "Please resolve the migration manually and restart the container."
       exit 1
     fi
   else
-    echo "❌ Migration failed and recovery script not found."
+    echo "❌ Migration failed and recovery script not found at /app/prisma/resolve-failed-migration.ts"
     echo "   Please check the migration status and resolve manually."
     exit 1
   fi
@@ -78,9 +102,18 @@ fi
 
 # Generate Prisma Client (in case it wasn't generated during build)
 echo "🔧 Ensuring Prisma Client is generated..."
-bunx prisma generate
+GENERATE_OUTPUT=$(bunx prisma generate 2>&1)
+GENERATE_EXIT=$?
+
+if [ $GENERATE_EXIT -ne 0 ]; then
+  echo "⚠️  Prisma Client generation failed (exit code $GENERATE_EXIT)"
+  echo "Generate output:"
+  echo "$GENERATE_OUTPUT"
+  echo "Continuing anyway..."
+fi
 
 # Start the application
 echo "🚀 Starting application..."
+echo "Command: $@"
 exec "$@"
 
