@@ -4,7 +4,13 @@
 # Production Deployment Script
 # ============================================
 
+# Exit on error, but allow debugging
 set -e
+
+# Enable error tracing for debugging
+if [ "${DEBUG:-}" = "true" ]; then
+    set -x
+fi
 
 # Enable Docker BuildKit for faster builds and cache mounts
 export DOCKER_BUILDKIT=1
@@ -56,6 +62,27 @@ print_error() {
 }
 
 print_header "Quantum Sport Backend - Production Deployment"
+
+# Verify we're in the right directory
+if [ ! -f "package.json" ] || [ ! -f "Dockerfile" ]; then
+    print_error "Error: Must run deploy.sh from the project root directory"
+    print_info "Current directory: $(pwd)"
+    exit 1
+fi
+
+# Check if Docker is available
+if ! command -v docker >/dev/null 2>&1; then
+    print_error "Docker is not installed or not in PATH"
+    print_info "Install Docker: sudo apt-get update && sudo apt-get install -y docker.io"
+    exit 1
+fi
+
+# Check if Docker daemon is running
+if ! docker info >/dev/null 2>&1; then
+    print_error "Docker daemon is not running"
+    print_info "Start Docker: sudo systemctl start docker"
+    exit 1
+fi
 
 # Check if running as root
 if [ "$EUID" -eq 0 ]; then 
@@ -109,13 +136,17 @@ fi
 
 print_success "Environment configuration validated"
 
-# Confirm deployment
-echo ""
-print_warning "This will deploy to PRODUCTION environment"
-read -p "Are you sure you want to continue? (yes/no): " confirm
-if [ "$confirm" != "yes" ]; then
-    echo "Deployment cancelled."
-    exit 0
+# Confirm deployment (skip if AUTO_DEPLOY is set)
+if [ "${AUTO_DEPLOY:-}" != "true" ]; then
+    echo ""
+    print_warning "This will deploy to PRODUCTION environment"
+    read -p "Are you sure you want to continue? (yes/no): " confirm
+    if [ "$confirm" != "yes" ]; then
+        echo "Deployment cancelled."
+        exit 0
+    fi
+else
+    print_info "AUTO_DEPLOY=true, skipping confirmation prompt"
 fi
 
 # Load environment variables for display purposes
@@ -136,19 +167,28 @@ print_header "Building Docker Images"
 if [ "${CLEAN_BUILD}" = "true" ]; then
     print_warning "Performing clean build (no cache)..."
     print_info "This may take several minutes..."
+    print_info "Build command: compose -f docker-compose.prod.yml build --no-cache"
     if compose -f docker-compose.prod.yml build --no-cache; then
         print_success "Clean build completed"
     else
         print_error "Build failed!"
+        print_info "Check build logs above for details"
+        print_info "Common issues:"
+        print_info "  - Missing bun.lock file"
+        print_info "  - Insufficient disk space"
+        print_info "  - Network issues downloading dependencies"
         exit 1
     fi
 else
     print_info "Building with cache for faster builds..."
     print_info "Tip: Set CLEAN_BUILD=true for a clean build if needed"
+    print_info "Build command: compose -f docker-compose.prod.yml build"
     if compose -f docker-compose.prod.yml build; then
         print_success "Build completed"
     else
         print_error "Build failed!"
+        print_info "Check build logs above for details"
+        print_info "Try running with CLEAN_BUILD=true if cache is corrupted"
         exit 1
     fi
 fi

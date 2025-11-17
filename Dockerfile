@@ -12,7 +12,7 @@ WORKDIR /app
 RUN apk add --no-cache python3 make g++
 
 # Copy package files for dependency installation
-COPY package.json bun.lockb* ./
+COPY package.json bun.lock* ./
 
 # Copy Prisma schema (needed for postinstall)
 COPY prisma ./prisma
@@ -35,7 +35,7 @@ WORKDIR /app
 RUN apk add --no-cache python3 make g++
 
 # Copy package files
-COPY package.json bun.lockb* ./
+COPY package.json bun.lock* ./
 
 # Copy Prisma schema
 COPY prisma ./prisma
