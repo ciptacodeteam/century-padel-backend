@@ -71,5 +71,5 @@ vercel.json
 # Development files
 .eslintrc*
 .prettierrc*
-tsconfig.json
+# Note: tsconfig.json is needed for TypeScript build, so don't exclude it
 vitest.config.*
