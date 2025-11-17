@@ -69,6 +69,9 @@ services:
       dockerfile: Dockerfile
       args:
         BUILDKIT_INLINE_CACHE: 1
+      shm_size: '256mb'
+      memory: 1500m
+      memory_swap: 3g
     image: quantum-sport-backend:latest
     container_name: quantum-sport-app-prod
     restart: unless-stopped
@@ -112,11 +115,11 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '2'
-          memory: 2G
-        reservations:
-          cpus: '1'
+          cpus: '1.5'
           memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
 
   # Email Queue Worker
   email-worker:
@@ -149,11 +152,11 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '1'
-          memory: 1G
-        reservations:
           cpus: '0.5'
           memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
 
   # Nginx Reverse Proxy (Optional but recommended)
   # NOTE: If you have system nginx running on port 80, either:

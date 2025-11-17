@@ -128,6 +128,8 @@ make dev-down
 ## Production Deployment
 
 For production deployment with Docker, see the comprehensive guides:
+- **[QUICK_START_2GB.md](./QUICK_START_2GB.md)** - ⚡ **2GB RAM servers** (MUST READ if you have 2GB RAM!)
+- **[DEPLOY_2GB_SERVER.md](./DEPLOY_2GB_SERVER.md)** - Complete guide for 2GB RAM servers
 - **[DOCKER_DEPLOYMENT_GUIDE.md](./DOCKER_DEPLOYMENT_GUIDE.md)** - Complete deployment guide
 - **[DOCKER_QUICK_REFERENCE.md](./DOCKER_QUICK_REFERENCE.md)** - Quick commands
 - **[docker/GETTING_STARTED.md](./docker/GETTING_STARTED.md)** - 5-minute quick start

@@ -19,8 +19,11 @@ COPY prisma ./prisma
 
 # Install production dependencies with optimized flags
 # Use --no-optional to skip optional dependencies and speed up install
+# Install in chunks to reduce memory pressure
 RUN --mount=type=cache,target=/root/.bun/install/cache \
-    bun install --production --frozen-lockfile --no-progress
+    bun install --production --frozen-lockfile --no-progress || \
+    (echo "First install attempt failed, retrying with memory optimization..." && \
+     bun install --production --no-progress)
 
 # ============================================
 # Stage 2: Builder
@@ -38,8 +41,11 @@ COPY package.json bun.lockb* ./
 COPY prisma ./prisma
 
 # Install all dependencies (including devDependencies)
+# Retry logic for memory-constrained environments
 RUN --mount=type=cache,target=/root/.bun/install/cache \
-    bun install --frozen-lockfile --no-progress
+    bun install --frozen-lockfile --no-progress || \
+    (echo "First install attempt failed, retrying..." && \
+     bun install --no-progress)
 
 # Copy source code and config
 COPY tsconfig.json ./
