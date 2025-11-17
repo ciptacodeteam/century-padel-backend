@@ -3,19 +3,23 @@
  * Returns exit code 0 if healthy, 1 if unhealthy
  */
 
+const port = Number(process.env.PORT) || 3000
+
 const checkHealth = async () => {
   try {
-    const response = await fetch('http://localhost:3000/health', {
+    const response = await fetch(`http://localhost:${port}/health`, {
       method: 'GET',
       headers: { 'User-Agent': 'Docker-HealthCheck/1.0' },
     })
 
     if (response.ok) {
       const data = (await response.json()) as {
-        status?: string
-        message?: string
+        success?: boolean
+        msg?: string
+        data?: { up?: boolean }
       }
-      if (data.status === 'ok' || data.message === 'OK') {
+      // Check if response indicates success
+      if (data.success === true || (data.data?.up === true)) {
         process.exit(0)
       }
     }
