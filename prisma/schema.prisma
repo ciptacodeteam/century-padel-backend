@@ -17,6 +17,7 @@ enum Role {
   ADMIN
   BALLBOY
   COACH
+  CASHIER
 }
 
 enum PhoneVerificationType {
@@ -148,7 +149,9 @@ model Staff {
   // Derived schedules now use Slot (see below) instead of separate tables
   slot                Slot[]
   coachTypeStaffPrice CoachTypeStaffPrice[]
+  bookingCashier      Booking[]
 
+  @@index([isActive, role])
   @@map("staff")
 }
 
@@ -376,7 +379,10 @@ model Booking {
   cancelledAt        DateTime?
   cancellationReason String?
 
+  cashierId String? // cashier who handled the payment
+
   user        User               @relation(fields: [userId], references: [id])
+  cashier     Staff?             @relation(fields: [cashierId], references: [id])
   details     BookingDetail[]
   inventories BookingInventory[]
   ballboys    BookingBallboy[]

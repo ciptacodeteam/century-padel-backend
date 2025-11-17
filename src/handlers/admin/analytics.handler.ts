@@ -8,6 +8,7 @@ import { BookingStatus, PaymentStatus } from '@prisma/client'
 import status from 'http-status'
 import * as XLSX from 'xlsx'
 import dayjs from 'dayjs'
+import { z } from 'zod'
 
 // GET /admin/analytics
 // Get analytics overview with total transactions, revenue, and monthly trends
@@ -16,7 +17,7 @@ export const getAnalyticsHandler = factory.createHandlers(
   async (c) => {
     try {
       const query = c.req.valid('query') as SearchQuerySchema
-      
+
       // Get date range from query (optional)
       const startDate = query.search
         ? dayjs(query.search).startOf('day').toDate()
@@ -150,7 +151,8 @@ export const getAnalyticsHandler = factory.createHandlers(
       const analytics = {
         overview: {
           totalRevenue,
-          totalTransactions: totalBookings + totalClassBookings + totalMembershipTransactions,
+          totalTransactions:
+            totalBookings + totalClassBookings + totalMembershipTransactions,
           totalBookings,
           totalClassBookings,
           totalMembershipTransactions,
@@ -309,7 +311,8 @@ export const exportAnalyticsToExcelHandler = factory.createHandlers(
         { Metric: 'Total Revenue', Value: totalRevenue },
         {
           Metric: 'Total Transactions',
-          Value: totalBookings + totalClassBookings + totalMembershipTransactions,
+          Value:
+            totalBookings + totalClassBookings + totalMembershipTransactions,
         },
         { Metric: 'Total Bookings', Value: totalBookings },
         { Metric: 'Total Class Bookings', Value: totalClassBookings },
@@ -382,10 +385,10 @@ export const exportAnalyticsToExcelHandler = factory.createHandlers(
           'Transaction Type': transactionType,
           'Customer Name': customerName,
           'Item Name': itemName,
-          'Subtotal': invoice.subtotal,
+          Subtotal: invoice.subtotal,
           'Processing Fee': invoice.processingFee,
-          'Total': invoice.total,
-          'Status': invoice.status,
+          Total: invoice.total,
+          Status: invoice.status,
           'Issued At': invoice.issuedAt
             ? dayjs(invoice.issuedAt).format('YYYY-MM-DD HH:mm:ss')
             : 'N/A',
@@ -408,7 +411,11 @@ export const exportAnalyticsToExcelHandler = factory.createHandlers(
         { wch: 20 }, // Issued At
         { wch: 20 }, // Paid At
       ]
-      XLSX.utils.book_append_sheet(workbook, detailsSheet, 'Transaction Details')
+      XLSX.utils.book_append_sheet(
+        workbook,
+        detailsSheet,
+        'Transaction Details',
+      )
 
       // Generate Excel buffer
       const excelBuffer = XLSX.write(workbook, {
@@ -434,3 +441,423 @@ export const exportAnalyticsToExcelHandler = factory.createHandlers(
   },
 )
 
+// GET /admin/analytics/dashboard
+// Get dashboard statistics overview with accurate calculations
+export const getDashboardStatsHandler = factory.createHandlers(async (c) => {
+  try {
+    // Define time periods for comparison
+    const now = dayjs()
+    const currentPeriodStart = now.startOf('month').toDate()
+    const currentPeriodEnd = now.endOf('day').toDate()
+
+    const previousPeriodStart = now
+      .subtract(1, 'month')
+      .startOf('month')
+      .toDate()
+    const previousPeriodEnd = now.subtract(1, 'month').endOf('month').toDate()
+
+    const last6MonthsStart = now.subtract(6, 'months').startOf('month').toDate()
+
+    // ============================================
+    // 1. TOTAL REVENUE - Current period (this month)
+    // ============================================
+    const currentRevenue = await db.invoice.aggregate({
+      where: {
+        status: PaymentStatus.PAID,
+        paidAt: {
+          gte: currentPeriodStart,
+          lte: currentPeriodEnd,
+        },
+      },
+      _sum: {
+        total: true,
+      },
+    })
+
+    const previousRevenue = await db.invoice.aggregate({
+      where: {
+        status: PaymentStatus.PAID,
+        paidAt: {
+          gte: previousPeriodStart,
+          lte: previousPeriodEnd,
+        },
+      },
+      _sum: {
+        total: true,
+      },
+    })
+
+    const currentRevenueValue = currentRevenue._sum.total || 0
+    const previousRevenueValue = previousRevenue._sum.total || 0
+
+    const revenuePercentageChange =
+      previousRevenueValue > 0
+        ? Number(
+            (
+              ((currentRevenueValue - previousRevenueValue) /
+                previousRevenueValue) *
+              100
+            ).toFixed(1),
+          )
+        : currentRevenueValue > 0
+          ? 100
+          : 0
+
+    // ============================================
+    // 2. TOTAL SALES - All confirmed transactions this month
+    // ============================================
+    const currentSales = await db.invoice.count({
+      where: {
+        status: PaymentStatus.PAID,
+        paidAt: {
+          gte: currentPeriodStart,
+          lte: currentPeriodEnd,
+        },
+      },
+    })
+
+    const previousSales = await db.invoice.count({
+      where: {
+        status: PaymentStatus.PAID,
+        paidAt: {
+          gte: previousPeriodStart,
+          lte: previousPeriodEnd,
+        },
+      },
+    })
+
+    const salesPercentageChange =
+      previousSales > 0
+        ? Number(
+            (((currentSales - previousSales) / previousSales) * 100).toFixed(1),
+          )
+        : currentSales > 0
+          ? 100
+          : 0
+
+    // ============================================
+    // 3. NEW CUSTOMERS - Users created this month
+    // ============================================
+    const currentNewCustomers = await db.user.count({
+      where: {
+        createdAt: {
+          gte: currentPeriodStart,
+          lte: currentPeriodEnd,
+        },
+      },
+    })
+
+    const previousNewCustomers = await db.user.count({
+      where: {
+        createdAt: {
+          gte: previousPeriodStart,
+          lte: previousPeriodEnd,
+        },
+      },
+    })
+
+    const newCustomersPercentageChange =
+      previousNewCustomers > 0
+        ? Number(
+            (
+              ((currentNewCustomers - previousNewCustomers) /
+                previousNewCustomers) *
+              100
+            ).toFixed(1),
+          )
+        : currentNewCustomers > 0
+          ? 100
+          : 0
+
+    // ============================================
+    // 4. ACTIVE ACCOUNTS - Users with transactions this month
+    // ============================================
+    // Get unique user IDs from all paid invoices this month
+    const currentActiveInvoices = await db.invoice.findMany({
+      where: {
+        status: PaymentStatus.PAID,
+        paidAt: {
+          gte: currentPeriodStart,
+          lte: currentPeriodEnd,
+        },
+      },
+      select: {
+        userId: true,
+      },
+    })
+
+    const previousActiveInvoices = await db.invoice.findMany({
+      where: {
+        status: PaymentStatus.PAID,
+        paidAt: {
+          gte: previousPeriodStart,
+          lte: previousPeriodEnd,
+        },
+      },
+      select: {
+        userId: true,
+      },
+    })
+
+    const currentActiveAccounts = new Set(
+      currentActiveInvoices.map((inv) => inv.userId).filter(Boolean),
+    ).size
+
+    const previousActiveAccounts = new Set(
+      previousActiveInvoices.map((inv) => inv.userId).filter(Boolean),
+    ).size
+
+    const activeAccountsPercentageChange =
+      previousActiveAccounts > 0
+        ? Number(
+            (
+              ((currentActiveAccounts - previousActiveAccounts) /
+                previousActiveAccounts) *
+              100
+            ).toFixed(1),
+          )
+        : currentActiveAccounts > 0
+          ? 100
+          : 0
+
+    // ============================================
+    // REVENUE TREND for last 6 months
+    // ============================================
+    const revenueByMonth = await db.invoice.groupBy({
+      by: ['paidAt'],
+      where: {
+        status: PaymentStatus.PAID,
+        paidAt: {
+          gte: last6MonthsStart,
+          lte: currentPeriodEnd,
+        },
+      },
+      _sum: {
+        total: true,
+      },
+    })
+
+    // Process monthly data
+    const monthlyRevenue: { [key: string]: number } = {}
+    revenueByMonth.forEach((record) => {
+      if (record.paidAt) {
+        const monthKey = dayjs(record.paidAt).format('YYYY-MM')
+        monthlyRevenue[monthKey] =
+          (monthlyRevenue[monthKey] || 0) + (record._sum.total || 0)
+      }
+    })
+
+    // Build array of last 6 months
+    const last6Months: Array<{ month: string; revenue: number }> = []
+    for (let i = 5; i >= 0; i--) {
+      const month = now.subtract(i, 'months').format('YYYY-MM')
+      last6Months.push({
+        month,
+        revenue: monthlyRevenue[month] || 0,
+      })
+    }
+
+    // Determine trend based on recent months
+    const recentMonths = last6Months.slice(-3).map((m) => m.revenue)
+    const isUpTrend =
+      recentMonths.length >= 2 &&
+      recentMonths[recentMonths.length - 1] >=
+        recentMonths[recentMonths.length - 2]
+
+    // ============================================
+    // Build response
+    // ============================================
+    const dashboardStats = {
+      totalRevenue: {
+        value: currentRevenueValue,
+        formatted: `Rp ${currentRevenueValue.toLocaleString('id-ID')}`,
+        percentageChange: revenuePercentageChange,
+        trend:
+          revenuePercentageChange > 0
+            ? 'up'
+            : revenuePercentageChange < 0
+              ? 'down'
+              : 'stable',
+        description: 'Trending up this month',
+        subtitle: 'Visitors for the last 6 months',
+      },
+      totalSales: {
+        value: currentSales,
+        percentageChange: salesPercentageChange,
+        trend:
+          salesPercentageChange > 0
+            ? 'up'
+            : salesPercentageChange < 0
+              ? 'down'
+              : 'stable',
+        description: 'Steady performance increase',
+        subtitle: 'Meets growth projections',
+      },
+      newCustomers: {
+        value: currentNewCustomers,
+        percentageChange: newCustomersPercentageChange,
+        trend:
+          newCustomersPercentageChange > 0
+            ? 'up'
+            : newCustomersPercentageChange < 0
+              ? 'down'
+              : 'stable',
+        description:
+          newCustomersPercentageChange < 0
+            ? `Down ${Math.abs(newCustomersPercentageChange)}% this period`
+            : 'Growing this period',
+        subtitle:
+          newCustomersPercentageChange < -10
+            ? 'Acquisition needs attention'
+            : 'Acquisition on track',
+      },
+      activeAccounts: {
+        value: currentActiveAccounts,
+        percentageChange: activeAccountsPercentageChange,
+        trend:
+          activeAccountsPercentageChange > 0
+            ? 'up'
+            : activeAccountsPercentageChange < 0
+              ? 'down'
+              : 'stable',
+        description: 'Strong user retention',
+        subtitle: 'Engagement exceed targets',
+      },
+      period: {
+        current: {
+          start: dayjs(currentPeriodStart).format('YYYY-MM-DD'),
+          end: dayjs(currentPeriodEnd).format('YYYY-MM-DD'),
+        },
+        previous: {
+          start: dayjs(previousPeriodStart).format('YYYY-MM-DD'),
+          end: dayjs(previousPeriodEnd).format('YYYY-MM-DD'),
+        },
+      },
+      revenueHistory: {
+        last6Months,
+        trend: isUpTrend ? 'up' : 'down',
+      },
+    }
+
+    return c.json(ok(dashboardStats), status.OK)
+  } catch (error) {
+    c.var.logger.fatal(`Error in getDashboardStatsHandler: ${error}`)
+    throw error
+  }
+})
+
+// Schema for daily transactions query
+const dailyTransactionsQuerySchema = z.object({
+  period: z
+    .enum(['7days', '30days', '3months'])
+    .optional()
+    .default('30days')
+    .describe('Time period for the chart data'),
+})
+
+type DailyTransactionsQuery = z.infer<typeof dailyTransactionsQuerySchema>
+
+// GET /admin/analytics/daily-transactions
+// Get daily transaction counts for chart visualization with time period filters
+export const getDailyTransactionsHandler = factory.createHandlers(
+  zValidator('query', dailyTransactionsQuerySchema, validateHook),
+  async (c) => {
+    try {
+      const { period } = c.req.valid('query') as DailyTransactionsQuery
+
+      // Calculate date range based on period
+      const now = dayjs()
+      let startDate: Date
+      let daysToShow: number
+
+      switch (period) {
+        case '7days':
+          startDate = now.subtract(7, 'days').startOf('day').toDate()
+          daysToShow = 7
+          break
+        case '30days':
+          startDate = now.subtract(30, 'days').startOf('day').toDate()
+          daysToShow = 30
+          break
+        case '3months':
+          startDate = now.subtract(3, 'months').startOf('day').toDate()
+          daysToShow = 90
+          break
+        default:
+          startDate = now.subtract(30, 'days').startOf('day').toDate()
+          daysToShow = 30
+      }
+
+      const endDate = now.endOf('day').toDate()
+
+      // Fetch all paid invoices in the date range
+      const invoices = await db.invoice.findMany({
+        where: {
+          status: PaymentStatus.PAID,
+          paidAt: {
+            gte: startDate,
+            lte: endDate,
+          },
+        },
+        select: {
+          id: true,
+          total: true,
+          paidAt: true,
+        },
+        orderBy: {
+          paidAt: 'asc',
+        },
+      })
+
+      // Group transactions by date
+      const transactionsByDate: { [key: string]: number } = {}
+
+      invoices.forEach((invoice) => {
+        if (invoice.paidAt) {
+          const dateKey = dayjs(invoice.paidAt).format('YYYY-MM-DD')
+          transactionsByDate[dateKey] = (transactionsByDate[dateKey] || 0) + 1
+        }
+      })
+
+      // Build complete array with all dates (including zero-transaction days)
+      const chartData: Array<{ date: string; total: number }> = []
+
+      for (let i = daysToShow - 1; i >= 0; i--) {
+        const date = now.subtract(i, 'days').format('YYYY-MM-DD')
+        chartData.push({
+          date,
+          total: transactionsByDate[date] || 0,
+        })
+      }
+
+      // Calculate summary statistics
+      const totalTransactions = invoices.length
+      const totalRevenue = invoices.reduce((sum, inv) => sum + inv.total, 0)
+      const averagePerDay =
+        chartData.length > 0
+          ? Number((totalTransactions / chartData.length).toFixed(2))
+          : 0
+      const daysWithTransactions = Object.keys(transactionsByDate).length
+
+      const response = {
+        chartData,
+        summary: {
+          period,
+          totalTransactions,
+          totalRevenue,
+          averagePerDay,
+          daysWithTransactions,
+          dateRange: {
+            start: dayjs(startDate).format('YYYY-MM-DD'),
+            end: dayjs(endDate).format('YYYY-MM-DD'),
+          },
+        },
+      }
+
+      return c.json(ok(response), status.OK)
+    } catch (error) {
+      c.var.logger.fatal(`Error in getDailyTransactionsHandler: ${error}`)
+      throw error
+    }
+  },
+)

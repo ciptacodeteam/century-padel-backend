@@ -81,6 +81,10 @@ export const requireBallboy: MiddlewareHandler = async (c, next) => {
   return requireRole('BALLBOY')(c, next)
 }
 
+export const requireCashier: MiddlewareHandler = async (c, next) => {
+  return requireRole('CASHIER')(c, next)
+}
+
 // You can add more role-based middlewares as needed
 export const requireRole = (role: Role) => {
   const middleware: MiddlewareHandler = async (c, next) => {

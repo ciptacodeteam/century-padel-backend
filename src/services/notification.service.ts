@@ -64,6 +64,21 @@ export const notificationService = {
     })
   },
 
+  async listForAdminUser(adminId: string, take = 50, cursor?: string) {
+    return db.notification.findMany({
+      where: {
+        OR: [
+          { audience: NotificationAudience.ALL },
+          { audience: NotificationAudience.ADMIN, userId: null }, // broadcast to all admins
+          { audience: NotificationAudience.ADMIN, userId: adminId }, // targeted to this admin
+        ],
+      },
+      orderBy: { createdAt: 'desc' },
+      take,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+    })
+  },
+
   async markRead(id: string, userId?: string) {
     // Ensure the notification belongs to the user (if userId provided) unless it's broadcast
     const notif = await db.notification.findUnique({ where: { id } })
@@ -136,6 +151,36 @@ export const notificationService = {
       title: 'Payment Captured',
       message: `Invoice ${invoiceNumber} was paid`,
       data: { invoiceId, invoiceNumber, total, userId },
+    })
+  },
+
+  markAllReadForUser: async (userId: string) => {
+    return db.notification.updateMany({
+      where: {
+        userId,
+        isRead: false,
+      },
+      data: {
+        isRead: true,
+        readAt: new Date(),
+      },
+    })
+  },
+
+  markAllReadForAdmin: async (adminId: string) => {
+    return db.notification.updateMany({
+      where: {
+        OR: [
+          { audience: NotificationAudience.ALL },
+          { audience: NotificationAudience.ADMIN, userId: null },
+          { audience: NotificationAudience.ADMIN, userId: adminId },
+        ],
+        isRead: false,
+      },
+      data: {
+        isRead: true,
+        readAt: new Date(),
+      },
     })
   },
 }
