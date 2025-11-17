@@ -69,10 +69,10 @@ services:
       dockerfile: Dockerfile
       args:
         BUILDKIT_INLINE_CACHE: 1
-      shm_size: '512mb'
     image: quantum-sport-backend:latest
     container_name: quantum-sport-app-prod
     restart: unless-stopped
+    shm_size: '512mb'
     env_file:
       - .env.production
     environment:
