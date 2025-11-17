@@ -20,6 +20,7 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
     "db:resolve-failed": "tsx prisma/resolve-failed-migration.ts",
+    "db:fix-enum": "tsx prisma/fix-enum-migration.ts",
     "postinstall": "prisma generate",
     "typecheck": "tsc --noEmit",
     "vercel:deploy": "vercel",
