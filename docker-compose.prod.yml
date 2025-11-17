@@ -78,13 +78,13 @@ services:
       - .env.production
     environment:
       NODE_ENV: production
-      PORT: 3000
+      PORT: ${PORT:-8000}
       # Construct DATABASE_URL using variables from .env.production
       # Increased connection limit for 4GB RAM
       DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/${DB_NAME:-quantum_sport}?schema=public&connection_limit=20&pool_timeout=20
       REDIS_URL: redis://redis:6379
     ports:
-      - '${PORT:-3000}:3000'
+      - '${PORT:-8000}:${PORT:-8000}'
     depends_on:
       db:
         condition: service_healthy
