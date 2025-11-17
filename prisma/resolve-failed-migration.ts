@@ -72,21 +72,61 @@ async function main() {
     if (!mig.finished_at && !mig.rolled_back_at) {
       console.log('\n⚠️  Migration is marked as failed. Resolving...')
       
+      // First, rollback any aborted transactions
+      console.log('   Rolling back any aborted transactions...')
+      try {
+        await db.$executeRawUnsafe(`ROLLBACK;`)
+      } catch (e) {
+        // Ignore if no transaction exists
+        console.log('   (No active transaction to rollback)')
+      }
+      
       // Clean up partial state if needed
       if (enumTypes.some(e => e.typname === 'BookingStatus_old')) {
         console.log('   Cleaning up BookingStatus_old enum...')
-        await db.$executeRawUnsafe(`DROP TYPE IF EXISTS "BookingStatus_old" CASCADE;`)
+        try {
+          await db.$executeRawUnsafe(`DROP TYPE IF EXISTS "BookingStatus_old" CASCADE;`)
+          console.log('   ✅ Cleaned up BookingStatus_old enum')
+        } catch (e) {
+          console.log(`   ⚠️  Could not drop BookingStatus_old: ${e}`)
+        }
+      }
+
+      // Check for BookingStatus_new that wasn't renamed
+      if (enumTypes.some(e => e.typname === 'BookingStatus_new')) {
+        console.log('   Found BookingStatus_new enum (partial migration state)...')
+        // Try to complete the enum rename
+        try {
+          await db.$executeRawUnsafe(`
+            DO $$ 
+            BEGIN
+              IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'BookingStatus_new') THEN
+                IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'BookingStatus_old') THEN
+                  DROP TYPE "BookingStatus_old" CASCADE;
+                END IF;
+                ALTER TYPE "BookingStatus_new" RENAME TO "BookingStatus";
+              END IF;
+            END $$;
+          `)
+          console.log('   ✅ Fixed enum state')
+        } catch (e) {
+          console.log(`   ⚠️  Could not fix enum: ${e}`)
+        }
       }
 
       // Mark migration as rolled back
       console.log('   Marking migration as rolled back...')
-      await db.$executeRawUnsafe(
-        `UPDATE "_prisma_migrations" 
-        SET rolled_back_at = NOW() 
-        WHERE migration_name = '${migrationName}' AND finished_at IS NULL`
-      )
-      
-      console.log('✅ Migration marked as rolled back. You can now re-run migrations.')
+      try {
+        await db.$executeRawUnsafe(
+          `UPDATE "_prisma_migrations" 
+          SET rolled_back_at = NOW() 
+          WHERE migration_name = '${migrationName}' AND finished_at IS NULL`
+        )
+        console.log('✅ Migration marked as rolled back. You can now re-run migrations.')
+      } catch (e) {
+        console.error(`❌ Error marking migration as rolled back: ${e}`)
+        console.log('   You may need to manually update the _prisma_migrations table')
+      }
     } else if (mig.rolled_back_at) {
       console.log('\n✅ Migration is already marked as rolled back. You can re-run migrations.')
     } else {

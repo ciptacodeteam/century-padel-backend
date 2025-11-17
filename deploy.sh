@@ -53,14 +53,12 @@ git pull origin main
 echo -e "${GREEN}🏗️  Building Docker images...${NC}"
 compose -f docker-compose.prod.yml build --no-cache
 
-echo -e "${GREEN}🗄️  Running database migrations...${NC}"
-compose -f docker-compose.prod.yml run --rm app bunx prisma migrate deploy
-
-echo -e "${GREEN}🌱 Generating Prisma Client...${NC}"
-compose -f docker-compose.prod.yml run --rm app bunx prisma generate
-
-echo -e "${GREEN}🚀 Starting production containers...${NC}"
+echo -e "${GREEN}🚀 Starting production containers (migrations will run automatically on startup)...${NC}"
 compose -f docker-compose.prod.yml up -d
+
+# Note: Migrations are now handled by the docker-entrypoint.sh script
+# which runs automatically when the container starts. This ensures
+# migrations run before the app starts and handles failures gracefully.
 
 # Wait for services to be healthy
 echo -e "${GREEN}⏳ Waiting for services to be healthy...${NC}"

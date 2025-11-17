@@ -61,6 +61,11 @@ COPY --from=deps --chown=nodejs:nodejs /app/prisma ./prisma
 COPY --from=builder --chown=nodejs:nodejs /app/dist ./dist
 COPY --from=builder --chown=nodejs:nodejs /app/package.json ./
 
+# Copy entrypoint script and make it executable (must be done as root)
+COPY docker/docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh && \
+    chown nodejs:nodejs /app/docker-entrypoint.sh
+
 # Create storage directories with proper permissions
 RUN mkdir -p /app/storage/logs /app/storage/uploads && \
     chown -R nodejs:nodejs /app/storage
@@ -75,8 +80,8 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
   CMD bun run --bun /app/dist/healthcheck.js || exit 1
 
-# Use dumb-init to handle signals properly
-ENTRYPOINT ["dumb-init", "--"]
+# Use dumb-init to handle signals properly, then run entrypoint script
+ENTRYPOINT ["dumb-init", "--", "/app/docker-entrypoint.sh"]
 
-# Start application
+# Start application (will be executed by entrypoint script)
 CMD ["bun", "run", "start"]

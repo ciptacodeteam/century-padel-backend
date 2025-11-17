@@ -19,10 +19,13 @@ The migration was attempting to alter `tournament_registrations.status` column b
 The easiest way to resolve this is to use the automated resolution script:
 
 ```bash
-# Run the resolution script
+# Run the resolution script directly (since it may not be in the built image)
+docker-compose -f docker-compose.prod.yml run --rm app bunx tsx prisma/resolve-failed-migration.ts
+
+# Or if the script is in package.json and image is rebuilt:
 docker-compose -f docker-compose.prod.yml run --rm app bun run db:resolve-failed
 
-# Or if using bun directly
+# Or if using bun directly locally
 bun run db:resolve-failed
 ```
 
