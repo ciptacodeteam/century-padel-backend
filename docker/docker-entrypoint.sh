@@ -34,7 +34,7 @@ if [ -n "$DB_HOST" ] && command -v pg_isready > /dev/null 2>&1; then
 else
   # Fallback: try to run a simple Prisma command
   echo "   Testing database connection with Prisma..."
-  until bunx prisma db execute --stdin <<< "SELECT 1" > /dev/null 2>&1 || [ $RETRY_COUNT -ge $MAX_RETRIES ]; do
+  until echo "SELECT 1" | bunx prisma db execute --stdin > /dev/null 2>&1 || [ $RETRY_COUNT -ge $MAX_RETRIES ]; do
     RETRY_COUNT=$((RETRY_COUNT + 1))
     echo "   Database is unavailable - sleeping... (attempt $RETRY_COUNT/$MAX_RETRIES)"
     sleep 2
