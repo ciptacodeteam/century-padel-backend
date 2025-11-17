@@ -31,7 +31,7 @@ services:
         max-file: '5'
     security_opt:
       - no-new-privileges:true
-    shm_size: 256mb
+    shm_size: 512mb
 
   # Redis Cache & Queue
   redis:
@@ -69,9 +69,7 @@ services:
       dockerfile: Dockerfile
       args:
         BUILDKIT_INLINE_CACHE: 1
-      shm_size: '256mb'
-      memory: 1500m
-      memory_swap: 3g
+      shm_size: '512mb'
     image: quantum-sport-backend:latest
     container_name: quantum-sport-app-prod
     restart: unless-stopped
@@ -81,7 +79,8 @@ services:
       NODE_ENV: production
       PORT: 3000
       # Construct DATABASE_URL using variables from .env.production
-      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/${DB_NAME:-quantum_sport}?schema=public&connection_limit=10&pool_timeout=20
+      # Increased connection limit for 4GB RAM
+      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/${DB_NAME:-quantum_sport}?schema=public&connection_limit=20&pool_timeout=20
       REDIS_URL: redis://redis:6379
     ports:
       - '${PORT:-3000}:3000'
@@ -115,11 +114,11 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '1.5'
-          memory: 1G
+          cpus: '2'
+          memory: 2G
         reservations:
-          cpus: '0.5'
-          memory: 512M
+          cpus: '1'
+          memory: 1G
 
   # Email Queue Worker
   email-worker:
@@ -130,7 +129,8 @@ services:
       - .env.production
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/${DB_NAME:-quantum_sport}?schema=public&connection_limit=5
+      # Increased connection limit for 4GB RAM
+      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/${DB_NAME:-quantum_sport}?schema=public&connection_limit=10
       REDIS_URL: redis://redis:6379
     depends_on:
       app:
@@ -152,11 +152,11 @@ services:
     deploy:
       resources:
         limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
           cpus: '0.5'
           memory: 512M
-        reservations:
-          cpus: '0.25'
-          memory: 256M
 
   # Nginx Reverse Proxy (Optional but recommended)
   # NOTE: If you have system nginx running on port 80, either:
@@ -176,6 +176,9 @@ services:
       - ./docker/nginx/ssl:/etc/nginx/ssl:ro
       - nginx_cache:/var/cache/nginx
       - nginx_logs:/var/log/nginx
+      # Let's Encrypt SSL certificates
+      - certbot_certs:/etc/letsencrypt:ro
+      - certbot_www:/var/www/certbot:ro
     depends_on:
       - app
     networks:
@@ -187,6 +190,17 @@ services:
         max-file: '3'
     security_opt:
       - no-new-privileges:true
+  
+  # Certbot for SSL certificate management
+  certbot:
+    image: certbot/certbot:latest
+    container_name: quantum-sport-certbot
+    volumes:
+      - certbot_certs:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+    networks:
+      - quantum-sport-network
 
 volumes:
   postgres_data:
@@ -198,6 +212,10 @@ volumes:
   nginx_cache:
     driver: local
   nginx_logs:
+    driver: local
+  certbot_certs:
+    driver: local
+  certbot_www:
     driver: local
 
 networks:

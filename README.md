@@ -127,9 +127,16 @@ make dev-down
 
 ## Production Deployment
 
-For production deployment with Docker, see the comprehensive guides:
-- **[QUICK_START_2GB.md](./QUICK_START_2GB.md)** - ⚡ **2GB RAM servers** (MUST READ if you have 2GB RAM!)
-- **[DEPLOY_2GB_SERVER.md](./DEPLOY_2GB_SERVER.md)** - Complete guide for 2GB RAM servers
+### 🌐 Domain & SSL Setup
+Your API domain: **api.quantumsocialclub.id**
+
+- **[SSL_QUICK_SETUP.md](./SSL_QUICK_SETUP.md)** - ⚡ **Quick SSL setup** (2 minutes!)
+- **[DOMAIN_AND_SSL_SETUP.md](./DOMAIN_AND_SSL_SETUP.md)** - 🔐 Complete domain & SSL guide
+
+### 📚 Deployment Guides
+- **[DEPLOY_4GB_SERVER.md](./DEPLOY_4GB_SERVER.md)** - 🌟 **Recommended: 4GB RAM** (Optimal for production!)
+- **[UPGRADE_TO_4GB_CHECKLIST.md](./UPGRADE_TO_4GB_CHECKLIST.md)** - Upgrading from 2GB? Follow this!
+- **[QUICK_START_2GB.md](./QUICK_START_2GB.md)** - ⚠️ 2GB RAM minimum (add swap required)
 - **[DOCKER_DEPLOYMENT_GUIDE.md](./DOCKER_DEPLOYMENT_GUIDE.md)** - Complete deployment guide
 - **[DOCKER_QUICK_REFERENCE.md](./DOCKER_QUICK_REFERENCE.md)** - Quick commands
 - **[docker/GETTING_STARTED.md](./docker/GETTING_STARTED.md)** - 5-minute quick start
@@ -157,17 +164,28 @@ For production deployment with Docker, see the comprehensive guides:
    - ✅ Starts all services
    - ✅ Verifies deployment health
 
-3. **Or Deploy Manually**
+3. **Setup SSL (For api.quantumsocialclub.id)**
    ```bash
-   DOCKER_BUILDKIT=1 docker-compose -f docker-compose.prod.yml build
-   docker-compose -f docker-compose.prod.yml up -d
+   chmod +x docker/setup-ssl.sh
+   ./docker/setup-ssl.sh
    ```
+   
+   Configures HTTPS with Let's Encrypt:
+   - ✅ Free SSL certificate
+   - ✅ Auto-renewal every 12 hours
+   - ✅ HTTP → HTTPS redirect
+   - ✅ Security headers enabled
 
-4. **Or Use Make Commands**
-   ```bash
-   make prod-build
-   make prod-up
-   ```
+**Alternative: Manual Deployment**
+```bash
+# Manual build and deploy
+DOCKER_BUILDKIT=1 docker-compose -f docker-compose.prod.yml build
+docker-compose -f docker-compose.prod.yml up -d
+
+# Or use Make commands
+make prod-build
+make prod-up
+```
 
 ### Production Features
 
