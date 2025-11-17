@@ -6,6 +6,10 @@
 
 set -e
 
+# Enable Docker BuildKit for faster builds and cache mounts
+export DOCKER_BUILDKIT=1
+export COMPOSE_DOCKER_CLI_BUILD=1
+
 # Prefer Docker Compose v2 (`docker compose`) with fallback to legacy `docker-compose`
 compose() {
     if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then

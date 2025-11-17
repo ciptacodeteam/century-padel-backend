@@ -11,20 +11,31 @@ The build process can be slow due to several factors:
 
 ## Optimizations Applied
 
-### 1. Docker Layer Caching
+### 1. Docker Layer Caching & Ordering
 
 The Dockerfile now:
-- Copies `bun.lock*` first for better cache hits
+- Copies `package.json` and `bun.lock*` **before** Prisma files
+- Installs dependencies **before** copying Prisma schema
+- This ensures Prisma schema changes don't invalidate the expensive `bun install` layer
 - Uses `--frozen-lockfile` for faster, deterministic installs
 - Separates dependency installation from source code copying
 
-### 2. Conditional Clean Builds
+### 2. BuildKit Cache Mounts
+
+The Dockerfile uses BuildKit cache mounts:
+- `--mount=type=cache,target=/root/.bun/install/cache`
+- Persists Bun's install cache across builds
+- Dramatically speeds up repeated builds (packages cached locally)
+- Requires `DOCKER_BUILDKIT=1` (automatically enabled in `deploy.sh`)
+
+### 3. Conditional Clean Builds
 
 The `deploy.sh` script now:
+- **Automatically enables BuildKit** (`DOCKER_BUILDKIT=1`)
 - Uses Docker cache by default (much faster)
 - Only uses `--no-cache` when `CLEAN_BUILD=true` is set
 
-### 3. .dockerignore File
+### 4. .dockerignore File
 
 Excludes unnecessary files from build context:
 - `node_modules` (will be installed fresh)
@@ -91,18 +102,12 @@ echo 'export DOCKER_BUILDKIT=1' >> ~/.bashrc
 echo 'export COMPOSE_DOCKER_CLI_BUILD=1' >> ~/.bashrc
 ```
 
-### 2. Use Build Cache Mount (Advanced)
+### 2. Build Cache Mount (Already Applied ✅)
 
-For even faster builds, you can mount the Bun cache:
-
-```dockerfile
-# In Dockerfile, replace:
-RUN bun install --production --frozen-lockfile
-
-# With:
-RUN --mount=type=cache,target=/root/.bun/install/cache \
-    bun install --production --frozen-lockfile
-```
+The Dockerfile now uses BuildKit cache mounts automatically:
+- Bun's install cache is persisted across builds
+- No additional configuration needed
+- Enabled by default in `deploy.sh`
 
 ### 3. Parallel Stage Builds
 

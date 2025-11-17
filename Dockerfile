@@ -1,19 +1,26 @@
 # ============================================
 # Multi-stage Dockerfile for Production
 # ============================================
+# Enable BuildKit for cache mounts (requires: DOCKER_BUILDKIT=1)
+# syntax=docker/dockerfile:1.4
 
 # Stage 1: Dependencies
 FROM oven/bun:1.3-alpine AS deps
 
 WORKDIR /app
 
-# Copy package files (copy lock file first for better caching)
+# Copy package files first (for better layer caching)
+# Only package files change should invalidate this layer
 COPY package.json bun.lock* ./
-COPY prisma ./prisma
 
-# Install production dependencies only
-# Use --frozen-lockfile for faster, deterministic installs
-RUN bun install --production --frozen-lockfile
+# Install production dependencies with cache mount for faster rebuilds
+# Cache mount persists Bun's install cache across builds
+RUN --mount=type=cache,target=/root/.bun/install/cache \
+    bun install --production --frozen-lockfile
+
+# Copy Prisma schema AFTER dependencies are installed
+# This way Prisma changes don't invalidate the expensive bun install layer
+COPY prisma ./prisma
 
 # Generate Prisma Client
 RUN bunx prisma generate
@@ -24,12 +31,16 @@ FROM oven/bun:1.3-alpine AS builder
 
 WORKDIR /app
 
-# Copy package files
+# Copy package files first (for better layer caching)
 COPY package.json bun.lock* ./
-COPY prisma ./prisma
 
 # Install all dependencies (including devDependencies for build)
-RUN bun install --frozen-lockfile
+# Use cache mount to speed up repeated builds
+RUN --mount=type=cache,target=/root/.bun/install/cache \
+    bun install --frozen-lockfile
+
+# Copy Prisma schema AFTER dependencies are installed
+COPY prisma ./prisma
 
 # Copy source code and config
 COPY tsconfig.json ./
