@@ -153,4 +153,34 @@ export const notificationService = {
       data: { invoiceId, invoiceNumber, total, userId },
     })
   },
+
+  markAllReadForUser: async (userId: string) => {
+    return db.notification.updateMany({
+      where: {
+        userId,
+        isRead: false,
+      },
+      data: {
+        isRead: true,
+        readAt: new Date(),
+      },
+    })
+  },
+
+  markAllReadForAdmin: async (adminId: string) => {
+    return db.notification.updateMany({
+      where: {
+        OR: [
+          { audience: NotificationAudience.ALL },
+          { audience: NotificationAudience.ADMIN, userId: null },
+          { audience: NotificationAudience.ADMIN, userId: adminId },
+        ],
+        isRead: false,
+      },
+      data: {
+        isRead: true,
+        readAt: new Date(),
+      },
+    })
+  },
 }

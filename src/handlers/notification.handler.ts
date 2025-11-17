@@ -1,12 +1,13 @@
-import { factory } from '@/lib/create-app'
-import { zValidator } from '@hono/zod-validator'
 import { validateHook } from '@/helpers/validate-hook'
-import { notificationService } from '@/services/notification.service'
+import { factory } from '@/lib/create-app'
 import { ok } from '@/lib/response'
-import status from 'http-status'
-import { requireAuth, requireAdminAuth } from '@/middlewares/auth'
-import z from 'zod'
+import { idSchema } from '@/lib/validation'
+import { requireAdminAuth, requireAuth } from '@/middlewares/auth'
+import { notificationService } from '@/services/notification.service'
+import { zValidator } from '@hono/zod-validator'
 import { NotificationAudience, NotificationType } from '@prisma/client'
+import status from 'http-status'
+import z from 'zod'
 
 const paginationSchema = z.object({
   cursor: z.string().optional(),
@@ -118,6 +119,7 @@ export const getAdminNotificationsHandler = factory.createHandlers(
 
 export const markAdminNotificationReadHandler = factory.createHandlers(
   requireAdminAuth,
+  zValidator('param', idSchema, validateHook),
   async (c) => {
     try {
       const admin = c.get('admin')
@@ -132,6 +134,30 @@ export const markAdminNotificationReadHandler = factory.createHandlers(
       return c.json(ok(updated), status.OK)
     } catch (error) {
       c.var.logger.error(`Error in markAdminNotificationReadHandler: ${error}`)
+      throw error
+    }
+  },
+)
+
+export const markAllAdminNotificationsReadHandler = factory.createHandlers(
+  requireAdminAuth,
+  async (c) => {
+    try {
+      const admin = c.get('admin')
+      if (!admin?.id) {
+        return c.json(ok(null, 'Unauthorized'), status.UNAUTHORIZED)
+      }
+      const updatedCount = await notificationService.markAllReadForAdmin(
+        admin.id,
+      )
+      return c.json(
+        ok({ updatedCount }, 'All notifications marked as read'),
+        status.OK,
+      )
+    } catch (error) {
+      c.var.logger.error(
+        `Error in markAllAdminNotificationsReadHandler: ${error}`,
+      )
       throw error
     }
   },
