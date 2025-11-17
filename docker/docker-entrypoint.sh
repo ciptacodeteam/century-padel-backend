@@ -63,39 +63,52 @@ else
   echo "⚠️  Attempting to resolve failed migration..."
   
   # Try to resolve failed migration if the script exists
-  if [ -f "/app/prisma/resolve-failed-migration.ts" ]; then
+  # Try force-rollback script first (more aggressive), then fallback to resolve script
+  if [ -f "/app/prisma/force-rollback-migration.ts" ]; then
+    echo "   Running force rollback script..."
+    RECOVERY_OUTPUT=$(bunx tsx /app/prisma/force-rollback-migration.ts 2>&1 || bun run /app/prisma/force-rollback-migration.ts 2>&1)
+    RECOVERY_EXIT=$?
+  elif [ -f "/app/prisma/resolve-failed-migration.ts" ]; then
     echo "   Running migration recovery script..."
-    # Try to run the script (tsx should be available via bunx)
     RECOVERY_OUTPUT=$(bunx tsx /app/prisma/resolve-failed-migration.ts 2>&1 || bun run /app/prisma/resolve-failed-migration.ts 2>&1)
     RECOVERY_EXIT=$?
+  else
+    echo "❌ No recovery scripts found. Attempting manual rollback..."
+    # Try to manually mark migration as rolled back
+    RECOVERY_OUTPUT=$(echo "UPDATE \"_prisma_migrations\" SET rolled_back_at = NOW() WHERE migration_name = '20251114161611_add_club_join_request' AND finished_at IS NULL;" | bunx prisma db execute --stdin 2>&1)
+    RECOVERY_EXIT=$?
+  fi
+  
+  if [ $RECOVERY_EXIT -eq 0 ]; then
+    echo "   ✅ Recovery script completed"
+    echo "   Waiting 2 seconds before retrying migrations..."
+    sleep 2
+    echo "   Retrying migrations..."
+    RETRY_OUTPUT=$(bunx prisma migrate deploy 2>&1)
+    RETRY_EXIT=$?
     
-    if [ $RECOVERY_EXIT -eq 0 ]; then
-      echo "   ✅ Recovery script completed"
-      echo "   Retrying migrations..."
-      RETRY_OUTPUT=$(bunx prisma migrate deploy 2>&1)
-      RETRY_EXIT=$?
-      
-      if [ $RETRY_EXIT -eq 0 ]; then
-        echo "✅ Migrations completed after recovery"
-      else
-        echo "❌ Migration retry failed with exit code $RETRY_EXIT"
-        echo "Retry output:"
-        echo "$RETRY_OUTPUT"
-        echo ""
-        echo "Please check the logs and resolve manually."
-        exit 1
-      fi
+    if [ $RETRY_EXIT -eq 0 ]; then
+      echo "✅ Migrations completed after recovery"
     else
-      echo "   ⚠️  Could not run recovery script (exit code $RECOVERY_EXIT)"
-      echo "Recovery output:"
-      echo "$RECOVERY_OUTPUT"
+      echo "❌ Migration retry failed with exit code $RETRY_EXIT"
+      echo "Retry output:"
+      echo "$RETRY_OUTPUT"
       echo ""
-      echo "Please resolve the migration manually and restart the container."
+      echo "The migration may need manual intervention."
+      echo "You can try running this manually:"
+      echo "  docker-compose -f docker-compose.prod.yml exec app bunx tsx /app/prisma/force-rollback-migration.ts"
+      echo "  docker-compose -f docker-compose.prod.yml exec app bunx prisma migrate deploy"
       exit 1
     fi
   else
-    echo "❌ Migration failed and recovery script not found at /app/prisma/resolve-failed-migration.ts"
-    echo "   Please check the migration status and resolve manually."
+    echo "   ⚠️  Recovery script failed (exit code $RECOVERY_EXIT)"
+    echo "Recovery output:"
+    echo "$RECOVERY_OUTPUT"
+    echo ""
+    echo "Please resolve the migration manually:"
+    echo "  1. Connect to the database"
+    echo "  2. Run: UPDATE \"_prisma_migrations\" SET rolled_back_at = NOW() WHERE migration_name = '20251114161611_add_club_join_request' AND finished_at IS NULL;"
+    echo "  3. Restart the container"
     exit 1
   fi
 fi

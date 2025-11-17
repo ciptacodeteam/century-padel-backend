@@ -7,59 +7,121 @@
   - You are about to drop the `tournament_registrations` table. If the table is not empty, all the data it contains will be lost.
 
 */
--- AlterEnum
+-- Step 1: Update any DRAFT records to HOLD before altering the enum
+UPDATE "bookings" SET "status" = 'HOLD' WHERE "status" = 'DRAFT';
+UPDATE "class_bookings" SET "status" = 'HOLD' WHERE "status" = 'DRAFT';
+
+-- Step 2: AlterEnum (wrap in transaction for atomicity)
 BEGIN;
 CREATE TYPE "BookingStatus_new" AS ENUM ('HOLD', 'CONFIRMED', 'CANCELLED');
 ALTER TABLE "public"."bookings" ALTER COLUMN "status" DROP DEFAULT;
 ALTER TABLE "public"."class_bookings" ALTER COLUMN "status" DROP DEFAULT;
-ALTER TABLE "bookings" ALTER COLUMN "status" TYPE "BookingStatus_new" USING ("status"::text::"BookingStatus_new");
-ALTER TABLE "class_bookings" ALTER COLUMN "status" TYPE "BookingStatus_new" USING ("status"::text::"BookingStatus_new");
+ALTER TABLE "bookings" ALTER COLUMN "status" TYPE "BookingStatus_new" USING (
+  CASE 
+    WHEN "status"::text = 'DRAFT' THEN 'HOLD'::"BookingStatus_new"
+    WHEN "status"::text = 'HOLD' THEN 'HOLD'::"BookingStatus_new"
+    WHEN "status"::text = 'CONFIRMED' THEN 'CONFIRMED'::"BookingStatus_new"
+    WHEN "status"::text = 'CANCELLED' THEN 'CANCELLED'::"BookingStatus_new"
+    ELSE 'HOLD'::"BookingStatus_new"
+  END
+);
+ALTER TABLE "class_bookings" ALTER COLUMN "status" TYPE "BookingStatus_new" USING (
+  CASE 
+    WHEN "status"::text = 'DRAFT' THEN 'HOLD'::"BookingStatus_new"
+    WHEN "status"::text = 'HOLD' THEN 'HOLD'::"BookingStatus_new"
+    WHEN "status"::text = 'CONFIRMED' THEN 'CONFIRMED'::"BookingStatus_new"
+    WHEN "status"::text = 'CANCELLED' THEN 'CANCELLED'::"BookingStatus_new"
+    ELSE 'HOLD'::"BookingStatus_new"
+  END
+);
 ALTER TYPE "BookingStatus" RENAME TO "BookingStatus_old";
 ALTER TYPE "BookingStatus_new" RENAME TO "BookingStatus";
-DROP TYPE "public"."BookingStatus_old";
+DROP TYPE IF EXISTS "public"."BookingStatus_old";
 ALTER TABLE "bookings" ALTER COLUMN "status" SET DEFAULT 'HOLD';
 ALTER TABLE "class_bookings" ALTER COLUMN "status" SET DEFAULT 'HOLD';
 COMMIT;
 
--- DropForeignKey
-ALTER TABLE "invoices" DROP CONSTRAINT "invoices_tournamentRegistrationId_fkey";
+-- DropForeignKey (use DO block to handle cases where constraints might not exist)
+DO $$ 
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.table_constraints 
+    WHERE constraint_name = 'invoices_tournamentRegistrationId_fkey' 
+    AND table_name = 'invoices'
+  ) THEN
+    ALTER TABLE "invoices" DROP CONSTRAINT "invoices_tournamentRegistrationId_fkey";
+  END IF;
+END $$;
 
--- DropForeignKey
-ALTER TABLE "tournament_registration_members" DROP CONSTRAINT "tournament_registration_members_tournamentRegistrationId_fkey";
+-- DropForeignKey (only if tables and constraints exist)
+DO $$ 
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'tournament_registration_members') THEN
+    IF EXISTS (
+      SELECT 1 FROM information_schema.table_constraints 
+      WHERE constraint_name = 'tournament_registration_members_tournamentRegistrationId_fkey' 
+      AND table_name = 'tournament_registration_members'
+    ) THEN
+      ALTER TABLE "tournament_registration_members" DROP CONSTRAINT "tournament_registration_members_tournamentRegistrationId_fkey";
+    END IF;
+    IF EXISTS (
+      SELECT 1 FROM information_schema.table_constraints 
+      WHERE constraint_name = 'tournament_registration_members_userId_fkey' 
+      AND table_name = 'tournament_registration_members'
+    ) THEN
+      ALTER TABLE "tournament_registration_members" DROP CONSTRAINT "tournament_registration_members_userId_fkey";
+    END IF;
+  END IF;
+  
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'tournament_registrations') THEN
+    IF EXISTS (
+      SELECT 1 FROM information_schema.table_constraints 
+      WHERE constraint_name = 'tournament_registrations_clubId_fkey' 
+      AND table_name = 'tournament_registrations'
+    ) THEN
+      ALTER TABLE "tournament_registrations" DROP CONSTRAINT "tournament_registrations_clubId_fkey";
+    END IF;
+    IF EXISTS (
+      SELECT 1 FROM information_schema.table_constraints 
+      WHERE constraint_name = 'tournament_registrations_tournamentId_fkey' 
+      AND table_name = 'tournament_registrations'
+    ) THEN
+      ALTER TABLE "tournament_registrations" DROP CONSTRAINT "tournament_registrations_tournamentId_fkey";
+    END IF;
+  END IF;
+END $$;
 
--- DropForeignKey
-ALTER TABLE "tournament_registration_members" DROP CONSTRAINT "tournament_registration_members_userId_fkey";
+-- DropIndex (use IF EXISTS)
+DROP INDEX IF EXISTS "invoices_tournamentRegistrationId_key";
 
--- DropForeignKey
-ALTER TABLE "tournament_registrations" DROP CONSTRAINT "tournament_registrations_clubId_fkey";
-
--- DropForeignKey
-ALTER TABLE "tournament_registrations" DROP CONSTRAINT "tournament_registrations_tournamentId_fkey";
-
--- DropIndex
-DROP INDEX "invoices_tournamentRegistrationId_key";
-
--- AlterTable
+-- AlterTable (defaults already set above, but ensure they're set)
 ALTER TABLE "bookings" ALTER COLUMN "status" SET DEFAULT 'HOLD';
 
 -- AlterTable
 ALTER TABLE "class_bookings" ALTER COLUMN "status" SET DEFAULT 'HOLD';
 
 -- AlterTable
-ALTER TABLE "inventories" ADD COLUMN     "price" INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE "inventories" ADD COLUMN IF NOT EXISTS "price" INTEGER NOT NULL DEFAULT 0;
+
+-- AlterTable (drop column only if it exists)
+DO $$ 
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'invoices' AND column_name = 'tournamentRegistrationId'
+  ) THEN
+    ALTER TABLE "invoices" DROP COLUMN "tournamentRegistrationId";
+  END IF;
+END $$;
 
 -- AlterTable
-ALTER TABLE "invoices" DROP COLUMN "tournamentRegistrationId";
+ALTER TABLE "payment_methods" 
+  ADD COLUMN IF NOT EXISTS "channel" TEXT,
+  ADD COLUMN IF NOT EXISTS "percentage" DECIMAL(65,30) NOT NULL DEFAULT 0;
 
--- AlterTable
-ALTER TABLE "payment_methods" ADD COLUMN     "channel" TEXT,
-ADD COLUMN     "percentage" DECIMAL(65,30) NOT NULL DEFAULT 0;
-
--- DropTable
-DROP TABLE "tournament_registration_members";
-
--- DropTable
-DROP TABLE "tournament_registrations";
+-- DropTable (use IF EXISTS to handle partial migrations)
+DROP TABLE IF EXISTS "tournament_registration_members";
+DROP TABLE IF EXISTS "tournament_registrations";
 
 -- CreateTable
 CREATE TABLE "club_join_requests" (
