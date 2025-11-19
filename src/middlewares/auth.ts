@@ -85,6 +85,59 @@ export const requireCashier: MiddlewareHandler = async (c, next) => {
   return requireRole('CASHIER')(c, next)
 }
 
+export const requireAdminViewer: MiddlewareHandler = async (c, next) => {
+  return requireRole('ADMIN_VIEWER')(c, next)
+}
+
+// Allow both ADMIN and ADMIN_VIEWER (read-only access for viewer)
+export const requireAdminOrViewer: MiddlewareHandler = async (c, next) => {
+  const admin = c.get('admin')
+
+  if (!admin) {
+    throw new UnauthorizedException()
+  }
+
+  if (admin.role !== 'ADMIN' && admin.role !== 'ADMIN_VIEWER') {
+    throw new ForbiddenException()
+  }
+
+  return next()
+}
+
+// Only allow ADMIN (blocks ADMIN_VIEWER from write operations)
+export const requireAdminWriteAccess: MiddlewareHandler = async (c, next) => {
+  const admin = c.get('admin')
+
+  if (!admin) {
+    throw new UnauthorizedException()
+  }
+
+  if (admin.role !== 'ADMIN') {
+    throw new ForbiddenException('Admin write access required')
+  }
+
+  return next()
+}
+
+// Middleware to block ADMIN_VIEWER from POST, PUT, PATCH, DELETE requests
+export const blockAdminViewerWrites: MiddlewareHandler = async (c, next) => {
+  const admin = c.get('admin')
+  const method = c.req.method
+
+  // If user is ADMIN_VIEWER and trying to modify data
+  if (
+    admin &&
+    admin.role === 'ADMIN_VIEWER' &&
+    ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)
+  ) {
+    throw new ForbiddenException(
+      'Admin viewer role has read-only access. Write operations are not permitted.',
+    )
+  }
+
+  return next()
+}
+
 // You can add more role-based middlewares as needed
 export const requireRole = (role: Role) => {
   const middleware: MiddlewareHandler = async (c, next) => {

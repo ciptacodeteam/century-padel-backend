@@ -15,6 +15,7 @@ datasource db {
 // ------------------------------
 enum Role {
   ADMIN
+  ADMIN_VIEWER
   BALLBOY
   COACH
   CASHIER

@@ -88,6 +88,15 @@ async function seedStaff() {
       joinedAt: dayjs().subtract(2, 'years').toDate(),
     },
     {
+      name: 'Viewer Admin',
+      email: 'viewer@quantum.com',
+      phone: '+6281100000008',
+      password: hashedPassword,
+      role: 'ADMIN_VIEWER' as const,
+      isActive: true,
+      joinedAt: dayjs().subtract(1, 'month').toDate(),
+    },
+    {
       name: 'Cashier One',
       email: 'cashier1@quantum.com',
       phone: '+6281100000002',
