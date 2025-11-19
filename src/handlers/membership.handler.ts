@@ -3,7 +3,7 @@ import { validateHook } from '@/helpers/validate-hook'
 import { factory } from '@/lib/create-app'
 import { db } from '@/lib/prisma'
 import buildFindManyOptions from '@/lib/query'
-import { ok } from '@/lib/response'
+import { ok, err } from '@/lib/response'
 import {
   idSchema,
   IdSchema,
@@ -54,6 +54,58 @@ export const getMembershipHandler = factory.createHandlers(
       return c.json(ok(item), status.OK)
     } catch (error) {
       c.var.logger.fatal(`Error in getMembershipHandler: ${error}`)
+      throw error
+    }
+  },
+)
+
+export const getUserMembershipsHandler = factory.createHandlers(
+  async (c) => {
+    try {
+      const user = c.get('user')
+      
+      if (!user) {
+        return c.json(err('Unauthorized', status.UNAUTHORIZED))
+      }
+
+      const userMemberships = await db.membershipUser.findMany({
+        where: {
+          userId: user.id,
+        },
+        include: {
+          membership: {
+            include: {
+              benefits: true,
+            },
+          },
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+      })
+
+      // Separate active, expired, and suspended memberships
+      const now = new Date()
+      const activeMemberships = userMemberships.filter(
+        (um) => !um.isExpired && !um.isSuspended && um.endDate > now
+      )
+      const expiredMemberships = userMemberships.filter(
+        (um) => um.isExpired || um.endDate <= now
+      )
+      const suspendedMemberships = userMemberships.filter(
+        (um) => um.isSuspended && !um.isExpired && um.endDate > now
+      )
+
+      const response = {
+        active: activeMemberships,
+        expired: expiredMemberships,
+        suspended: suspendedMemberships,
+        total: userMemberships.length,
+      }
+
+      return c.json(ok(response, 'User memberships retrieved successfully'), status.OK)
+    } catch (error) {
+      c.var.logger.fatal(`Error in getUserMembershipsHandler: ${error}`)
       throw error
     }
   },
