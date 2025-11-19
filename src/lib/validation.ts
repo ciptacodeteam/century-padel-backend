@@ -130,7 +130,7 @@ export const createStaffSchema = z
       })
       .optional()
       .default(dayjs().format(DEFAULT_DATE_FORMAT)),
-    role: z.enum(Role).default(Role.ADMIN),
+    role: z.enum(['ADMIN', 'ADMIN_VIEWER', 'BALLBOY', 'COACH', 'CASHIER'] as const).default('ADMIN'),
     isActive: z.coerce.boolean().optional(),
     image: z.file().optional(),
   })
