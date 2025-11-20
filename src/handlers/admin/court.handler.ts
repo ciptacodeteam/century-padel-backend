@@ -21,7 +21,7 @@ import {
 import { deleteFile, getFileUrl, uploadFile } from '@/services/upload.service'
 import { zValidator } from '@hono/zod-validator'
 import status from 'http-status'
-import { SlotType } from '@prisma/client'
+import { BookingStatus, SlotType } from '@prisma/client'
 import dayjs from 'dayjs'
 
 export const getAllCourtHandler = factory.createHandlers(
@@ -195,7 +195,14 @@ export const deleteCourtHandler = factory.createHandlers(
       }
 
       const isAlreadyBooked = await db.bookingDetail.findFirst({
-        where: { courtId: id },
+        where: {
+          courtId: id,
+          booking: {
+            status: {
+              not: BookingStatus.CANCELLED,
+            },
+          },
+        },
       })
 
       if (isAlreadyBooked) {

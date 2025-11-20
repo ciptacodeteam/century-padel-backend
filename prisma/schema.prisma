@@ -422,8 +422,6 @@ model BookingDetail {
   court   Court?  @relation(fields: [courtId], references: [id])
   courtId String?
 
-  // Ensure a court slot is not double-booked:
-  @@unique([slotId], map: "uq_bookingdetail_slot")
   @@map("booking_details")
 }
 
@@ -501,8 +499,6 @@ model BookingCoach {
   booking          Booking          @relation(fields: [bookingId], references: [id], onDelete: Cascade)
   slot             Slot             @relation(fields: [slotId], references: [id])
   bookingCoachType BookingCoachType @relation(fields: [bookingCoachTypeId], references: [id])
-
-  @@unique([slotId], map: "uq_bookingcoach_slot")
   @@map("booking_coaches")
 }
 

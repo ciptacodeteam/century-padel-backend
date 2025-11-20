@@ -138,7 +138,17 @@ export const adminCheckoutHandler = factory.createHandlers(
               isAvailable: true,
             },
             include: {
-              bookingDetails: { select: { id: true }, take: 1 },
+              bookingDetails: {
+                where: {
+                  booking: {
+                    status: {
+                      not: BookingStatus.CANCELLED,
+                    },
+                  },
+                },
+                select: { id: true },
+                take: 1,
+              },
             },
           })
           if (slotData.length !== courtSlots.length) {
@@ -182,7 +192,17 @@ export const adminCheckoutHandler = factory.createHandlers(
               isAvailable: true,
             },
             include: {
-              bookingCoaches: { select: { id: true }, take: 1 },
+              bookingCoaches: {
+                where: {
+                  booking: {
+                    status: {
+                      not: BookingStatus.CANCELLED,
+                    },
+                  },
+                },
+                select: { id: true },
+                take: 1,
+              },
             },
           })
           if (slotData.length !== coachSlots.length) {
@@ -232,7 +252,17 @@ export const adminCheckoutHandler = factory.createHandlers(
               isAvailable: true,
             },
             include: {
-              bookingBallboys: { select: { id: true }, take: 1 },
+              bookingBallboys: {
+                where: {
+                  booking: {
+                    status: {
+                      not: BookingStatus.CANCELLED,
+                    },
+                  },
+                },
+                select: { id: true },
+                take: 1,
+              },
             },
           })
           if (slotData.length !== ballboySlots.length) {

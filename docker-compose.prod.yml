@@ -11,8 +11,9 @@ services:
       POSTGRES_USER: ${DB_USER:-postgres}
       POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
       POSTGRES_INITDB_ARGS: '-E UTF8'
-    ports:
-      - '${DB_PORT:-5432}:5432'
+    # Port not exposed externally for security (containers can access internally)
+    # ports:
+    #   - '${DB_PORT:-5432}:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./docker/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
@@ -77,13 +78,13 @@ services:
       - .env.production
     environment:
       NODE_ENV: production
-      PORT: 3000
+      PORT: ${PORT:-8000}
       # Construct DATABASE_URL using variables from .env.production
       # Increased connection limit for 4GB RAM
       DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/${DB_NAME:-quantum_sport}?schema=public&connection_limit=20&pool_timeout=20
       REDIS_URL: redis://redis:6379
     ports:
-      - '${PORT:-3000}:3000'
+      - '${PORT:-8000}:${PORT:-8000}'
     depends_on:
       db:
         condition: service_healthy
@@ -97,7 +98,7 @@ services:
       - type: tmpfs
         target: /app/.bun
     healthcheck:
-      test: ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://localhost:3000/health', '||', 'exit', '1']
+      test: ['CMD', 'bun', 'run', '--bun', '/app/dist/healthcheck.js']
       interval: 30s
       timeout: 10s
       retries: 3

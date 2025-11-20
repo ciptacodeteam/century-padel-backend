@@ -4,7 +4,7 @@ import { ok } from '@/lib/response'
 import { availableInventoryQuerySchema } from '@/lib/validation'
 import { requireCoach } from '@/middlewares/auth'
 import { zValidator } from '@hono/zod-validator'
-import { SlotType } from '@prisma/client'
+import { BookingStatus, SlotType } from '@prisma/client'
 import status from 'http-status'
 import dayjs from 'dayjs'
 
@@ -39,6 +39,13 @@ export const getMyCoachScheduleHandler = factory.createHandlers(
 				where,
 				include: {
 					bookingCoaches: {
+						where: {
+							booking: {
+								status: {
+									not: BookingStatus.CANCELLED,
+								},
+							},
+						},
 						include: {
 							booking: {
 								include: {
