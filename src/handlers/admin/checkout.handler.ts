@@ -137,9 +137,9 @@ export const adminCheckoutHandler = factory.createHandlers(
               type: SlotType.COURT,
               isAvailable: true,
             },
-            include: {
-              bookingDetails: { select: { id: true }, take: 1 },
-            },
+            // include: {
+            //   bookingDetails: { select: { id: true }, take: 1 },
+            // },
           })
           if (slotData.length !== courtSlots.length) {
             throw new BadRequestException(
@@ -147,11 +147,11 @@ export const adminCheckoutHandler = factory.createHandlers(
             )
           }
           for (const slot of slotData) {
-            if (slot.bookingDetails.length > 0) {
-              throw new BadRequestException(
-                'One or more court slots are already booked',
-              )
-            }
+            // if (slot.bookingDetails.length > 0) {
+            //   throw new BadRequestException(
+            //     'One or more court slots are already booked',
+            //   )
+            // }
             totalPrice += slot.price
             await tx.bookingDetail.create({
               data: {

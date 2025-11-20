@@ -1,9 +1,10 @@
-import { NotFoundException } from '@/exceptions'
+import { BadRequestException, NotFoundException } from '@/exceptions'
 import { validateHook } from '@/helpers/validate-hook'
 import { factory } from '@/lib/create-app'
 import { db } from '@/lib/prisma'
 import buildFindManyOptions from '@/lib/query'
 import { ok } from '@/lib/response'
+import { formatPhone, generateInvoiceNumber } from '@/lib/utils'
 import {
   createMembershipSchema,
   CreateMembershipSchema,
@@ -15,7 +16,11 @@ import {
   updateMembershipSchema,
 } from '@/lib/validation'
 import { zValidator } from '@hono/zod-validator'
+import { PaymentStatus } from '@prisma/client'
+import dayjs from 'dayjs'
 import status from 'http-status'
+import { z } from 'zod'
+import { hashPassword } from '@/lib/password'
 
 export const getAllMembershipHandler = factory.createHandlers(
   zValidator('query', searchQuerySchema, validateHook),
@@ -179,6 +184,148 @@ export const deleteMembershipHandler = factory.createHandlers(
       return c.json(ok(null, 'Membership item deleted successfully'), status.OK)
     } catch (error) {
       c.var.logger.fatal(`Error in deleteMembershipHandler: ${error}`)
+      throw error
+    }
+  },
+)
+
+const adminMembershipCheckoutSchema = z
+  .object({
+    userId: z.string().optional(),
+    name: z.string().min(1).optional(),
+    phone: z.string().min(5).optional(),
+    membershipId: z.string(),
+    startDate: z
+      .string()
+      .refine((val) => dayjs(val).isValid(), {
+        message: 'Invalid datetime format for startDate',
+      })
+      .optional(),
+  })
+  .refine(
+    (data) => !!data.userId || (!!data.name && !!data.phone),
+    {
+      message: 'Provide either userId or both name and phone for a new customer',
+      path: ['userId'],
+    },
+  )
+
+type AdminMembershipCheckoutSchema = z.infer<typeof adminMembershipCheckoutSchema>
+
+export const adminMembershipCheckoutHandler = factory.createHandlers(
+  zValidator('json', adminMembershipCheckoutSchema, validateHook),
+  async (c) => {
+    try {
+      const admin = c.get('admin')
+      const {
+        userId: inputUserId,
+        name,
+        phone,
+        membershipId,
+        startDate,
+      } = c.req.valid('json') as AdminMembershipCheckoutSchema
+
+      const membership = await db.membership.findUnique({
+        where: { id: membershipId },
+      })
+
+      if (!membership) {
+        throw new NotFoundException('Membership not found')
+      }
+
+      if (!membership.isActive) {
+        throw new BadRequestException('Membership is not active')
+      }
+
+      let resolvedUserId = inputUserId ?? null
+
+      if (!resolvedUserId) {
+        const formattedPhone = await formatPhone(phone!)
+        const existingUser = await db.user.findUnique({
+          where: { phone: formattedPhone },
+          select: { id: true },
+        })
+
+        if (existingUser) {
+          resolvedUserId = existingUser.id
+        } else {
+          const hashedPassword = await hashPassword(formattedPhone)
+          const createdUser = await db.user.create({
+            data: {
+              name: name!,
+              phone: formattedPhone,
+              password: hashedPassword,
+            },
+            select: { id: true },
+          })
+          resolvedUserId = createdUser.id
+        }
+      } else {
+        const user = await db.user.findUnique({
+          where: { id: resolvedUserId },
+          select: { id: true },
+        })
+
+        if (!user) {
+          throw new NotFoundException('User not found')
+        }
+      }
+
+      const result = await db.$transaction(async (tx) => {
+        const membershipStart = startDate ? dayjs(startDate) : dayjs()
+        const membershipEnd = membershipStart.add(membership.duration, 'days')
+
+        const membershipUser = await tx.membershipUser.create({
+          data: {
+            userId: resolvedUserId!,
+            membershipId: membership.id,
+            startDate: membershipStart.toDate(),
+            endDate: membershipEnd.toDate(),
+            remainingSessions: membership.sessions,
+            remainingDuration: membership.duration,
+            isExpired: false,
+            isSuspended: false,
+          },
+        })
+
+        const invoice = await tx.invoice.create({
+          data: {
+            userId: resolvedUserId!,
+            membershipUserId: membershipUser.id,
+            number: generateInvoiceNumber(),
+            subtotal: membership.price,
+            processingFee: 0,
+            total: membership.price,
+            status: PaymentStatus.PAID,
+            issuedAt: new Date(),
+            dueDate: dayjs().add(5, 'minutes').toDate(),
+            paidAt: new Date(),
+          },
+        })
+
+        return { membershipUser, invoice }
+      })
+
+      c.var.logger.info(
+        `Admin ${admin?.id || 'unknown'} completed membership checkout for user ${result.membershipUser.userId}`,
+      )
+
+      return c.json(
+        ok(
+          {
+            membershipUserId: result.membershipUser.id,
+            invoiceId: result.invoice.id,
+            invoiceNumber: result.invoice.number,
+            total: result.invoice.total,
+            startDate: result.membershipUser.startDate,
+            endDate: result.membershipUser.endDate,
+          },
+          'Admin membership checkout successful',
+        ),
+        status.CREATED,
+      )
+    } catch (error) {
+      c.var.logger.fatal(`Error in adminMembershipCheckoutHandler: ${error}`)
       throw error
     }
   },
