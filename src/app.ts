@@ -136,6 +136,35 @@ routes.forEach((route) => {
   app.route('/', route)
 })
 
+// Import admin middlewares
+import {
+  requireAdminAuth,
+  blockAdminViewerWrites,
+} from './middlewares/auth'
+
+// Apply admin authentication and viewer write protection to all admin routes
+// Exclude auth endpoints (login, register, refresh-token) from authentication requirement
+app.use('/admin/*', async (c, next) => {
+  const path = c.req.path
+  
+  // Skip authentication for public auth endpoints
+  const publicAuthPaths = [
+    '/admin/auth/login',
+    '/admin/auth/register',
+    '/admin/auth/refresh-token',
+    '/admin/auth/check-account',
+  ]
+  
+  if (publicAuthPaths.some((p) => path.startsWith(p))) {
+    return next()
+  }
+  
+  // Apply authentication and write protection for all other admin routes
+  await requireAdminAuth(c, async () => {
+    await blockAdminViewerWrites(c, next)
+  })
+})
+
 adminRoutes.forEach((route) => {
   app.route('/admin', route)
 })

@@ -240,7 +240,7 @@ export const getAvailableCourtSlotsHandler = factory.createHandlers(
 
       const where: any = {
         type: SlotType.COURT,
-        isAvailable: true,
+        // isAvailable: true,
         bookingDetails: {
           none: {},
         },

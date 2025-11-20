@@ -16,6 +16,7 @@ const adminCheckoutSchema = z
     userId: z.string().optional(),
     name: z.string().min(1).optional(),
     phone: z.string().min(5).optional(),
+    totalHours: z.number().positive(),
     courtSlots: z.array(z.string()).optional(),
     coachSlots: z.array(z.string()).optional(),
     ballboySlots: z.array(z.string()).optional(),
@@ -49,6 +50,7 @@ export const adminCheckoutHandler = factory.createHandlers(
       userId: inputUserId,
       name,
       phone,
+      totalHours,
       courtSlots,
       coachSlots,
       ballboySlots,
@@ -160,6 +162,15 @@ export const adminCheckoutHandler = factory.createHandlers(
               },
             })
           }
+          // Update slots to unavailable
+          await tx.slot.updateMany({
+            where: {
+              id: { in: courtSlots },
+            },
+            data: {
+              isAvailable: false,
+            },
+          })
         }
 
         // Coaches
@@ -201,6 +212,15 @@ export const adminCheckoutHandler = factory.createHandlers(
               },
             })
           }
+          // Update slots to unavailable
+          await tx.slot.updateMany({
+            where: {
+              id: { in: coachSlots },
+            },
+            data: {
+              isAvailable: false,
+            },
+          })
         }
 
         // Ballboys
@@ -235,6 +255,15 @@ export const adminCheckoutHandler = factory.createHandlers(
               },
             })
           }
+          // Update slots to unavailable
+          await tx.slot.updateMany({
+            where: {
+              id: { in: ballboySlots },
+            },
+            data: {
+              isAvailable: false,
+            },
+          })
         }
 
         // Inventories
@@ -288,6 +317,49 @@ export const adminCheckoutHandler = factory.createHandlers(
           },
         })
 
+        // Deduct totalHours from user's active membership sessions
+        if (totalHours > 0) {
+          const activeMembership = await tx.membershipUser.findFirst({
+            where: {
+              userId: resolvedUserId!,
+              isExpired: false,
+              isSuspended: false,
+              endDate: { gt: new Date() },
+              remainingSessions: { gt: 0 },
+            },
+            orderBy: {
+              endDate: 'asc', // Use membership that expires first
+            },
+          })
+
+          if (activeMembership) {
+            const newRemainingSessions = Math.max(
+              0,
+              activeMembership.remainingSessions - totalHours
+            )
+            
+            await tx.membershipUser.update({
+              where: { id: activeMembership.id },
+              data: {
+                remainingSessions: newRemainingSessions,
+                // Mark as expired if no sessions left
+                isExpired: newRemainingSessions === 0,
+              },
+            })
+
+            // Log for tracking
+            c.var.logger.info(
+              `Deducted ${totalHours} hours from membership ${activeMembership.id}. ` +
+              `Remaining: ${newRemainingSessions} sessions`
+            )
+          } else {
+            // No active membership with available sessions
+            c.var.logger.warn(
+              `User ${resolvedUserId} has no active membership with available sessions for ${totalHours} hours`
+            )
+          }
+        }
+
         // Generate invoice (marked as PAID immediately)
         const invoiceNumber = generateInvoiceNumber()
         const invoice = await tx.invoice.create({
@@ -310,6 +382,7 @@ export const adminCheckoutHandler = factory.createHandlers(
           invoiceId: invoice.id,
           totalPrice,
           processingFee,
+          totalHours,
         }
       })
 
@@ -320,6 +393,7 @@ export const adminCheckoutHandler = factory.createHandlers(
             invoiceId: result.invoiceId,
             totalPrice: result.totalPrice,
             processingFee: result.processingFee,
+            totalHours: result.totalHours,
             status: BookingStatus.CONFIRMED,
             paymentStatus: PaymentStatus.PAID,
           },

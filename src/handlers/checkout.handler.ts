@@ -160,6 +160,15 @@ export const checkoutHandler = factory.createHandlers(
               price: slot.price,
             })
           }
+          // Update slots to unavailable
+          await tx.slot.updateMany({
+            where: {
+              id: { in: courtSlots },
+            },
+            data: {
+              isAvailable: false,
+            },
+          })
         }
 
         // Process coach slots
@@ -210,6 +219,15 @@ export const checkoutHandler = factory.createHandlers(
               price: slot.price,
             })
           }
+          // Update slots to unavailable
+          await tx.slot.updateMany({
+            where: {
+              id: { in: coachSlots },
+            },
+            data: {
+              isAvailable: false,
+            },
+          })
         }
 
         // Process ballboy slots
@@ -252,6 +270,15 @@ export const checkoutHandler = factory.createHandlers(
               price: slot.price,
             })
           }
+          // Update slots to unavailable
+          await tx.slot.updateMany({
+            where: {
+              id: { in: ballboySlots },
+            },
+            data: {
+              isAvailable: false,
+            },
+          })
         }
 
         // Process inventories
