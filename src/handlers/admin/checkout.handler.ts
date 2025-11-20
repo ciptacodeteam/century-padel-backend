@@ -162,6 +162,15 @@ export const adminCheckoutHandler = factory.createHandlers(
               },
             })
           }
+          // Update slots to unavailable
+          await tx.slot.updateMany({
+            where: {
+              id: { in: courtSlots },
+            },
+            data: {
+              isAvailable: false,
+            },
+          })
         }
 
         // Coaches
@@ -203,6 +212,15 @@ export const adminCheckoutHandler = factory.createHandlers(
               },
             })
           }
+          // Update slots to unavailable
+          await tx.slot.updateMany({
+            where: {
+              id: { in: coachSlots },
+            },
+            data: {
+              isAvailable: false,
+            },
+          })
         }
 
         // Ballboys
@@ -237,6 +255,15 @@ export const adminCheckoutHandler = factory.createHandlers(
               },
             })
           }
+          // Update slots to unavailable
+          await tx.slot.updateMany({
+            where: {
+              id: { in: ballboySlots },
+            },
+            data: {
+              isAvailable: false,
+            },
+          })
         }
 
         // Inventories
