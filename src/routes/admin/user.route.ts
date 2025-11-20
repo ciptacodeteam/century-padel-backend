@@ -5,13 +5,17 @@ import {
   sendResetPasswordLinkHandler,
   unbanUserHandler,
   updateUserHandler,
+  searchCustomersHandler,
+  getCustomerMembershipDetailsHandler,
 } from '@/handlers/admin/user.handler'
 import { createRouter } from '@/lib/create-app'
 
 const adminUserRoute = createRouter()
   .basePath('/customers')
   .get('/', ...getAllUsersHandler)
+  .get('/search', ...searchCustomersHandler)
   .get('/:id', ...getUserDetailHandler)
+  .get('/:id/membership', ...getCustomerMembershipDetailsHandler)
   .put('/:id', ...updateUserHandler)
   .post('/:id/send-reset-password', ...sendResetPasswordLinkHandler)
   // .post('/:id/send-change-phone', ...sendChangePhoneLinkHandler) # salah

@@ -28,6 +28,14 @@ import status from 'http-status'
 import z from 'zod'
 import { env } from '@/env'
 
+// Validation schema for customer search (Select2)
+const customerSearchSchema = z.object({
+  q: z.string().min(2, 'Search query must be at least 2 characters'),
+  limit: z.string().optional().default('20'),
+})
+
+type CustomerSearchSchema = z.infer<typeof customerSearchSchema>
+
 // Validation schema for ban user
 const banUserSchema = z.object({
   reason: z.string().min(1).max(500),
@@ -40,6 +48,154 @@ const banUserSchema = z.object({
 })
 
 type BanUserSchema = z.infer<typeof banUserSchema>
+
+// Helper function to normalize phone search query
+// Handles different phone formats: "081", "6281", "+6281" all match "+6281..."
+function normalizePhoneSearch(query: string): string[] {
+  const cleaned = query.replace(/[\s\-()]/g, '')
+  const patterns: string[] = [cleaned] // Always include original query
+
+  // If starts with "08", convert to international format
+  // "081234" -> should match "+6281234..."
+  if (cleaned.startsWith('08')) {
+    // Remove the leading "0" and add country code variations
+    const withoutZero = cleaned.slice(1) // "81234"
+    patterns.push(`+62${withoutZero}`) // "+6281234"
+    patterns.push(`62${withoutZero}`) // "6281234"
+  }
+  // If starts with "62" (without +)
+  else if (cleaned.startsWith('62') && !cleaned.startsWith('+62')) {
+    patterns.push(`+${cleaned}`) // "+62..."
+    // Also add "08" version
+    if (cleaned.length > 2 && cleaned[2] === '8') {
+      patterns.push(`0${cleaned.slice(2)}`) // "08..."
+    }
+  }
+  // If starts with "+62"
+  else if (cleaned.startsWith('+62')) {
+    const withoutPlus = cleaned.slice(1) // "62..."
+    patterns.push(withoutPlus) // "62..."
+    // Also add "08" version
+    if (cleaned.length > 3 && cleaned[3] === '8') {
+      patterns.push(`0${cleaned.slice(3)}`) // "08..."
+    }
+  }
+  // If starts with just "8" (like "8123")
+  else if (cleaned.startsWith('8') && /^\d+$/.test(cleaned)) {
+    patterns.push(`+62${cleaned}`) // "+628..."
+    patterns.push(`62${cleaned}`) // "628..."
+    patterns.push(`0${cleaned}`) // "08..."
+  }
+  // For any numeric query starting with digits, try common formats
+  else if (/^\d+$/.test(cleaned) && cleaned.length >= 2) {
+    patterns.push(`+62${cleaned}`)
+    patterns.push(`62${cleaned}`)
+    if (cleaned.startsWith('8')) {
+      patterns.push(`0${cleaned}`)
+    }
+  }
+
+  return [...new Set(patterns.filter(p => p.length > 0))] // Remove duplicates and empty strings
+}
+
+// GET /admin/customers/search
+// Search customers for Select2 component with membership details
+export const searchCustomersHandler = factory.createHandlers(
+  zValidator('query', customerSearchSchema, validateHook),
+  async (c) => {
+    try {
+      const { q, limit } = c.req.valid('query') as CustomerSearchSchema
+      const takeLimit = parseInt(limit) || 20
+
+      // Normalize phone search patterns
+      const phonePatterns = normalizePhoneSearch(q)
+
+      // Build case-insensitive search across name, email, and phone
+      const users = await db.user.findMany({
+        where: {
+          OR: [
+            { name: { contains: q, mode: 'insensitive' } },
+            { email: { contains: q, mode: 'insensitive' } },
+            // Search phone with multiple patterns
+            ...phonePatterns.map((pattern) => ({
+              phone: { contains: pattern, mode: 'insensitive' as const },
+            })),
+          ],
+        },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          phone: true,
+        },
+        take: takeLimit,
+        orderBy: { name: 'asc' },
+      })
+
+      // Get active memberships for all users in a single query
+      const userIds = users.map((u) => u.id)
+      const activeMemberships = await db.membershipUser.findMany({
+        where: {
+          userId: { in: userIds },
+          isExpired: false,
+          isSuspended: false,
+          endDate: { gt: new Date() },
+        },
+        include: {
+          membership: {
+            select: {
+              id: true,
+              name: true,
+              price: true,
+            },
+          },
+        },
+        orderBy: {
+          endDate: 'asc', // Get the one that expires first
+        },
+      })
+
+      // Group memberships by userId and get the first one (earliest endDate)
+      const membershipMap = new Map<string, typeof activeMemberships[0]>()
+      for (const membership of activeMemberships) {
+        if (!membershipMap.has(membership.userId)) {
+          membershipMap.set(membership.userId, membership)
+        }
+      }
+
+      // Combine users with their active memberships
+      // Note: Every user will have activeMembership field - either with data or null
+      const usersWithMembership = users.map((user) => {
+        const activeMembership = membershipMap.get(user.id)
+
+        return {
+          ...user,
+          activeMembership: activeMembership
+            ? {
+                id: activeMembership.id,
+                startDate: activeMembership.startDate,
+                endDate: activeMembership.endDate,
+                remainingSessions: activeMembership.remainingSessions,
+                remainingDuration: activeMembership.remainingDuration,
+                isExpired: activeMembership.isExpired,
+                isSuspended: activeMembership.isSuspended,
+                membership: {
+                  id: activeMembership.membership.id,
+                  name: activeMembership.membership.name,
+                  price: activeMembership.membership.price,
+                },
+              }
+            : null, // Always include activeMembership field, set to null if no active membership
+        }
+      })
+
+      return c.json(ok(usersWithMembership), status.OK)
+    } catch (error) {
+      c.var.logger.fatal(`Error in searchCustomersHandler: ${error}`)
+      throw error
+    }
+  },
+)
 
 // GET /admin/users
 // Get all users
@@ -533,3 +689,71 @@ export const unbanUserHandler = factory.createHandlers(
     }
   },
 )
+
+// GET /admin/customers/:id/membership
+// Get customer details with active membership for checkout
+export const getCustomerMembershipDetailsHandler = factory.createHandlers(
+  zValidator('param', idSchema, validateHook),
+  async (c) => {
+    try {
+      const { id } = c.req.valid('param') as IdSchema
+
+      const user = await db.user.findUnique({
+        where: { id },
+      })
+
+      if (!user) {
+        throw new NotFoundException('User not found')
+      }
+
+      // Find active membership
+      const activeMembership = await db.membershipUser.findFirst({
+        where: {
+          userId: id,
+          isExpired: false,
+          isSuspended: false,
+          endDate: { gt: new Date() },
+        },
+        orderBy: {
+          endDate: 'asc', // Get the one that expires first
+        },
+        include: {
+          membership: {
+            select: {
+              id: true,
+              name: true,
+              price: true,
+            },
+          },
+        },
+      })
+
+      return c.json(
+        ok({
+          customer: user.id,
+          activeMembership: activeMembership
+            ? {
+                id: activeMembership.id,
+                startDate: activeMembership.startDate,
+                endDate: activeMembership.endDate,
+                remainingSessions: activeMembership.remainingSessions,
+                remainingDuration: activeMembership.remainingDuration,
+                isExpired: activeMembership.isExpired,
+                isSuspended: activeMembership.isSuspended,
+                membership: {
+                  id: activeMembership.membership.id,
+                  name: activeMembership.membership.name,
+                  price: activeMembership.membership.price,
+                },
+              }
+            : null,
+        }),
+        status.OK,
+      )
+    } catch (error) {
+      c.var.logger.fatal(`Error in getCustomerMembershipDetailsHandler: ${error}`)
+      throw error
+    }
+  },
+)
+

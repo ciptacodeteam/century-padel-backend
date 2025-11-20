@@ -34,6 +34,9 @@ export const getAllMembershipHandler = factory.createHandlers(
 
       const items = await db.membership.findMany({
         ...queryOptions,
+        include: {
+          benefits: true,
+        },
       })
       return c.json(ok(items), status.OK)
     } catch (error) {

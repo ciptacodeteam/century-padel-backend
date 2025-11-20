@@ -110,3 +110,64 @@ export const getUserMembershipsHandler = factory.createHandlers(
     }
   },
 )
+
+// GET /memberships/my/active
+// Get logged-in user's active membership details
+export const getMyActiveMembershipHandler = factory.createHandlers(
+  async (c) => {
+    try {
+      const user = c.get('user')
+      
+      if (!user) {
+        return c.json(err('Unauthorized', status.UNAUTHORIZED), status.UNAUTHORIZED)
+      }
+
+      // Find active membership
+      const activeMembership = await db.membershipUser.findFirst({
+        where: {
+          userId: user.id,
+          isExpired: false,
+          isSuspended: false,
+          endDate: { gt: new Date() },
+        },
+        orderBy: {
+          endDate: 'asc', // Get the one that expires first
+        },
+        include: {
+          membership: {
+            select: {
+              id: true,
+              name: true,
+              price: true,
+            },
+          },
+        },
+      })
+
+      return c.json(
+        ok({
+          activeMembership: activeMembership
+            ? {
+                id: activeMembership.id,
+                startDate: activeMembership.startDate,
+                endDate: activeMembership.endDate,
+                remainingSessions: activeMembership.remainingSessions,
+                remainingDuration: activeMembership.remainingDuration,
+                isExpired: activeMembership.isExpired,
+                isSuspended: activeMembership.isSuspended,
+                membership: {
+                  id: activeMembership.membership.id,
+                  name: activeMembership.membership.name,
+                  price: activeMembership.membership.price,
+                },
+              }
+            : null,
+        }),
+        status.OK,
+      )
+    } catch (error) {
+      c.var.logger.fatal(`Error in getMyActiveMembershipHandler: ${error}`)
+      throw error
+    }
+  },
+)

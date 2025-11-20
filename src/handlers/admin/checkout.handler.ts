@@ -5,7 +5,7 @@ import { db } from '@/lib/prisma'
 import { ok } from '@/lib/response'
 import { generateInvoiceNumber, formatPhone } from '@/lib/utils'
 import { zValidator } from '@hono/zod-validator'
-import { BookingStatus, PaymentStatus, SlotType } from '@prisma/client'
+import { BookingStatus, MembershipUser, PaymentStatus, SlotType } from '@prisma/client'
 import dayjs from 'dayjs'
 import status from 'http-status'
 import { z } from 'zod'
@@ -115,6 +115,24 @@ export const adminCheckoutHandler = factory.createHandlers(
           }
         }
 
+        // Check for active membership BEFORE calculating prices
+        // This determines if court costs should be excluded from totalPrice
+        let activeMembership: MembershipUser | null = null
+        if (totalHours > 0) {
+          activeMembership = await tx.membershipUser.findFirst({
+            where: {
+              userId: resolvedUserId!,
+              isExpired: false,
+              isSuspended: false,
+              endDate: { gt: new Date() },
+              remainingSessions: { gte: totalHours }, // Must have enough sessions
+            },
+            orderBy: {
+              endDate: 'asc', // Use membership that expires first
+            },
+          })
+        }
+
         // Create booking in CONFIRMED state (admin bypasses payment)
         const booking = await tx.booking.create({
           data: {
@@ -123,11 +141,18 @@ export const adminCheckoutHandler = factory.createHandlers(
             totalPrice: 0,
             processingFee: 0,
             holdExpiresAt: null,
-            cashierId: cashierId,
+            ...(cashierId && { cashierId }),
           },
         })
 
         let totalPrice = 0
+        let courtCostCoveredByMembership = 0 // Track court costs covered by membership
+        const bookedItems = {
+          courtSlots: [] as string[],
+          coachSlots: [] as string[],
+          ballboySlots: [] as string[],
+          inventories: [] as Array<{ inventoryId: string; quantity: number }>,
+        }
 
         // Courts
         if (courtSlots && courtSlots.length > 0) {
@@ -162,15 +187,28 @@ export const adminCheckoutHandler = factory.createHandlers(
                 'One or more court slots are already booked',
               )
             }
-            totalPrice += slot.price
+            
+            // Store original price for record-keeping
+            const slotPrice = slot.price
+            
+            // If membership covers this booking, exclude court costs from totalPrice
+            // but still track the original price
+            if (activeMembership) {
+              courtCostCoveredByMembership += slotPrice
+              // Don't add to totalPrice - membership covers it
+            } else {
+              totalPrice += slotPrice
+            }
+            
             await tx.bookingDetail.create({
               data: {
                 bookingId: booking.id,
                 slotId: slot.id,
-                price: slot.price,
+                price: slotPrice, // Always store original price for records
                 courtId: slot.courtId || undefined,
               },
             })
+            bookedItems.courtSlots.push(slot.id)
           }
           // Update slots to unavailable
           await tx.slot.updateMany({
@@ -185,6 +223,7 @@ export const adminCheckoutHandler = factory.createHandlers(
 
         // Coaches
         if (coachSlots && coachSlots.length > 0) {
+          c.var.logger.info(`Processing ${coachSlots.length} coach slots: ${coachSlots.join(', ')}`)
           const slotData = await tx.slot.findMany({
             where: {
               id: { in: coachSlots },
@@ -206,6 +245,11 @@ export const adminCheckoutHandler = factory.createHandlers(
             },
           })
           if (slotData.length !== coachSlots.length) {
+            c.var.logger.warn(
+              `Coach slots mismatch: requested ${coachSlots.length}, found ${slotData.length}. ` +
+              `Requested IDs: ${coachSlots.join(', ')}. ` +
+              `Found IDs: ${slotData.map(s => s.id).join(', ')}`
+            )
             throw new BadRequestException(
               'One or more coach slots not found or unavailable',
             )
@@ -231,7 +275,10 @@ export const adminCheckoutHandler = factory.createHandlers(
                 price: slot.price,
               },
             })
+            bookedItems.coachSlots.push(slot.id)
+            c.var.logger.info(`Coach slot ${slot.id} booked successfully. Price: ${slot.price}`)
           }
+          c.var.logger.info(`Total coach slots booked: ${bookedItems.coachSlots.length}. Total coach price: ${slotData.reduce((sum, s) => sum + s.price, 0)}`)
           // Update slots to unavailable
           await tx.slot.updateMany({
             where: {
@@ -284,6 +331,7 @@ export const adminCheckoutHandler = factory.createHandlers(
                 price: slot.price,
               },
             })
+            bookedItems.ballboySlots.push(slot.id)
           }
           // Update slots to unavailable
           await tx.slot.updateMany({
@@ -327,6 +375,10 @@ export const adminCheckoutHandler = factory.createHandlers(
                 price: inventory.price,
               },
             })
+            bookedItems.inventories.push({
+              inventoryId: inv.inventoryId,
+              quantity: inv.quantity,
+            })
             // Decrement inventory stock
             await tx.inventory.update({
               where: { id: inv.inventoryId },
@@ -337,7 +389,38 @@ export const adminCheckoutHandler = factory.createHandlers(
           }
         }
 
+        // Deduct totalHours from user's active membership sessions
+        // (Membership was already checked earlier if it exists)
+        if (activeMembership && totalHours > 0) {
+          const newRemainingSessions = Math.max(
+            0,
+            activeMembership.remainingSessions - totalHours
+          )
+          
+          await tx.membershipUser.update({
+            where: { id: activeMembership.id },
+            data: {
+              remainingSessions: newRemainingSessions,
+              // Mark as expired if no sessions left
+              isExpired: newRemainingSessions === 0,
+            },
+          })
+
+          // Log for tracking
+          c.var.logger.info(
+            `Deducted ${totalHours} hours from membership ${activeMembership.id}. ` +
+            `Court cost covered: ${courtCostCoveredByMembership}. ` +
+            `Remaining: ${newRemainingSessions} sessions`
+          )
+        } else if (totalHours > 0) {
+          // No active membership with available sessions
+          c.var.logger.warn(
+            `User ${resolvedUserId} has no active membership with available sessions for ${totalHours} hours`
+          )
+        }
+
         // Update totals on booking
+        // (totalPrice already excludes court costs if covered by membership)
         const processingFee = 0
         await tx.booking.update({
           where: { id: booking.id },
@@ -346,49 +429,6 @@ export const adminCheckoutHandler = factory.createHandlers(
             processingFee,
           },
         })
-
-        // Deduct totalHours from user's active membership sessions
-        if (totalHours > 0) {
-          const activeMembership = await tx.membershipUser.findFirst({
-            where: {
-              userId: resolvedUserId!,
-              isExpired: false,
-              isSuspended: false,
-              endDate: { gt: new Date() },
-              remainingSessions: { gt: 0 },
-            },
-            orderBy: {
-              endDate: 'asc', // Use membership that expires first
-            },
-          })
-
-          if (activeMembership) {
-            const newRemainingSessions = Math.max(
-              0,
-              activeMembership.remainingSessions - totalHours
-            )
-            
-            await tx.membershipUser.update({
-              where: { id: activeMembership.id },
-              data: {
-                remainingSessions: newRemainingSessions,
-                // Mark as expired if no sessions left
-                isExpired: newRemainingSessions === 0,
-              },
-            })
-
-            // Log for tracking
-            c.var.logger.info(
-              `Deducted ${totalHours} hours from membership ${activeMembership.id}. ` +
-              `Remaining: ${newRemainingSessions} sessions`
-            )
-          } else {
-            // No active membership with available sessions
-            c.var.logger.warn(
-              `User ${resolvedUserId} has no active membership with available sessions for ${totalHours} hours`
-            )
-          }
-        }
 
         // Generate invoice (marked as PAID immediately)
         const invoiceNumber = generateInvoiceNumber()
@@ -413,6 +453,7 @@ export const adminCheckoutHandler = factory.createHandlers(
           totalPrice,
           processingFee,
           totalHours,
+          bookedItems,
         }
       })
 
@@ -426,6 +467,7 @@ export const adminCheckoutHandler = factory.createHandlers(
             totalHours: result.totalHours,
             status: BookingStatus.CONFIRMED,
             paymentStatus: PaymentStatus.PAID,
+            bookedItems: result.bookedItems,
           },
           'Admin checkout successful (payment bypassed)',
         ),
