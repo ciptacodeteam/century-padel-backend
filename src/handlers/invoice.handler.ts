@@ -10,6 +10,7 @@ import status from 'http-status'
 import { z } from 'zod'
 import { PaymentStatus } from '@prisma/client'
 import xenditService from '@/services/xendit.service'
+import { getFileUrl } from '@/services/upload.service'
 
 // GET /invoices
 export const getUserInvoicesHandler = factory.createHandlers(
@@ -266,7 +267,15 @@ export const getInvoiceDetailHandler = factory.createHandlers(
         booking: invoice.booking,
         classBooking: invoice.classBooking,
         membershipUser: invoice.membershipUser,
-        payment: invoice.payment,
+        payment: {
+          ...invoice.payment,
+          method: invoice.payment?.method
+            ? {
+                ...invoice.payment.method,
+                logo: await getFileUrl(invoice.payment.method.logo),
+              }
+            : null,
+        },
         paymentMeta: storedMeta,
         paymentInstructions,
       }
