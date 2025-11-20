@@ -24,9 +24,10 @@ export class UnauthorizedException extends HTTPException {
 }
 
 export class ForbiddenException extends HTTPException {
-  constructor() {
+  constructor(msg?: string) {
     super(403, {
-      message: 'Forbidden. You do not have permission to access this resource.',
+      message:
+        msg || 'Forbidden. You do not have permission to access this resource.',
     })
   }
 }
