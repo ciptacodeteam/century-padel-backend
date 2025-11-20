@@ -128,7 +128,17 @@ export const checkoutHandler = factory.createHandlers(
               isAvailable: true,
             },
             include: {
-              bookingDetails: { select: { id: true }, take: 1 },
+              bookingDetails: {
+                where: {
+                  booking: {
+                    status: {
+                      not: BookingStatus.CANCELLED,
+                    },
+                  },
+                },
+                select: { id: true },
+                take: 1,
+              },
             },
           })
 
@@ -180,7 +190,17 @@ export const checkoutHandler = factory.createHandlers(
               isAvailable: true,
             },
             include: {
-              bookingCoaches: { select: { id: true }, take: 1 },
+              bookingCoaches: {
+                where: {
+                  booking: {
+                    status: {
+                      not: BookingStatus.CANCELLED,
+                    },
+                  },
+                },
+                select: { id: true },
+                take: 1,
+              },
             },
           })
 
@@ -239,7 +259,17 @@ export const checkoutHandler = factory.createHandlers(
               isAvailable: true,
             },
             include: {
-              bookingBallboys: { select: { id: true }, take: 1 },
+              bookingBallboys: {
+                where: {
+                  booking: {
+                    status: {
+                      not: BookingStatus.CANCELLED,
+                    },
+                  },
+                },
+                select: { id: true },
+                take: 1,
+              },
             },
           })
 

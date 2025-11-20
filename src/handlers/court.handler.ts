@@ -15,7 +15,7 @@ import {
 } from '@/lib/validation'
 import { getFileUrl } from '@/services/upload.service'
 import { zValidator } from '@hono/zod-validator'
-import { SlotType } from '@prisma/client'
+import { BookingStatus, SlotType } from '@prisma/client'
 import dayjs from 'dayjs'
 import status from 'http-status'
 import z from 'zod'
@@ -62,8 +62,14 @@ export const getAllCourtHandler = factory.createHandlers(
         type: SlotType.COURT,
         isAvailable: true,
         bookingDetails: {
-          none: {}, // Slot has no booking details (not booked)
-        },
+          none: {
+            booking: {
+              status: {
+                not: BookingStatus.CANCELLED,
+              },
+            },
+          },
+        }, // Slot has no active bookings
       }
 
       // Add date range filter if provided
@@ -165,8 +171,14 @@ export const getCourtSlotsHandler = factory.createHandlers(
         courtId,
         isAvailable: true,
         bookingDetails: {
-          none: {}, // Slot has no booking details (not booked)
-        },
+          none: {
+            booking: {
+              status: {
+                not: BookingStatus.CANCELLED,
+              },
+            },
+          },
+        }, // Slot has no active bookings
       }
 
       // Add date range filter if provided
@@ -228,7 +240,13 @@ export const getAvailableCourtSlotsHandler = factory.createHandlers(
         type: SlotType.COURT,
         isAvailable: true,
         bookingDetails: {
-          none: {},
+          none: {
+            booking: {
+              status: {
+                not: BookingStatus.CANCELLED,
+              },
+            },
+          },
         },
         court: {
           isActive: true,

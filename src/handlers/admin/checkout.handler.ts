@@ -137,9 +137,19 @@ export const adminCheckoutHandler = factory.createHandlers(
               type: SlotType.COURT,
               isAvailable: true,
             },
-            // include: {
-            //   bookingDetails: { select: { id: true }, take: 1 },
-            // },
+            include: {
+              bookingDetails: {
+                where: {
+                  booking: {
+                    status: {
+                      not: BookingStatus.CANCELLED,
+                    },
+                  },
+                },
+                select: { id: true },
+                take: 1,
+              },
+            },
           })
           if (slotData.length !== courtSlots.length) {
             throw new BadRequestException(
@@ -147,11 +157,11 @@ export const adminCheckoutHandler = factory.createHandlers(
             )
           }
           for (const slot of slotData) {
-            // if (slot.bookingDetails.length > 0) {
-            //   throw new BadRequestException(
-            //     'One or more court slots are already booked',
-            //   )
-            // }
+            if (slot.bookingDetails.length > 0) {
+              throw new BadRequestException(
+                'One or more court slots are already booked',
+              )
+            }
             totalPrice += slot.price
             await tx.bookingDetail.create({
               data: {
@@ -182,7 +192,17 @@ export const adminCheckoutHandler = factory.createHandlers(
               isAvailable: true,
             },
             include: {
-              bookingCoaches: { select: { id: true }, take: 1 },
+              bookingCoaches: {
+                where: {
+                  booking: {
+                    status: {
+                      not: BookingStatus.CANCELLED,
+                    },
+                  },
+                },
+                select: { id: true },
+                take: 1,
+              },
             },
           })
           if (slotData.length !== coachSlots.length) {
@@ -232,7 +252,17 @@ export const adminCheckoutHandler = factory.createHandlers(
               isAvailable: true,
             },
             include: {
-              bookingBallboys: { select: { id: true }, take: 1 },
+              bookingBallboys: {
+                where: {
+                  booking: {
+                    status: {
+                      not: BookingStatus.CANCELLED,
+                    },
+                  },
+                },
+                select: { id: true },
+                take: 1,
+              },
             },
           })
           if (slotData.length !== ballboySlots.length) {

@@ -1,6 +1,6 @@
 import { log } from '@/lib/logger'
 import { db } from '@/lib/prisma'
-import { SlotType } from '@prisma/client'
+import { BookingStatus, SlotType } from '@prisma/client'
 import dayjs from 'dayjs'
 
 type SetCourtPricingPayload = {
@@ -185,7 +185,17 @@ export async function updateCourtPricing({
             endAt: true,
             price: true,
             isAvailable: true,
-            bookingDetails: { select: { id: true }, take: 1 },
+            bookingDetails: {
+              where: {
+                booking: {
+                  status: {
+                    not: BookingStatus.CANCELLED,
+                  },
+                },
+              },
+              select: { id: true },
+              take: 1,
+            },
           },
         })
 
@@ -336,7 +346,19 @@ export async function overrideSingleCourtHourPrice({
       // If slot exists & unbooked → update; else create
       const slot = await tx.slot.findFirst({
         where: { type: SlotType.COURT, courtId, startAt },
-        include: { bookingDetails: { select: { id: true }, take: 1 } },
+        include: {
+          bookingDetails: {
+            where: {
+              booking: {
+                status: {
+                  not: BookingStatus.CANCELLED,
+                },
+              },
+            },
+            select: { id: true },
+            take: 1,
+          },
+        },
       })
 
       if (slot) {
@@ -491,11 +513,25 @@ export async function updateStaffPricing(p: UpdateStaffPricingPayload) {
           id: true,
           startAt: true,
           price: true,
-          _count: {
-            select: {
-              bookingCoaches: true, // for COACH slots
-              bookingBallboys: true, // for BALLBOY slots
+          bookingCoaches: {
+            where: {
+              booking: {
+                status: {
+                  not: BookingStatus.CANCELLED,
+                },
+              },
             },
+            select: { id: true },
+          },
+          bookingBallboys: {
+            where: {
+              booking: {
+                status: {
+                  not: BookingStatus.CANCELLED,
+                },
+              },
+            },
+            select: { id: true },
           },
         },
       })
@@ -520,8 +556,8 @@ export async function updateStaffPricing(p: UpdateStaffPricingPayload) {
           keepIds.add(found.id)
           const bookedCount =
             p.type === SlotType.COACH
-              ? found._count.bookingCoaches
-              : found._count.bookingBallboys
+              ? found.bookingCoaches.length
+              : found.bookingBallboys.length
           const isBooked = bookedCount > 0
           if (!isBooked && found.price !== price) {
             toUpdate.push({ id: found.id, price })
@@ -535,8 +571,8 @@ export async function updateStaffPricing(p: UpdateStaffPricingPayload) {
         .filter((e) => {
           const bookedCount =
             p.type === SlotType.COACH
-              ? e._count.bookingCoaches
-              : e._count.bookingBallboys
+              ? e.bookingCoaches.length
+              : e.bookingBallboys.length
           return bookedCount === 0
         })
         .map((e) => e.id)
@@ -594,11 +630,25 @@ export async function overrideStaffHourPrice({
         where: { type, staffId, startAt },
         select: {
           id: true,
-          _count: {
-            select: {
-              bookingCoaches: true,
-              bookingBallboys: true,
+          bookingCoaches: {
+            where: {
+              booking: {
+                status: {
+                  not: BookingStatus.CANCELLED,
+                },
+              },
             },
+            select: { id: true },
+          },
+          bookingBallboys: {
+            where: {
+              booking: {
+                status: {
+                  not: BookingStatus.CANCELLED,
+                },
+              },
+            },
+            select: { id: true },
           },
         },
       })
@@ -606,8 +656,8 @@ export async function overrideStaffHourPrice({
       if (slot) {
         const booked =
           type === SlotType.COACH
-            ? slot._count.bookingCoaches > 0
-            : slot._count.bookingBallboys > 0
+            ? slot.bookingCoaches.length > 0
+            : slot.bookingBallboys.length > 0
         if (!booked) {
           await tx.slot.update({ where: { id: slot.id }, data: { price } })
         }
