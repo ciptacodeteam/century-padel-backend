@@ -234,16 +234,13 @@ export const getAvailableCourtSlotsHandler = factory.createHandlers(
       const query = c.req.valid('query') as AvailableCourtSlotsQuerySchema & {
         courtId?: string
       }
-      c.var.logger.info(
-        `AvailableCourtSlotsQuerySchema: ${JSON.stringify(query)}`,
-      )
 
       const where: any = {
         type: SlotType.COURT,
         // isAvailable: true,
-        bookingDetails: {
-          none: {},
-        },
+        // bookingDetails: {
+        //   none: {},
+        // },
         court: {
           isActive: true,
         },
@@ -254,8 +251,8 @@ export const getAvailableCourtSlotsHandler = factory.createHandlers(
       }
 
       if (query.startAt && query.endAt) {
-        const startAt = dayjs(query.startAt).toDate()
-        const endAt = dayjs(query.endAt).toDate()
+        const startAt = dayjs(query.startAt).startOf('day').toDate()
+        const endAt = dayjs(query.endAt).endOf('day').toDate()
 
         where.AND = [
           {
@@ -280,6 +277,13 @@ export const getAvailableCourtSlotsHandler = factory.createHandlers(
           court: true,
         },
       })
+
+      // Transform court images
+      for (const slot of slots) {
+        if (slot.court?.image) {
+          slot.court.image = await getFileUrl(slot.court.image)
+        }
+      }
 
       const formattedSlots = slots.map((slot) => ({
         ...slot,
