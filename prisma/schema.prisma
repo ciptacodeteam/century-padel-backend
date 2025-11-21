@@ -55,6 +55,11 @@ enum SlotType {
   BALLBOY
 }
 
+enum CoachType {
+  GUIDED_MATCH
+  COACH
+}
+
 enum Gender {
   MALE
   FEMALE
@@ -140,11 +145,12 @@ model Staff {
   email     String   @unique
   phone     String?  @unique
   password  String
-  isActive  Boolean  @default(true)
-  joinedAt  DateTime @default(now()) @db.Date
-  role      Role     @default(ADMIN)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
+  isActive  Boolean   @default(true)
+  joinedAt  DateTime  @default(now()) @db.Date
+  role      Role      @default(ADMIN)
+  coachType CoachType?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @default(now()) @updatedAt
 
   authTokens          AuthToken[]
   // Derived schedules now use Slot (see below) instead of separate tables
