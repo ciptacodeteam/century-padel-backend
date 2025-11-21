@@ -98,11 +98,11 @@ services:
       - type: tmpfs
         target: /app/.bun
     healthcheck:
-      test: ['CMD', 'bun', 'run', '--bun', '/app/dist/healthcheck.js']
+      test: ['CMD', 'bun', 'run', '--bun', '/app/dist/src/healthcheck.js']
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 60s
+      start_period: 90s
     logging:
       driver: 'json-file'
       options:

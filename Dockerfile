@@ -90,12 +90,13 @@ RUN mkdir -p /app/storage/logs /app/storage/uploads && \
 # Switch to non-root user
 USER nodejs
 
-# Expose application port
+# Expose application port (actual port is set via PORT env var, default 3000)
+# The port mapping is configured in docker-compose.yml
 EXPOSE 3000
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
-  CMD bun run --bun /app/dist/healthcheck.js || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
+  CMD bun run --bun /app/dist/src/healthcheck.js || exit 1
 
 # Use dumb-init to handle signals properly, then run entrypoint script
 ENTRYPOINT ["dumb-init", "--", "/app/docker-entrypoint.sh"]
