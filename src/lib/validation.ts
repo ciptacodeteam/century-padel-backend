@@ -131,6 +131,7 @@ export const createStaffSchema = z
       .optional()
       .default(dayjs().format(DEFAULT_DATE_FORMAT)),
     role: z.enum(['ADMIN', 'ADMIN_VIEWER', 'BALLBOY', 'COACH', 'CASHIER'] as const).default('ADMIN'),
+    coachType: z.enum(['GUIDED_MATCH', 'COACH'] as const).optional(),
     isActive: z.coerce.boolean().optional(),
     image: z.file().optional(),
   })
