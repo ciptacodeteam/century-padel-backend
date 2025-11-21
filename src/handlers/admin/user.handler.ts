@@ -134,12 +134,14 @@ export const searchCustomersHandler = factory.createHandlers(
 
       // Get active memberships for all users in a single query
       const userIds = users.map((u) => u.id)
+      const now = new Date()
       const activeMemberships = await db.membershipUser.findMany({
         where: {
           userId: { in: userIds },
           isExpired: false,
           isSuspended: false,
-          endDate: { gt: new Date() },
+          startDate: { lte: now }, // Membership must have started
+          endDate: { gt: now }, // Membership must not have expired
         },
         include: {
           membership: {
@@ -707,12 +709,14 @@ export const getCustomerMembershipDetailsHandler = factory.createHandlers(
       }
 
       // Find active membership
+      const now = new Date()
       const activeMembership = await db.membershipUser.findFirst({
         where: {
           userId: id,
           isExpired: false,
           isSuspended: false,
-          endDate: { gt: new Date() },
+          startDate: { lte: now }, // Membership must have started
+          endDate: { gt: now }, // Membership must not have expired
         },
         orderBy: {
           endDate: 'asc', // Get the one that expires first

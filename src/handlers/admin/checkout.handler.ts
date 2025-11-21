@@ -119,12 +119,14 @@ export const adminCheckoutHandler = factory.createHandlers(
         // This determines if court costs should be excluded from totalPrice
         let activeMembership: MembershipUser | null = null
         if (totalHours > 0) {
+          const now = new Date()
           activeMembership = await tx.membershipUser.findFirst({
             where: {
               userId: resolvedUserId!,
               isExpired: false,
               isSuspended: false,
-              endDate: { gt: new Date() },
+              startDate: { lte: now }, // Membership must have started
+              endDate: { gt: now }, // Membership must not have expired
               remainingSessions: { gte: totalHours }, // Must have enough sessions
             },
             orderBy: {

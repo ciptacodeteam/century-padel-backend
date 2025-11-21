@@ -87,7 +87,7 @@ export const getUserMembershipsHandler = factory.createHandlers(
       // Separate active, expired, and suspended memberships
       const now = new Date()
       const activeMemberships = userMemberships.filter(
-        (um) => !um.isExpired && !um.isSuspended && um.endDate > now
+        (um) => !um.isExpired && !um.isSuspended && um.startDate <= now && um.endDate > now
       )
       const expiredMemberships = userMemberships.filter(
         (um) => um.isExpired || um.endDate <= now
@@ -123,12 +123,14 @@ export const getMyActiveMembershipHandler = factory.createHandlers(
       }
 
       // Find active membership
+      const now = new Date()
       const activeMembership = await db.membershipUser.findFirst({
         where: {
           userId: user.id,
           isExpired: false,
           isSuspended: false,
-          endDate: { gt: new Date() },
+          startDate: { lte: now }, // Membership must have started
+          endDate: { gt: now }, // Membership must not have expired
         },
         orderBy: {
           endDate: 'asc', // Get the one that expires first
