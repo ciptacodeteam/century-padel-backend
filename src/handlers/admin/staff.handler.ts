@@ -47,6 +47,7 @@ export const getAllStaffHandler = factory.createHandlers(
           image: true,
           createdAt: true,
           role: true,
+          coachType: true,
           isActive: true,
           joinedAt: true,
         },
@@ -84,6 +85,7 @@ export const getStaffHandler = factory.createHandlers(
           image: true,
           createdAt: true,
           role: true,
+          coachType: true,
           isActive: true,
           joinedAt: true,
           slot: {

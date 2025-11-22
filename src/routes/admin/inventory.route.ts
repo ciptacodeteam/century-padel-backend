@@ -14,7 +14,7 @@ const adminInventoryRoute = createRouter()
   .get('/', ...getAllInventoryHandler)
   .get('/:id', ...getInventoryHandler)
   .post('/', ...createInventoryHandler)
-  .patch('/:id', ...updateInventoryHandler)
+  .put('/:id', ...updateInventoryHandler)
   .delete('/:id', ...deleteInventoryHandler)
 
 export default adminInventoryRoute
