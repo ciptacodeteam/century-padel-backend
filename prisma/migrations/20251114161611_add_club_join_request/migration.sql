@@ -218,41 +218,65 @@ CREATE INDEX IF NOT EXISTS "password_reset_tokens_userId_idx" ON "password_reset
 -- CreateIndex (idempotent)
 CREATE INDEX IF NOT EXISTS "password_reset_tokens_expiresAt_idx" ON "password_reset_tokens"("expiresAt");
 
--- AddForeignKey (idempotent)
+-- AddForeignKey (idempotent - check table exists first and clean orphaned records)
 DO $$ 
 BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.table_constraints 
-    WHERE constraint_name = 'club_join_requests_clubId_fkey' 
-    AND table_name = 'club_join_requests'
-  ) THEN
-    ALTER TABLE "club_join_requests" ADD CONSTRAINT "club_join_requests_clubId_fkey" 
-    FOREIGN KEY ("clubId") REFERENCES "clubs"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'club_join_requests') THEN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'clubs') THEN
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints 
+        WHERE constraint_name = 'club_join_requests_clubId_fkey' 
+        AND table_name = 'club_join_requests'
+      ) THEN
+        -- Clean up any orphaned records before adding constraint
+        DELETE FROM "club_join_requests" 
+        WHERE "clubId" NOT IN (SELECT "id" FROM "clubs");
+        
+        ALTER TABLE "club_join_requests" ADD CONSTRAINT "club_join_requests_clubId_fkey" 
+        FOREIGN KEY ("clubId") REFERENCES "clubs"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+      END IF;
+    END IF;
   END IF;
 END $$;
 
--- AddForeignKey (idempotent)
+-- AddForeignKey (idempotent - check table exists first and clean orphaned records)
 DO $$ 
 BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.table_constraints 
-    WHERE constraint_name = 'club_join_requests_userId_fkey' 
-    AND table_name = 'club_join_requests'
-  ) THEN
-    ALTER TABLE "club_join_requests" ADD CONSTRAINT "club_join_requests_userId_fkey" 
-    FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'club_join_requests') THEN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'user') THEN
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints 
+        WHERE constraint_name = 'club_join_requests_userId_fkey' 
+        AND table_name = 'club_join_requests'
+      ) THEN
+        -- Clean up any orphaned records before adding constraint
+        DELETE FROM "club_join_requests" 
+        WHERE "userId" NOT IN (SELECT "id" FROM "user");
+        
+        ALTER TABLE "club_join_requests" ADD CONSTRAINT "club_join_requests_userId_fkey" 
+        FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+      END IF;
+    END IF;
   END IF;
 END $$;
 
--- AddForeignKey (idempotent)
+-- AddForeignKey (idempotent - check table exists first and clean orphaned records)
 DO $$ 
 BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.table_constraints 
-    WHERE constraint_name = 'password_reset_tokens_userId_fkey' 
-    AND table_name = 'password_reset_tokens'
-  ) THEN
-    ALTER TABLE "password_reset_tokens" ADD CONSTRAINT "password_reset_tokens_userId_fkey" 
-    FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'password_reset_tokens') THEN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'user') THEN
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints 
+        WHERE constraint_name = 'password_reset_tokens_userId_fkey' 
+        AND table_name = 'password_reset_tokens'
+      ) THEN
+        -- Clean up any orphaned records before adding constraint
+        DELETE FROM "password_reset_tokens" 
+        WHERE "userId" NOT IN (SELECT "id" FROM "user");
+        
+        ALTER TABLE "password_reset_tokens" ADD CONSTRAINT "password_reset_tokens_userId_fkey" 
+        FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+      END IF;
+    END IF;
   END IF;
 END $$;
