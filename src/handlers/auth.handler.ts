@@ -1,6 +1,6 @@
 import { DEFAULT_OTP_CODE, OTP_LENGTH } from '@/constants'
 import { env } from '@/env'
-import { BadRequestException, UnauthorizedException } from '@/exceptions'
+import { UnauthorizedException } from '@/exceptions'
 import { validateHook } from '@/helpers/validate-hook'
 import { factory } from '@/lib/create-app'
 import { hashPassword, verifyPassword } from '@/lib/password'
@@ -13,6 +13,8 @@ import {
 } from '@/lib/token'
 import { formatPhone, generateOtp } from '@/lib/utils'
 import {
+  changePasswordSchema,
+  ChangePasswordSchema,
   forgotPasswordSchema,
   ForgotPasswordSchema,
   loginSchema,
@@ -31,22 +33,19 @@ import {
   VerifyEmailChangeSchema,
   verifyPasswordSchema,
   VerifyPasswordSchema,
-  changePasswordSchema,
-  ChangePasswordSchema,
 } from '@/lib/validation'
+import { requireAuth } from '@/middlewares/auth'
+import { queueSendTemplatedEmail } from '@/services/email.service'
 import { validateOtp } from '@/services/otp.service'
 import { sendPhoneOtp } from '@/services/phone.service'
 import { getFileUrl } from '@/services/upload.service'
-import { queueSendTemplatedEmail } from '@/services/email.service'
 import { AppRouteHandler, UserTokenPayload } from '@/types'
 import { zValidator } from '@hono/zod-validator'
-import { requireAuth } from '@/middlewares/auth'
-import dayjs from 'dayjs'
 import { AuthTokenType, PhoneVerificationType } from '@prisma/client'
+import crypto from 'crypto'
+import dayjs from 'dayjs'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
 import status from 'http-status'
-import { z } from 'zod'
-import crypto from 'crypto'
 
 export const checkAccountHandler = factory.createHandlers(
   zValidator('json', phoneSchema, validateHook),
@@ -668,15 +667,26 @@ export const requestEmailChangeHandler = factory.createHandlers(
   zValidator('json', requestEmailChangeSchema, validateHook),
   async (c) => {
     try {
-      const user = c.get('user')
+      const user = c.get('user') as UserTokenPayload
       if (!user?.id) {
+        throw new UnauthorizedException()
+      }
+
+      const existingUser = await db.user.findUnique({
+        where: { id: user.id },
+      })
+
+      if (!existingUser) {
         throw new UnauthorizedException()
       }
 
       const { newEmail } = c.req.valid('json') as RequestEmailChangeSchema
 
       // Check if new email is same as current email (only if user has email)
-      if (user.email && user.email.toLowerCase() === newEmail.toLowerCase()) {
+      if (
+        existingUser.email &&
+        existingUser.email.toLowerCase() === newEmail.toLowerCase()
+      ) {
         return c.json(
           err(
             'New email cannot be the same as current email',
@@ -723,20 +733,20 @@ export const requestEmailChangeHandler = factory.createHandlers(
       })
 
       // Send OTP to new email
-      const emailAction = user.email
+      const emailAction = existingUser.email
         ? 'change your email address'
         : 'add an email address'
       await queueSendTemplatedEmail(newEmail, 'emailVerification', {
-        name: user.name,
+        name: existingUser.name,
         action: emailAction,
         code,
       })
 
       // Send alert to old email if exists
-      if (user.email) {
-        await queueSendTemplatedEmail(user.email, 'emailChangeAlert', {
-          name: user.name,
-          oldEmail: user.email,
+      if (existingUser.email) {
+        await queueSendTemplatedEmail(existingUser.email, 'emailChangeAlert', {
+          name: existingUser.name,
+          oldEmail: existingUser.email,
           newEmail,
         })
       }
@@ -854,7 +864,7 @@ export const verifyEmailChangeHandler = factory.createHandlers(
         : 'Email Added Successfully'
 
       await queueSendTemplatedEmail(verification.email, 'emailChangeSuccess', {
-        name: user.name,
+        name: updatedUser.name,
         title: actionTitle,
         action: actionText,
         email: verification.email,
