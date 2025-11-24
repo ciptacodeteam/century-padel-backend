@@ -197,6 +197,7 @@ export const registerHandler = factory.createHandlers(
             name,
             phone: formattedPhone,
             password: hashPwd,
+            phoneVerified: true, // Phone is verified since OTP was validated during registration
           },
         })
 
