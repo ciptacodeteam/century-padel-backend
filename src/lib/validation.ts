@@ -592,3 +592,24 @@ export const verifyEmailChangeSchema = z.object({
 })
 
 export type VerifyEmailChangeSchema = z.infer<typeof verifyEmailChangeSchema>
+
+// Verification schemas (unified phone/email verification)
+export const sendVerificationOtpSchema = z.object({
+  type: z.enum(['phone', 'email']),
+  phone: z.string().min(10).max(15).optional(),
+  email: z.string().email().optional(),
+})
+
+export type SendVerificationOtpSchema = z.infer<
+  typeof sendVerificationOtpSchema
+>
+
+export const verifyVerificationOtpSchema = z.object({
+  type: z.enum(['phone', 'email']),
+  requestId: z.string().min(1, 'Request ID is required'),
+  code: z.string().min(4, 'OTP code is required'),
+})
+
+export type VerifyVerificationOtpSchema = z.infer<
+  typeof verifyVerificationOtpSchema
+>
