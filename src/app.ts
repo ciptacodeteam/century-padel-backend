@@ -49,6 +49,7 @@ import coachRoute from './routes/coach.route'
 import inventoryRoute from './routes/inventory.route'
 import invoiceRoute from './routes/invoice.route'
 import phoneVerificationRoute from './routes/phone.route'
+import verificationRoute from './routes/verification.route'
 import paymentMethodRoute from './routes/payment-method.route'
 import membershipRoute from './routes/membership.route'
 import xenditWebhookRoute from './routes/xendit-webhook.route'
@@ -77,6 +78,7 @@ const routes = [
   homeRoute,
   healthRoute,
   phoneVerificationRoute,
+  verificationRoute,
   authRoute,
   bannerRoute,
   partnershipRoute,
@@ -137,16 +139,13 @@ routes.forEach((route) => {
 })
 
 // Import admin middlewares
-import {
-  requireAdminAuth,
-  blockAdminViewerWrites,
-} from './middlewares/auth'
+import { requireAdminAuth, blockAdminViewerWrites } from './middlewares/auth'
 
 // Apply admin authentication and viewer write protection to all admin routes
 // Exclude auth endpoints (login, register, refresh-token) from authentication requirement
 app.use('/admin/*', async (c, next) => {
   const path = c.req.path
-  
+
   // Skip authentication for public auth endpoints
   const publicAuthPaths = [
     '/admin/auth/login',
@@ -154,11 +153,11 @@ app.use('/admin/*', async (c, next) => {
     '/admin/auth/refresh-token',
     '/admin/auth/check-account',
   ]
-  
+
   if (publicAuthPaths.some((p) => path.startsWith(p))) {
     return next()
   }
-  
+
   // Apply authentication and write protection for all other admin routes
   await requireAdminAuth(c, async () => {
     await blockAdminViewerWrites(c, next)

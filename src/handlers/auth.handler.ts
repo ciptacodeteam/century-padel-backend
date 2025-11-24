@@ -13,6 +13,8 @@ import {
 } from '@/lib/token'
 import { formatPhone, generateOtp } from '@/lib/utils'
 import {
+  changePasswordSchema,
+  ChangePasswordSchema,
   forgotPasswordSchema,
   ForgotPasswordSchema,
   loginSchema,
@@ -23,16 +25,25 @@ import {
   phoneSchema,
   registerSchema,
   RegisterSchema,
+  requestEmailChangeSchema,
+  RequestEmailChangeSchema,
   resetPasswordSchema,
   ResetPasswordSchema,
+  verifyEmailChangeSchema,
+  VerifyEmailChangeSchema,
+  verifyPasswordSchema,
+  VerifyPasswordSchema,
 } from '@/lib/validation'
+import { requireAuth } from '@/middlewares/auth'
+import { queueSendTemplatedEmail } from '@/services/email.service'
 import { validateOtp } from '@/services/otp.service'
 import { sendPhoneOtp } from '@/services/phone.service'
 import { getFileUrl } from '@/services/upload.service'
 import { AppRouteHandler, UserTokenPayload } from '@/types'
 import { zValidator } from '@hono/zod-validator'
-import dayjs from 'dayjs'
 import { AuthTokenType, PhoneVerificationType } from '@prisma/client'
+import crypto from 'crypto'
+import dayjs from 'dayjs'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
 import status from 'http-status'
 
@@ -649,3 +660,356 @@ export const getProfileHandler: AppRouteHandler = async (c) => {
     throw err
   }
 }
+
+// Request email change - sends OTP to new email
+export const requestEmailChangeHandler = factory.createHandlers(
+  requireAuth,
+  zValidator('json', requestEmailChangeSchema, validateHook),
+  async (c) => {
+    try {
+      const user = c.get('user') as UserTokenPayload
+      if (!user?.id) {
+        throw new UnauthorizedException()
+      }
+
+      const existingUser = await db.user.findUnique({
+        where: { id: user.id },
+      })
+
+      if (!existingUser) {
+        throw new UnauthorizedException()
+      }
+
+      const { newEmail } = c.req.valid('json') as RequestEmailChangeSchema
+
+      // Check if new email is same as current email (only if user has email)
+      if (
+        existingUser.email &&
+        existingUser.email.toLowerCase() === newEmail.toLowerCase()
+      ) {
+        return c.json(
+          err(
+            'New email cannot be the same as current email',
+            status.BAD_REQUEST,
+          ),
+          status.BAD_REQUEST,
+        )
+      }
+
+      // Check if email already exists for another user
+      const emailExists = await db.user.findFirst({
+        where: {
+          email: newEmail.toLowerCase(),
+          id: { not: user.id },
+        },
+      })
+
+      if (emailExists) {
+        return c.json(
+          err('Email already in use by another account', status.CONFLICT),
+          status.CONFLICT,
+        )
+      }
+
+      // Generate OTP code
+      const code = await generateOtp(6)
+      const requestId = crypto.randomUUID()
+      const expiresAt = dayjs().add(10, 'minutes').toDate()
+
+      // Delete any existing pending email verification for this user
+      await db.emailVerification.deleteMany({
+        where: { userId: user.id },
+      })
+
+      // Create email verification record
+      await db.emailVerification.create({
+        data: {
+          userId: user.id,
+          email: newEmail.toLowerCase(),
+          code,
+          requestId,
+          expiresAt,
+        },
+      })
+
+      // Send OTP to new email
+      const emailAction = existingUser.email
+        ? 'change your email address'
+        : 'add an email address'
+      await queueSendTemplatedEmail(newEmail, 'emailVerification', {
+        name: existingUser.name,
+        action: emailAction,
+        code,
+      })
+
+      // Send alert to old email if exists
+      if (existingUser.email) {
+        await queueSendTemplatedEmail(existingUser.email, 'emailChangeAlert', {
+          name: existingUser.name,
+          oldEmail: existingUser.email,
+          newEmail,
+        })
+      }
+
+      c.var.logger.info(
+        `Email change OTP sent to ${newEmail} for user ${user.id}`,
+      )
+
+      return c.json(
+        ok({ requestId, expiresAt }, 'OTP code sent to new email address'),
+        status.OK,
+      )
+    } catch (error) {
+      c.var.logger.fatal(`Error in requestEmailChangeHandler: ${error}`)
+      throw error
+    }
+  },
+)
+
+// Verify email change OTP and complete the change
+export const verifyEmailChangeHandler = factory.createHandlers(
+  requireAuth,
+  zValidator('json', verifyEmailChangeSchema, validateHook),
+  async (c) => {
+    try {
+      const user = c.get('user')
+      if (!user?.id) {
+        throw new UnauthorizedException()
+      }
+
+      const { requestId, code } = c.req.valid('json') as VerifyEmailChangeSchema
+
+      // Find verification record
+      const verification = await db.emailVerification.findUnique({
+        where: { requestId },
+      })
+
+      if (!verification) {
+        return c.json(
+          err('Invalid verification request', status.BAD_REQUEST),
+          status.BAD_REQUEST,
+        )
+      }
+
+      // Verify user owns this request
+      if (verification.userId !== user.id) {
+        return c.json(
+          err('Unauthorized verification request', status.FORBIDDEN),
+          status.FORBIDDEN,
+        )
+      }
+
+      // Check if already used
+      if (verification.isUsed) {
+        return c.json(
+          err('Verification code has already been used', status.BAD_REQUEST),
+          status.BAD_REQUEST,
+        )
+      }
+
+      // Check expiration
+      if (dayjs().isAfter(dayjs(verification.expiresAt))) {
+        return c.json(
+          err('Verification code has expired', status.BAD_REQUEST),
+          status.BAD_REQUEST,
+        )
+      }
+
+      // Verify code
+      if (verification.code !== code) {
+        return c.json(
+          err('Invalid verification code', status.BAD_REQUEST),
+          status.BAD_REQUEST,
+        )
+      }
+
+      // Check if email is still available (double-check)
+      const emailExists = await db.user.findFirst({
+        where: {
+          email: verification.email,
+          id: { not: user.id },
+        },
+      })
+
+      if (emailExists) {
+        return c.json(
+          err('Email is no longer available', status.CONFLICT),
+          status.CONFLICT,
+        )
+      }
+
+      // Update user email
+      const updatedUser = await db.user.update({
+        where: { id: user.id },
+        data: {
+          email: verification.email,
+          emailVerified: true,
+        },
+      })
+
+      // Mark verification as used
+      await db.emailVerification.update({
+        where: { requestId },
+        data: { isUsed: true },
+      })
+
+      // Send confirmation email to new email
+      const oldEmail = await db.user.findUnique({
+        where: { id: user.id },
+        select: { email: true },
+      })
+      const actionText = oldEmail?.email ? 'changed' : 'added'
+      const actionTitle = oldEmail?.email
+        ? 'Email Changed Successfully'
+        : 'Email Added Successfully'
+
+      await queueSendTemplatedEmail(verification.email, 'emailChangeSuccess', {
+        name: updatedUser.name,
+        title: actionTitle,
+        action: actionText,
+        email: verification.email,
+      })
+
+      c.var.logger.info(`Email changed successfully for user ${user.id}`)
+
+      return c.json(
+        ok(
+          {
+            email: updatedUser.email,
+            emailVerified: updatedUser.emailVerified,
+          },
+          'Email changed successfully',
+        ),
+        status.OK,
+      )
+    } catch (error) {
+      c.var.logger.fatal(`Error in verifyEmailChangeHandler: ${error}`)
+      throw error
+    }
+  },
+)
+
+/**
+ * Verify user password
+ * POST /auth/verify-password
+ */
+export const verifyUserPasswordHandler = factory.createHandlers(
+  requireAuth,
+  zValidator('json', verifyPasswordSchema, validateHook),
+  async (c) => {
+    try {
+      const user = c.get('user')
+      if (!user?.id) {
+        throw new UnauthorizedException()
+      }
+
+      const { password } = c.req.valid('json') as VerifyPasswordSchema
+
+      // Get user with password
+      const userData = await db.user.findUnique({
+        where: { id: user.id },
+        select: { id: true, password: true },
+      })
+
+      if (!userData || !userData.password) {
+        return c.json(
+          err('User not found or password not set', status.BAD_REQUEST),
+          status.BAD_REQUEST,
+        )
+      }
+
+      // Verify password
+      const isValidPassword = await verifyPassword(password, userData.password)
+
+      if (!isValidPassword) {
+        return c.json(
+          err('Invalid password', status.UNAUTHORIZED),
+          status.UNAUTHORIZED,
+        )
+      }
+
+      c.var.logger.info(`Password verified successfully for user ${user.id}`)
+
+      return c.json(
+        ok({ verified: true }, 'Password verified successfully'),
+        status.OK,
+      )
+    } catch (error) {
+      c.var.logger.fatal(`Error in verifyUserPasswordHandler: ${error}`)
+      throw error
+    }
+  },
+)
+
+/**
+ * Change user password
+ * POST /auth/change-password
+ */
+export const changeUserPasswordHandler = factory.createHandlers(
+  requireAuth,
+  zValidator('json', changePasswordSchema, validateHook),
+  async (c) => {
+    try {
+      const user = c.get('user')
+      if (!user?.id) {
+        throw new UnauthorizedException()
+      }
+
+      const { currentPassword, newPassword } = c.req.valid(
+        'json',
+      ) as ChangePasswordSchema
+
+      // Get user with password
+      const userData = await db.user.findUnique({
+        where: { id: user.id },
+        select: { id: true, password: true, name: true, email: true },
+      })
+
+      if (!userData || !userData.password) {
+        return c.json(
+          err('User not found or password not set', status.BAD_REQUEST),
+          status.BAD_REQUEST,
+        )
+      }
+
+      // Verify current password
+      const isValidPassword = await verifyPassword(
+        currentPassword,
+        userData.password,
+      )
+
+      if (!isValidPassword) {
+        return c.json(
+          err('Current password is incorrect', status.UNAUTHORIZED),
+          status.UNAUTHORIZED,
+        )
+      }
+
+      // Hash new password
+      const hashedPassword = await hashPassword(newPassword)
+
+      // Update password
+      await db.user.update({
+        where: { id: user.id },
+        data: { password: hashedPassword },
+      })
+
+      // Send confirmation email if user has email
+      if (userData.email) {
+        await queueSendTemplatedEmail(userData.email, 'passwordResetSuccess', {
+          name: userData.name,
+        })
+      }
+
+      c.var.logger.info(`Password changed successfully for user ${user.id}`)
+
+      return c.json(
+        ok({ success: true }, 'Password changed successfully'),
+        status.OK,
+      )
+    } catch (error) {
+      c.var.logger.fatal(`Error in changeUserPasswordHandler: ${error}`)
+      throw error
+    }
+  },
+)

@@ -138,19 +138,34 @@ model PhoneVerification {
   @@map("phone_verification")
 }
 
-model Staff {
+model EmailVerification {
   id        String   @id @default(cuid())
+  userId    String
+  email     String
+  code      String
+  expiresAt DateTime
+  requestId String   @unique
+  isUsed    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@index([userId, email])
+  @@map("email_verification")
+}
+
+model Staff {
+  id        String     @id @default(cuid())
   image     String?
   name      String
-  email     String   @unique
-  phone     String?  @unique
+  email     String     @unique
+  phone     String?    @unique
   password  String
-  isActive  Boolean   @default(true)
-  joinedAt  DateTime  @default(now()) @db.Date
-  role      Role      @default(ADMIN)
+  isActive  Boolean    @default(true)
+  joinedAt  DateTime   @default(now()) @db.Date
+  role      Role       @default(ADMIN)
   coachType CoachType?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @default(now()) @updatedAt
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @default(now()) @updatedAt
 
   authTokens          AuthToken[]
   // Derived schedules now use Slot (see below) instead of separate tables
@@ -505,6 +520,7 @@ model BookingCoach {
   booking          Booking          @relation(fields: [bookingId], references: [id], onDelete: Cascade)
   slot             Slot             @relation(fields: [slotId], references: [id])
   bookingCoachType BookingCoachType @relation(fields: [bookingCoachTypeId], references: [id])
+
   @@map("booking_coaches")
 }
 
