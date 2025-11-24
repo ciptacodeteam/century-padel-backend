@@ -21,17 +21,28 @@ export const getPublicPartnershipLogosHandler = factory.createHandlers(
       ...queryOptions,
       where: { isActive: true },
       orderBy: { createdAt: 'desc' },
-      select: { logo: true },
+      select: { name: true, logo: true },
     })
 
-    const logos: string[] = []
-    for (const { logo } of items) {
-      if (logo) {
-        logos.push(await getFileUrl(logo))
-      }
-    }
+    // const logos: string[] = []
+    // for (const { logo } of items) {
+    //   if (logo) {
+    //     logos.push(await getFileUrl(logo))
+    //   }
+    // }
 
-    return c.json(ok(logos), status.OK)
+    // Get all logos data such as the name and the logo url
+    const logosData = await Promise.all(
+      items.map(async (item) => {
+        return {
+          name: item.name,
+          logo: item.logo ? await getFileUrl(item.logo) : null,
+        }
+      }),
+    )
+    
+
+    return c.json(ok(logosData), status.OK)
   },
 )
 

@@ -1,5 +1,5 @@
 import { createRouter, factory } from "@/lib/create-app";
-import { createClubHandler, getAllClubHandler, getClubHandler, updateClubHandler, deleteClubHandler } from "@/handlers/admin/club.handler";
+import { approveClubHandler, createClubHandler, getAllClubHandler, getClubHandler, updateClubHandler, deleteClubHandler } from "@/handlers/admin/club.handler";
 
 const adminClubRoute = createRouter()
     .basePath("/clubs")
@@ -7,6 +7,7 @@ const adminClubRoute = createRouter()
     .get("/", ...getAllClubHandler)
     .get("/:id", ...getClubHandler)
     .put("/:id", ...updateClubHandler)
+    .post("/:id/approve", ...approveClubHandler)
     .delete("/:id", ...deleteClubHandler);
 
 export default adminClubRoute;

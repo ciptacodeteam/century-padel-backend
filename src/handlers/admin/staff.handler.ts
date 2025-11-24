@@ -123,7 +123,7 @@ export const createStaffHandler = factory.createHandlers(
   async (c) => {
     try {
       const validated = c.req.valid('form') as CreateStaffSchema
-      const { name, email, phone, role, image, isActive, joinedAt } = validated
+      const { name, email, phone, role, coachType, image, isActive, joinedAt } = validated
 
       const existingStaff = await db.staff.findFirst({
         where: {
@@ -156,6 +156,7 @@ export const createStaffHandler = factory.createHandlers(
           phone: formatedPhone,
           password: hashedPassword,
           role,
+          coachType,
           image: imageUrl,
           isActive,
           joinedAt: joinedAt ? new Date(joinedAt) : new Date(),
@@ -168,6 +169,7 @@ export const createStaffHandler = factory.createHandlers(
           image: true,
           createdAt: true,
           role: true,
+          coachType: true,
           isActive: true,
           joinedAt: true,
         },
@@ -254,6 +256,7 @@ export const updateStaffHandler = factory.createHandlers(
           email: validatedForm.email,
           phone,
           role: validatedForm.role,
+          coachType: validatedForm.coachType,
           image: imageUrl,
           isActive,
           joinedAt: validatedForm.joinedAt
@@ -268,6 +271,7 @@ export const updateStaffHandler = factory.createHandlers(
           image: true,
           createdAt: true,
           role: true,
+          coachType: true,
           isActive: true,
           joinedAt: true,
         },

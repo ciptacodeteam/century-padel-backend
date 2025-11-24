@@ -226,6 +226,66 @@ export const updateClubHandler = factory.createHandlers(
   },
 )
 
+export const approveClubHandler = factory.createHandlers(
+  zValidator('param', idSchema, validateHook),
+  async (c) => {
+    try {
+      const { id } = c.req.valid('param') as IdSchema
+
+      const existingClub = await db.club.findUnique({
+        where: { id },
+      })
+
+      if (!existingClub) {
+        throw new NotFoundException('Club not found')
+      }
+
+      if (existingClub.isActive) {
+        return c.json(
+          err('Club is already approved', status.BAD_REQUEST),
+          status.BAD_REQUEST,
+        )
+      }
+
+      const updatedClub = await db.club.update({
+        where: { id },
+        data: {
+          isActive: true,
+        },
+        include: {
+          leader: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              phone: true,
+              image: true,
+            },
+          },
+          _count: {
+            select: {
+              clubMember: true,
+            },
+          },
+        },
+      })
+
+      if (updatedClub.logo) {
+        const logoUrl = await getFileUrl(updatedClub.logo)
+        updatedClub.logo = logoUrl
+      }
+
+      return c.json(
+        ok(updatedClub, 'Club approved successfully'),
+        status.OK,
+      )
+    } catch (error) {
+      c.var.logger.fatal(`Error in approveClubHandler: ${error}`)
+      throw error
+    }
+  },
+)
+
 export const deleteClubHandler = factory.createHandlers(
   zValidator('param', idSchema, validateHook),
   async (c) => {
