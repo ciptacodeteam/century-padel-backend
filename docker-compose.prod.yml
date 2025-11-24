@@ -207,36 +207,36 @@ services:
   # Usage: docker-compose -f docker-compose.prod.yml up -d prisma-studio
   # Access at: http://localhost:5555 (or your server IP:5555)
   # Security: Consider restricting access via firewall or nginx
-  prisma-studio:
-    image: quantum-sport-backend:latest
-    container_name: quantum-sport-prisma-studio-prod
-    restart: "no"  # Don't auto-restart, start manually when needed
-    working_dir: /app
-    env_file:
-      - .env.production
-    environment:
-      NODE_ENV: production
-      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/${DB_NAME:-quantum_sport}?schema=public
-    ports:
-      - '${PRISMA_STUDIO_PORT:-5555}:5555'
-    volumes:
-      # Mount prisma directory for schema access
-      - ./prisma:/app/prisma:ro
-      # Mount node_modules from the image (already installed)
-      - /app/node_modules
-    depends_on:
-      db:
-        condition: service_healthy
-    networks:
-      - quantum-sport-network
-    command: ['bunx', 'prisma', 'studio', '--port', '5555', '--browser', 'none']
-    logging:
-      driver: 'json-file'
-      options:
-        max-size: '10m'
-        max-file: '3'
-    security_opt:
-      - no-new-privileges:true
+  # prisma-studio:
+  #   image: quantum-sport-backend:latest
+  #   container_name: quantum-sport-prisma-studio-prod
+  #   restart: "no"  # Don't auto-restart, start manually when needed
+  #   working_dir: /app
+  #   env_file:
+  #     - .env.production
+  #   environment:
+  #     NODE_ENV: production
+  #     DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/${DB_NAME:-quantum_sport}?schema=public
+  #   ports:
+  #     - '${PRISMA_STUDIO_PORT:-5555}:5555'
+  #   volumes:
+  #     # Mount prisma directory for schema access
+  #     - ./prisma:/app/prisma:ro
+  #     # Mount node_modules from the image (already installed)
+  #     - /app/node_modules
+  #   depends_on:
+  #     db:
+  #       condition: service_healthy
+  #   networks:
+  #     - quantum-sport-network
+  #   command: ['bunx', 'prisma', 'studio', '--port', '5555', '--browser', 'none']
+  #   logging:
+  #     driver: 'json-file'
+  #     options:
+  #       max-size: '10m'
+  #       max-file: '3'
+  #   security_opt:
+  #     - no-new-privileges:true
 
 volumes:
   postgres_data:
