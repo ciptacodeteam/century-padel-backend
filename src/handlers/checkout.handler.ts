@@ -16,6 +16,18 @@ import { requireAuth } from '@/middlewares/auth'
 
 // const PROCESSING_FEE_PERCENT = 0.02 // 2% processing fee
 
+/**
+ * Cleans slot IDs by removing any time suffix pattern (e.g., "-06:00" or "-06:00:00")
+ * This handles cases where the frontend accidentally appends time information to slot IDs
+ */
+function cleanSlotIds(slotIds: string[] | undefined): string[] | undefined {
+  if (!slotIds || slotIds.length === 0) {
+    return slotIds
+  }
+  // Remove time suffix patterns like "-06:00" or "-06:00:00" from slot IDs
+  return slotIds.map((id) => id.replace(/-\d{2}:\d{2}(:\d{2})?$/, ''))
+}
+
 export const checkoutHandler = factory.createHandlers(
   requireAuth,
   zValidator('json', checkoutSchema, validateHook),
@@ -33,11 +45,16 @@ export const checkoutHandler = factory.createHandlers(
       const {
         bookingId,
         paymentMethodId,
-        courtSlots,
-        coachSlots,
-        ballboySlots,
+        courtSlots: rawCourtSlots,
+        coachSlots: rawCoachSlots,
+        ballboySlots: rawBallboySlots,
         inventories,
       } = validated
+
+      // Clean slot IDs to remove any accidentally appended time suffixes
+      const courtSlots = cleanSlotIds(rawCourtSlots)
+      const coachSlots = cleanSlotIds(rawCoachSlots)
+      const ballboySlots = cleanSlotIds(rawBallboySlots)
 
       // Validate at least one slot is provided
       const hasSlots =
