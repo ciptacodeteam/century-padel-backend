@@ -130,7 +130,9 @@ export const createStaffSchema = z
       })
       .optional()
       .default(dayjs().format(DEFAULT_DATE_FORMAT)),
-    role: z.enum(['ADMIN', 'ADMIN_VIEWER', 'BALLBOY', 'COACH', 'CASHIER'] as const).default('ADMIN'),
+    role: z
+      .enum(['ADMIN', 'ADMIN_VIEWER', 'BALLBOY', 'COACH', 'CASHIER'] as const)
+      .default('ADMIN'),
     coachType: z.enum(['GUIDED_MATCH', 'COACH'] as const).optional(),
     isActive: z.coerce.boolean().optional(),
     image: z.file().optional(),
@@ -576,3 +578,17 @@ export type CreateCoachTypeSchema = z.infer<typeof createCoachTypeSchema>
 export const updateCoachTypeSchema = createCoachTypeSchema.partial()
 
 export type UpdateCoachTypeSchema = z.infer<typeof updateCoachTypeSchema>
+
+// Email change schemas
+export const requestEmailChangeSchema = z.object({
+  newEmail: z.string().email('Invalid email address'),
+})
+
+export type RequestEmailChangeSchema = z.infer<typeof requestEmailChangeSchema>
+
+export const verifyEmailChangeSchema = z.object({
+  requestId: z.string().min(1, 'Request ID is required'),
+  code: z.string().length(6, 'OTP code must be 6 digits'),
+})
+
+export type VerifyEmailChangeSchema = z.infer<typeof verifyEmailChangeSchema>

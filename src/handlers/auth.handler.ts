@@ -1,6 +1,6 @@
 import { DEFAULT_OTP_CODE, OTP_LENGTH } from '@/constants'
 import { env } from '@/env'
-import { UnauthorizedException } from '@/exceptions'
+import { BadRequestException, UnauthorizedException } from '@/exceptions'
 import { validateHook } from '@/helpers/validate-hook'
 import { factory } from '@/lib/create-app'
 import { hashPassword, verifyPassword } from '@/lib/password'
@@ -23,18 +23,26 @@ import {
   phoneSchema,
   registerSchema,
   RegisterSchema,
+  requestEmailChangeSchema,
+  RequestEmailChangeSchema,
   resetPasswordSchema,
   ResetPasswordSchema,
+  verifyEmailChangeSchema,
+  VerifyEmailChangeSchema,
 } from '@/lib/validation'
 import { validateOtp } from '@/services/otp.service'
 import { sendPhoneOtp } from '@/services/phone.service'
 import { getFileUrl } from '@/services/upload.service'
+import { queueSendTemplatedEmail } from '@/services/email.service'
 import { AppRouteHandler, UserTokenPayload } from '@/types'
 import { zValidator } from '@hono/zod-validator'
+import { requireAuth } from '@/middlewares/auth'
 import dayjs from 'dayjs'
 import { AuthTokenType, PhoneVerificationType } from '@prisma/client'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
 import status from 'http-status'
+import { z } from 'zod'
+import crypto from 'crypto'
 
 export const checkAccountHandler = factory.createHandlers(
   zValidator('json', phoneSchema, validateHook),
@@ -649,3 +657,220 @@ export const getProfileHandler: AppRouteHandler = async (c) => {
     throw err
   }
 }
+
+// Request email change - sends OTP to new email
+export const requestEmailChangeHandler = factory.createHandlers(
+  requireAuth,
+  zValidator('json', requestEmailChangeSchema, validateHook),
+  async (c) => {
+    try {
+      const user = c.get('user')
+      if (!user?.id) {
+        throw new UnauthorizedException()
+      }
+
+      const { newEmail } = c.req.valid('json') as RequestEmailChangeSchema
+
+      // Check if new email is same as current email (only if user has email)
+      if (user.email && user.email.toLowerCase() === newEmail.toLowerCase()) {
+        return c.json(
+          err(
+            'New email cannot be the same as current email',
+            status.BAD_REQUEST,
+          ),
+          status.BAD_REQUEST,
+        )
+      }
+
+      // Check if email already exists for another user
+      const emailExists = await db.user.findFirst({
+        where: {
+          email: newEmail.toLowerCase(),
+          id: { not: user.id },
+        },
+      })
+
+      if (emailExists) {
+        return c.json(
+          err('Email already in use by another account', status.CONFLICT),
+          status.CONFLICT,
+        )
+      }
+
+      // Generate OTP code
+      const code = await generateOtp(6)
+      const requestId = crypto.randomUUID()
+      const expiresAt = dayjs().add(10, 'minutes').toDate()
+
+      // Delete any existing pending email verification for this user
+      await db.emailVerification.deleteMany({
+        where: { userId: user.id },
+      })
+
+      // Create email verification record
+      await db.emailVerification.create({
+        data: {
+          userId: user.id,
+          email: newEmail.toLowerCase(),
+          code,
+          requestId,
+          expiresAt,
+        },
+      })
+
+      // Send OTP to new email
+      const emailAction = user.email
+        ? 'change your email address'
+        : 'add an email address'
+      await queueSendTemplatedEmail(newEmail, 'emailVerification', {
+        name: user.name,
+        action: emailAction,
+        code,
+      })
+
+      // Send alert to old email if exists
+      if (user.email) {
+        await queueSendTemplatedEmail(user.email, 'emailChangeAlert', {
+          name: user.name,
+          oldEmail: user.email,
+          newEmail,
+        })
+      }
+
+      c.var.logger.info(
+        `Email change OTP sent to ${newEmail} for user ${user.id}`,
+      )
+
+      return c.json(
+        ok({ requestId, expiresAt }, 'OTP code sent to new email address'),
+        status.OK,
+      )
+    } catch (error) {
+      c.var.logger.fatal(`Error in requestEmailChangeHandler: ${error}`)
+      throw error
+    }
+  },
+)
+
+// Verify email change OTP and complete the change
+export const verifyEmailChangeHandler = factory.createHandlers(
+  requireAuth,
+  zValidator('json', verifyEmailChangeSchema, validateHook),
+  async (c) => {
+    try {
+      const user = c.get('user')
+      if (!user?.id) {
+        throw new UnauthorizedException()
+      }
+
+      const { requestId, code } = c.req.valid('json') as VerifyEmailChangeSchema
+
+      // Find verification record
+      const verification = await db.emailVerification.findUnique({
+        where: { requestId },
+      })
+
+      if (!verification) {
+        return c.json(
+          err('Invalid verification request', status.BAD_REQUEST),
+          status.BAD_REQUEST,
+        )
+      }
+
+      // Verify user owns this request
+      if (verification.userId !== user.id) {
+        return c.json(
+          err('Unauthorized verification request', status.FORBIDDEN),
+          status.FORBIDDEN,
+        )
+      }
+
+      // Check if already used
+      if (verification.isUsed) {
+        return c.json(
+          err('Verification code has already been used', status.BAD_REQUEST),
+          status.BAD_REQUEST,
+        )
+      }
+
+      // Check expiration
+      if (dayjs().isAfter(dayjs(verification.expiresAt))) {
+        return c.json(
+          err('Verification code has expired', status.BAD_REQUEST),
+          status.BAD_REQUEST,
+        )
+      }
+
+      // Verify code
+      if (verification.code !== code) {
+        return c.json(
+          err('Invalid verification code', status.BAD_REQUEST),
+          status.BAD_REQUEST,
+        )
+      }
+
+      // Check if email is still available (double-check)
+      const emailExists = await db.user.findFirst({
+        where: {
+          email: verification.email,
+          id: { not: user.id },
+        },
+      })
+
+      if (emailExists) {
+        return c.json(
+          err('Email is no longer available', status.CONFLICT),
+          status.CONFLICT,
+        )
+      }
+
+      // Update user email
+      const updatedUser = await db.user.update({
+        where: { id: user.id },
+        data: {
+          email: verification.email,
+          emailVerified: true,
+        },
+      })
+
+      // Mark verification as used
+      await db.emailVerification.update({
+        where: { requestId },
+        data: { isUsed: true },
+      })
+
+      // Send confirmation email to new email
+      const oldEmail = await db.user.findUnique({
+        where: { id: user.id },
+        select: { email: true },
+      })
+      const actionText = oldEmail?.email ? 'changed' : 'added'
+      const actionTitle = oldEmail?.email
+        ? 'Email Changed Successfully'
+        : 'Email Added Successfully'
+
+      await queueSendTemplatedEmail(verification.email, 'emailChangeSuccess', {
+        name: user.name,
+        title: actionTitle,
+        action: actionText,
+        email: verification.email,
+      })
+
+      c.var.logger.info(`Email changed successfully for user ${user.id}`)
+
+      return c.json(
+        ok(
+          {
+            email: updatedUser.email,
+            emailVerified: updatedUser.emailVerified,
+          },
+          'Email changed successfully',
+        ),
+        status.OK,
+      )
+    } catch (error) {
+      c.var.logger.fatal(`Error in verifyEmailChangeHandler: ${error}`)
+      throw error
+    }
+  },
+)

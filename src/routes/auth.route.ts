@@ -7,7 +7,9 @@ import {
   logoutHandler,
   refreshTokenHandler,
   registerHandler,
+  requestEmailChangeHandler,
   resetPasswordHandler,
+  verifyEmailChangeHandler,
 } from '@/handlers/auth.handler'
 
 import { createRouter } from '@/lib/create-app'
@@ -23,5 +25,7 @@ const authRoute = createRouter()
   .post('/forgot-password', ...forgotPasswordHandler)
   .post('/reset-password', ...resetPasswordHandler)
   .get('/profile', getProfileHandler)
+  .post('/email/request-change', ...requestEmailChangeHandler)
+  .post('/email/verify-change', ...verifyEmailChangeHandler)
 
 export default authRoute

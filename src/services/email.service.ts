@@ -134,6 +134,70 @@ export const emailTemplates = {
       </div>
     `,
   }),
+
+  emailVerification: (variables: Record<string, any>) => ({
+    subject: 'Verify Your Email Address',
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2>Email Verification</h2>
+        <p>Hi ${variables.name},</p>
+        <p>You requested to ${variables.action} to this email.</p>
+        <p>Please use the following OTP code to verify:</p>
+        <div style="background-color: #f4f4f4; padding: 20px; text-align: center; margin: 20px 0;">
+          <h1 style="margin: 0; letter-spacing: 8px; color: #007bff;">${variables.code}</h1>
+        </div>
+        <p style="color: #666; font-size: 12px;">
+          This code will expire in 10 minutes.
+          <br />
+          If you didn't request this, please ignore this email.
+        </p>
+        <hr style="margin-top: 30px; border: none; border-top: 1px solid #ddd;" />
+        <p style="color: #999; font-size: 11px; text-align: center;">
+          Quantum Sport © 2025. All rights reserved.
+        </p>
+      </div>
+    `,
+  }),
+
+  emailChangeAlert: (variables: Record<string, any>) => ({
+    subject: 'Email Change Request Alert',
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2>Email Change Request</h2>
+        <p>Hi ${variables.name},</p>
+        <p>We received a request to change your email address from <strong>${variables.oldEmail}</strong> to <strong>${variables.newEmail}</strong>.</p>
+        <p>If you made this request, you can safely ignore this email. The change will be completed once the new email is verified.</p>
+        <div style="background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0;">
+          <p style="margin: 0; color: #856404;">
+            <strong>⚠️ Security Alert:</strong> If you did NOT request this change, please secure your account immediately by changing your password.
+          </p>
+        </div>
+        <p style="color: #666; font-size: 12px;">
+          This is an automated security notification.
+        </p>
+        <hr style="margin-top: 30px; border: none; border-top: 1px solid #ddd;" />
+        <p style="color: #999; font-size: 11px; text-align: center;">
+          Quantum Sport © 2025. All rights reserved.
+        </p>
+      </div>
+    `,
+  }),
+
+  emailChangeSuccess: (variables: Record<string, any>) => ({
+    subject: variables.title,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2>${variables.title}</h2>
+        <p>Hi ${variables.name},</p>
+        <p>Your email address has been successfully ${variables.action} to <strong>${variables.email}</strong>.</p>
+        <p>You can now use this email address to receive notifications and updates from Quantum Sport.</p>
+        <hr style="margin-top: 30px; border: none; border-top: 1px solid #ddd;" />
+        <p style="color: #999; font-size: 11px; text-align: center;">
+          Quantum Sport © 2025. All rights reserved.
+        </p>
+      </div>
+    `,
+  }),
 }
 
 /**
@@ -181,4 +245,40 @@ export const sendTemplatedEmail = async (
 
   const { subject, html } = templateFn(variables)
   return sendEmail(to, subject, html, from)
+}
+
+/**
+ * Queue templated email (non-blocking)
+ */
+export const queueSendTemplatedEmail = async (
+  to: string,
+  template: keyof typeof emailTemplates,
+  variables: Record<string, any>,
+) => {
+  const { queueEmail } = await import('@/services/email-queue.service')
+
+  return queueEmail({
+    to,
+    subject: '', // Will be generated from template
+    template,
+    variables,
+  })
+}
+
+/**
+ * Queue custom email (non-blocking)
+ */
+export const queueCustomEmail = async (
+  to: string,
+  subject: string,
+  html: string,
+) => {
+  const { queueEmail } = await import('@/services/email-queue.service')
+
+  return queueEmail({
+    to,
+    subject,
+    template: 'custom',
+    variables: { html },
+  })
 }
