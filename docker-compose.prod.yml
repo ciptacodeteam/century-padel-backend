@@ -12,8 +12,8 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
       POSTGRES_INITDB_ARGS: '-E UTF8'
     # Port not exposed externally for security (containers can access internally)
-    ports:
-      - '${DB_PORT:-5432}:5433'
+    # ports:
+    #   - '${DB_PORT:-5432}:5433'
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./docker/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
