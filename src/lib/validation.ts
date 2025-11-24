@@ -168,6 +168,10 @@ export const changePasswordSchema = z
     message: "New passwords don't match",
     path: ['confirmNewPassword'],
   })
+  .refine((data) => data.currentPassword !== data.newPassword, {
+    message: 'New password must be different from current password',
+    path: ['newPassword'],
+  })
 
 export type ChangePasswordSchema = z.infer<typeof changePasswordSchema>
 
@@ -613,3 +617,10 @@ export const verifyVerificationOtpSchema = z.object({
 export type VerifyVerificationOtpSchema = z.infer<
   typeof verifyVerificationOtpSchema
 >
+
+// Password verification schema
+export const verifyPasswordSchema = z.object({
+  password: z.string().min(6).max(100),
+})
+
+export type VerifyPasswordSchema = z.infer<typeof verifyPasswordSchema>

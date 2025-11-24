@@ -29,6 +29,10 @@ import {
   ResetPasswordSchema,
   verifyEmailChangeSchema,
   VerifyEmailChangeSchema,
+  verifyPasswordSchema,
+  VerifyPasswordSchema,
+  changePasswordSchema,
+  ChangePasswordSchema,
 } from '@/lib/validation'
 import { validateOtp } from '@/services/otp.service'
 import { sendPhoneOtp } from '@/services/phone.service'
@@ -870,6 +874,131 @@ export const verifyEmailChangeHandler = factory.createHandlers(
       )
     } catch (error) {
       c.var.logger.fatal(`Error in verifyEmailChangeHandler: ${error}`)
+      throw error
+    }
+  },
+)
+
+/**
+ * Verify user password
+ * POST /auth/verify-password
+ */
+export const verifyUserPasswordHandler = factory.createHandlers(
+  requireAuth,
+  zValidator('json', verifyPasswordSchema, validateHook),
+  async (c) => {
+    try {
+      const user = c.get('user')
+      if (!user?.id) {
+        throw new UnauthorizedException()
+      }
+
+      const { password } = c.req.valid('json') as VerifyPasswordSchema
+
+      // Get user with password
+      const userData = await db.user.findUnique({
+        where: { id: user.id },
+        select: { id: true, password: true },
+      })
+
+      if (!userData || !userData.password) {
+        return c.json(
+          err('User not found or password not set', status.BAD_REQUEST),
+          status.BAD_REQUEST,
+        )
+      }
+
+      // Verify password
+      const isValidPassword = await verifyPassword(password, userData.password)
+
+      if (!isValidPassword) {
+        return c.json(
+          err('Invalid password', status.UNAUTHORIZED),
+          status.UNAUTHORIZED,
+        )
+      }
+
+      c.var.logger.info(`Password verified successfully for user ${user.id}`)
+
+      return c.json(
+        ok({ verified: true }, 'Password verified successfully'),
+        status.OK,
+      )
+    } catch (error) {
+      c.var.logger.fatal(`Error in verifyUserPasswordHandler: ${error}`)
+      throw error
+    }
+  },
+)
+
+/**
+ * Change user password
+ * POST /auth/change-password
+ */
+export const changeUserPasswordHandler = factory.createHandlers(
+  requireAuth,
+  zValidator('json', changePasswordSchema, validateHook),
+  async (c) => {
+    try {
+      const user = c.get('user')
+      if (!user?.id) {
+        throw new UnauthorizedException()
+      }
+
+      const { currentPassword, newPassword } = c.req.valid(
+        'json',
+      ) as ChangePasswordSchema
+
+      // Get user with password
+      const userData = await db.user.findUnique({
+        where: { id: user.id },
+        select: { id: true, password: true, name: true, email: true },
+      })
+
+      if (!userData || !userData.password) {
+        return c.json(
+          err('User not found or password not set', status.BAD_REQUEST),
+          status.BAD_REQUEST,
+        )
+      }
+
+      // Verify current password
+      const isValidPassword = await verifyPassword(
+        currentPassword,
+        userData.password,
+      )
+
+      if (!isValidPassword) {
+        return c.json(
+          err('Current password is incorrect', status.UNAUTHORIZED),
+          status.UNAUTHORIZED,
+        )
+      }
+
+      // Hash new password
+      const hashedPassword = await hashPassword(newPassword)
+
+      // Update password
+      await db.user.update({
+        where: { id: user.id },
+        data: { password: hashedPassword },
+      })
+
+      // Send confirmation email if user has email
+      if (userData.email) {
+        await queueSendTemplatedEmail(userData.email, 'passwordResetSuccess', {
+          name: userData.name,
+        })
+      }
+
+      c.var.logger.info(`Password changed successfully for user ${user.id}`)
+
+      return c.json(
+        ok({ success: true }, 'Password changed successfully'),
+        status.OK,
+      )
+    } catch (error) {
+      c.var.logger.fatal(`Error in changeUserPasswordHandler: ${error}`)
       throw error
     }
   },
