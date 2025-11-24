@@ -204,6 +204,8 @@ export const createMyClubHandler = factory.createHandlers(
           rules: clubData.rules,
           leaderId: user.id, // Set authenticated user as leader
           visibility: clubData.visibility,
+          // For the very first time, the club should be approved by the admin, so the active status should be false
+          isActive: false,
         },
       })
 
