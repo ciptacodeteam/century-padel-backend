@@ -120,9 +120,14 @@ export const requireAdminWriteAccess: MiddlewareHandler = async (c, next) => {
 }
 
 // Middleware to block ADMIN_VIEWER from POST, PUT, PATCH, DELETE requests
+// Exception: ADMIN_VIEWER can perform admin checkout (booking)
 export const blockAdminViewerWrites: MiddlewareHandler = async (c, next) => {
   const admin = c.get('admin')
   const method = c.req.method
+  const path = c.req.path
+
+  // Allow ADMIN_VIEWER to access admin checkout (booking)
+  const allowedPaths = ['/admin/checkout']
 
   // If user is ADMIN_VIEWER and trying to modify data
   if (
@@ -130,6 +135,11 @@ export const blockAdminViewerWrites: MiddlewareHandler = async (c, next) => {
     admin.role === 'ADMIN_VIEWER' &&
     ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)
   ) {
+    // Check if the path is in the allowed list
+    if (allowedPaths.some((allowedPath) => path.startsWith(allowedPath))) {
+      return next()
+    }
+
     throw new ForbiddenException(
       'Admin viewer role has read-only access. Write operations are not permitted.',
     )

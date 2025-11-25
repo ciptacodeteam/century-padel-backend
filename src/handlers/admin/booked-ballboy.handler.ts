@@ -11,9 +11,9 @@ import {
   searchQuerySchema,
 } from '@/lib/validation'
 import { zValidator } from '@hono/zod-validator'
-import { BookingStatus, PaymentStatus } from '@prisma/client'
-import status from 'http-status'
+import { BookingStatus } from '@prisma/client'
 import dayjs from 'dayjs'
+import status from 'http-status'
 import { z } from 'zod'
 
 // Schema for cancel booking request

@@ -217,11 +217,41 @@ async function seedInventories() {
   console.info('🎯 Seeding inventories...')
 
   const inventories = [
-    { name: 'Tennis Racket - Wilson Pro', description: 'Professional grade racket', quantity: 10, price: 50000, isActive: true },
-    { name: 'Tennis Balls - Set of 3', description: 'Premium tennis balls', quantity: 50, price: 25000, isActive: true },
-    { name: 'Water Bottle', description: 'Sports water bottle', quantity: 30, price: 15000, isActive: true },
-    { name: 'Towel', description: 'Sports towel', quantity: 20, price: 20000, isActive: true },
-    { name: 'Out of Stock Item', description: 'Currently unavailable', quantity: 0, price: 10000, isActive: false },
+    {
+      name: 'Tennis Racket - Wilson Pro',
+      description: 'Professional grade racket',
+      quantity: 10,
+      price: 50000,
+      isActive: true,
+    },
+    {
+      name: 'Tennis Balls - Set of 3',
+      description: 'Premium tennis balls',
+      quantity: 50,
+      price: 25000,
+      isActive: true,
+    },
+    {
+      name: 'Water Bottle',
+      description: 'Sports water bottle',
+      quantity: 30,
+      price: 15000,
+      isActive: true,
+    },
+    {
+      name: 'Towel',
+      description: 'Sports towel',
+      quantity: 20,
+      price: 20000,
+      isActive: true,
+    },
+    {
+      name: 'Out of Stock Item',
+      description: 'Currently unavailable',
+      quantity: 0,
+      price: 10000,
+      isActive: false,
+    },
   ]
 
   const createdInventories: any[] = []
@@ -232,7 +262,9 @@ async function seedInventories() {
       create: invData,
     })
     createdInventories.push(inventory)
-    console.info(`✅ Inventory: ${inventory.name} (Stock: ${inventory.quantity})`)
+    console.info(
+      `✅ Inventory: ${inventory.name} (Stock: ${inventory.quantity})`,
+    )
   }
   return createdInventories
 }
@@ -242,9 +274,27 @@ async function seedPaymentMethods() {
   console.info('💳 Seeding payment methods...')
 
   const methods = [
-    { name: 'BCA Virtual Account', channel: 'VA', fees: 4000, percentage: 0, isActive: true },
-    { name: 'Mandiri Virtual Account', channel: 'VA', fees: 4000, percentage: 0, isActive: true },
-    { name: 'GoPay', channel: 'EWALLET', fees: 0, percentage: 2, isActive: true },
+    {
+      name: 'BCA Virtual Account',
+      channel: 'VA',
+      fees: 4000,
+      percentage: 0,
+      isActive: true,
+    },
+    {
+      name: 'Mandiri Virtual Account',
+      channel: 'VA',
+      fees: 4000,
+      percentage: 0,
+      isActive: true,
+    },
+    {
+      name: 'GoPay',
+      channel: 'EWALLET',
+      fees: 0,
+      percentage: 2,
+      isActive: true,
+    },
     { name: 'OVO', channel: 'EWALLET', fees: 0, percentage: 2, isActive: true },
     { name: 'QRIS', channel: 'QRIS', fees: 0, percentage: 0.7, isActive: true },
     { name: 'Cash', channel: 'CASH', fees: 0, percentage: 0, isActive: true },
@@ -315,11 +365,36 @@ async function seedPartnerships() {
   console.info('🤝 Seeding partnerships...')
 
   const partnerships = [
-    { name: 'Nike Sports', description: 'Official sportswear partner', logo: 'https://picsum.photos/200/200?random=10', isActive: true },
-    { name: 'Gatorade', description: 'Official hydration partner', logo: 'https://picsum.photos/200/200?random=11', isActive: true },
-    { name: 'Wilson', description: 'Official equipment supplier', logo: 'https://picsum.photos/200/200?random=12', isActive: true },
-    { name: 'Adidas', description: 'Premium sportswear', logo: 'https://picsum.photos/200/200?random=13', isActive: true },
-    { name: 'Past Partner', description: 'Expired partnership', logo: 'https://picsum.photos/200/200?random=14', isActive: false },
+    {
+      name: 'Nike Sports',
+      description: 'Official sportswear partner',
+      logo: 'https://picsum.photos/200/200?random=10',
+      isActive: true,
+    },
+    {
+      name: 'Gatorade',
+      description: 'Official hydration partner',
+      logo: 'https://picsum.photos/200/200?random=11',
+      isActive: true,
+    },
+    {
+      name: 'Wilson',
+      description: 'Official equipment supplier',
+      logo: 'https://picsum.photos/200/200?random=12',
+      isActive: true,
+    },
+    {
+      name: 'Adidas',
+      description: 'Premium sportswear',
+      logo: 'https://picsum.photos/200/200?random=13',
+      isActive: true,
+    },
+    {
+      name: 'Past Partner',
+      description: 'Expired partnership',
+      logo: 'https://picsum.photos/200/200?random=14',
+      isActive: false,
+    },
   ]
 
   for (const partnerData of partnerships) {
@@ -337,11 +412,31 @@ async function seedCoachTypes(staff: any[]) {
   console.info('🏋️ Seeding coach types & prices...')
 
   const coachTypes = [
-    { name: 'Personal Training', description: 'One-on-one intensive training session', isActive: true },
-    { name: 'Guided Match', description: 'Practice match with professional guidance', isActive: true },
-    { name: 'Group Training', description: 'Small group training (2-4 people)', isActive: true },
-    { name: 'Technique Analysis', description: 'Video analysis and technique improvement', isActive: true },
-    { name: 'Kids Training', description: 'Specialized training for children', isActive: true },
+    {
+      name: 'Personal Training',
+      description: 'One-on-one intensive training session',
+      isActive: true,
+    },
+    {
+      name: 'Guided Match',
+      description: 'Practice match with professional guidance',
+      isActive: true,
+    },
+    {
+      name: 'Group Training',
+      description: 'Small group training (2-4 people)',
+      isActive: true,
+    },
+    {
+      name: 'Technique Analysis',
+      description: 'Video analysis and technique improvement',
+      isActive: true,
+    },
+    {
+      name: 'Kids Training',
+      description: 'Specialized training for children',
+      isActive: true,
+    },
   ]
 
   const createdCoachTypes: any[] = []
@@ -397,8 +492,15 @@ async function seedSlots(courts: any[], staff: any[]) {
     for (let hour = 8; hour < 20; hour++) {
       for (const court of activeCourts.slice(0, 3)) {
         const startAt = today.add(day, 'day').add(hour, 'hour').toDate()
-        const endAt = today.add(day, 'day').add(hour + 1, 'hour').toDate()
-        const price = court.name.includes('Premium') ? 150000 : court.name.includes('Clay') ? 120000 : 100000
+        const endAt = today
+          .add(day, 'day')
+          .add(hour + 1, 'hour')
+          .toDate()
+        const price = court.name.includes('Premium')
+          ? 150000
+          : court.name.includes('Clay')
+            ? 120000
+            : 100000
 
         await db.slot.create({
           data: {
@@ -420,7 +522,10 @@ async function seedSlots(courts: any[], staff: any[]) {
     for (let hour = 9; hour < 17; hour += 2) {
       for (const coach of coaches) {
         const startAt = today.add(day, 'day').add(hour, 'hour').toDate()
-        const endAt = today.add(day, 'day').add(hour + 2, 'hour').toDate()
+        const endAt = today
+          .add(day, 'day')
+          .add(hour + 2, 'hour')
+          .toDate()
 
         await db.slot.create({
           data: {
@@ -442,7 +547,10 @@ async function seedSlots(courts: any[], staff: any[]) {
     for (let hour = 8; hour < 20; hour += 2) {
       for (const ballboy of ballboys) {
         const startAt = today.add(day, 'day').add(hour, 'hour').toDate()
-        const endAt = today.add(day, 'day').add(hour + 2, 'hour').toDate()
+        const endAt = today
+          .add(day, 'day')
+          .add(hour + 2, 'hour')
+          .toDate()
 
         await db.slot.create({
           data: {
@@ -464,10 +572,17 @@ async function seedSlots(courts: any[], staff: any[]) {
 }
 
 // ==================== BOOKINGS ====================
-async function seedBookings(users: any[], courts: any[], staff: any[], inventories: any[], paymentMethods: any[], coachTypes: any[]) {
+async function seedBookings(
+  users: any[],
+  courts: any[],
+  staff: any[],
+  inventories: any[],
+  paymentMethods: any[],
+  coachTypes: any[],
+) {
   console.info('📝 Seeding bookings with various scenarios...')
 
-  const today = dayjs().startOf('day')
+  // const today = dayjs().startOf('day')
   const cashiers = staff.filter((s) => s.role === 'CASHIER')
 
   // Scenario 1: CONFIRMED booking with court + inventory (PAID) - handled by cashier
@@ -485,7 +600,10 @@ async function seedBookings(users: any[], courts: any[], staff: any[], inventori
       },
     })
 
-    await db.slot.update({ where: { id: courtSlot1.id }, data: { isAvailable: false } })
+    await db.slot.update({
+      where: { id: courtSlot1.id },
+      data: { isAvailable: false },
+    })
     await db.bookingDetail.create({
       data: {
         bookingId: booking1.id,
@@ -531,7 +649,9 @@ async function seedBookings(users: any[], courts: any[], staff: any[], inventori
       },
     })
 
-    console.info(`✅ Booking 1: CONFIRMED with court + inventory (PAID by cashier)`)
+    console.info(
+      `✅ Booking 1: CONFIRMED with court + inventory (PAID by cashier)`,
+    )
   }
 
   // Scenario 2: HOLD booking (pending payment)
@@ -549,7 +669,10 @@ async function seedBookings(users: any[], courts: any[], staff: any[], inventori
       },
     })
 
-    await db.slot.update({ where: { id: courtSlot2.id }, data: { isAvailable: false } })
+    await db.slot.update({
+      where: { id: courtSlot2.id },
+      data: { isAvailable: false },
+    })
     await db.bookingDetail.create({
       data: {
         bookingId: booking2.id,
@@ -610,7 +733,10 @@ async function seedBookings(users: any[], courts: any[], staff: any[], inventori
       },
     })
 
-    await db.slot.update({ where: { id: courtSlot3.id }, data: { isAvailable: false } })
+    await db.slot.update({
+      where: { id: courtSlot3.id },
+      data: { isAvailable: false },
+    })
     await db.bookingDetail.create({
       data: {
         bookingId: booking3.id,
@@ -620,7 +746,10 @@ async function seedBookings(users: any[], courts: any[], staff: any[], inventori
       },
     })
 
-    await db.slot.update({ where: { id: coachSlot.id }, data: { isAvailable: false } })
+    await db.slot.update({
+      where: { id: coachSlot.id },
+      data: { isAvailable: false },
+    })
     await db.bookingCoach.create({
       data: {
         bookingId: booking3.id,
@@ -630,7 +759,10 @@ async function seedBookings(users: any[], courts: any[], staff: any[], inventori
       },
     })
 
-    await db.slot.update({ where: { id: ballboySlot.id }, data: { isAvailable: false } })
+    await db.slot.update({
+      where: { id: ballboySlot.id },
+      data: { isAvailable: false },
+    })
     await db.bookingBallboy.create({
       data: {
         bookingId: booking3.id,
@@ -1060,7 +1192,9 @@ async function seedClasses(users: any[], paymentMethods: any[]) {
     await db.classBookingDetail.create({
       data: {
         classBookingId: classBooking1.id,
-        date: dayjs().add(5 + i * 3, 'days').toDate(),
+        date: dayjs()
+          .add(5 + i * 3, 'days')
+          .toDate(),
         time: '09:00',
         price: 50000,
         attendance: i < 2,
@@ -1163,13 +1297,25 @@ async function seedClubs(users: any[]) {
 
   // Join requests
   await db.clubJoinRequest.create({
-    data: { clubId: createdClubs[1].id, userId: users[3].id, status: 'PENDING' },
+    data: {
+      clubId: createdClubs[1].id,
+      userId: users[3].id,
+      status: 'PENDING',
+    },
   })
   await db.clubJoinRequest.create({
-    data: { clubId: createdClubs[0].id, userId: users[4].id, status: 'APPROVED' },
+    data: {
+      clubId: createdClubs[0].id,
+      userId: users[4].id,
+      status: 'APPROVED',
+    },
   })
   await db.clubJoinRequest.create({
-    data: { clubId: createdClubs[1].id, userId: users[0].id, status: 'REJECTED' },
+    data: {
+      clubId: createdClubs[1].id,
+      userId: users[0].id,
+      status: 'REJECTED',
+    },
   })
 
   console.info(`✅ Created club members and join requests`)
@@ -1184,7 +1330,10 @@ async function seedTournaments() {
     {
       name: 'Quantum Open 2025',
       description: 'Annual championship tournament',
-      rules: { format: 'Single elimination', rules: ['Open to all skill levels', 'Professional conduct required'] },
+      rules: {
+        format: 'Single elimination',
+        rules: ['Open to all skill levels', 'Professional conduct required'],
+      },
       startDate: dayjs().add(30, 'days').toDate(),
       endDate: dayjs().add(33, 'days').toDate(),
       startTime: '08:00',
@@ -1323,7 +1472,14 @@ async function main() {
   await seedPartnerships()
   const coachTypes = await seedCoachTypes(staff)
   await seedSlots(courts, staff)
-  await seedBookings(users, courts, staff, inventories, paymentMethods, coachTypes)
+  await seedBookings(
+    users,
+    courts,
+    staff,
+    inventories,
+    paymentMethods,
+    coachTypes,
+  )
   await seedMemberships(users, paymentMethods)
   await seedClasses(users, paymentMethods)
   await seedClubs(users)
@@ -1341,7 +1497,9 @@ async function main() {
   console.info('   🤝 5 Partnerships')
   console.info('   🏋️ 5 Coach Types')
   console.info('   📅 Slots (courts, coaches, ballboys for 3 days)')
-  console.info('   📝 5 Bookings (CONFIRMED, HOLD, CANCELLED, EXPIRED scenarios)')
+  console.info(
+    '   📝 5 Bookings (CONFIRMED, HOLD, CANCELLED, EXPIRED scenarios)',
+  )
   console.info('   💎 5 Memberships + 3 membership users')
   console.info('   📚 5 Classes + 1 class booking')
   console.info('   🏆 5 Clubs + members + join requests')

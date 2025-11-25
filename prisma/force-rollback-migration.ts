@@ -4,41 +4,43 @@ const db = new PrismaClient()
 
 async function main() {
   const migrationName = '20251114161611_add_club_join_request'
-  
+
   console.log(`🔧 Force rolling back failed migration: ${migrationName}`)
-  
+
   try {
     // First, ensure we're not in a transaction by using a new connection
     // and explicitly ending any aborted transactions
     console.log('   Ensuring clean database connection...')
-    
+
     // Use $executeRawUnsafe with explicit transaction handling
     try {
       // This will fail if we're in a transaction, but that's okay
       await db.$executeRawUnsafe('COMMIT;')
-    } catch (e) {
+    } catch {
       // Ignore - we might not be in a transaction
     }
-    
+
     try {
       // Rollback any aborted transaction
       await db.$executeRawUnsafe('ROLLBACK;')
-    } catch (e) {
+    } catch {
       // Ignore - might not be in a transaction
     }
-    
+
     // Now check migration status
-    const migration = await db.$queryRawUnsafe<Array<{
-      id: string
-      checksum: string
-      finished_at: Date | null
-      migration_name: string
-      logs: string | null
-      rolled_back_at: Date | null
-      started_at: Date
-      applied_steps_count: number
-    }>>(
-      `SELECT * FROM "_prisma_migrations" WHERE migration_name = '${migrationName}'`
+    const migration = await db.$queryRawUnsafe<
+      Array<{
+        id: string
+        checksum: string
+        finished_at: Date | null
+        migration_name: string
+        logs: string | null
+        rolled_back_at: Date | null
+        started_at: Date
+        applied_steps_count: number
+      }>
+    >(
+      `SELECT * FROM "_prisma_migrations" WHERE migration_name = '${migrationName}'`,
     )
 
     if (migration.length === 0) {
@@ -66,13 +68,15 @@ async function main() {
     const draftClassBookings = await db.$queryRaw<Array<{ count: bigint }>>`
       SELECT COUNT(*)::bigint as count FROM class_bookings WHERE status = 'DRAFT'
     `
-    
-    const draftCount = Number(draftBookings[0]?.count || 0n) + Number(draftClassBookings[0]?.count || 0n)
-    
+
+    const draftCount =
+      Number(draftBookings[0]?.count || 0n) +
+      Number(draftClassBookings[0]?.count || 0n)
+
     if (draftCount > 0) {
       console.log(`⚠️  Found ${draftCount} records with DRAFT status`)
       console.log('   Updating DRAFT records to HOLD...')
-      
+
       try {
         await db.$executeRawUnsafe(`
           UPDATE bookings SET status = 'HOLD' WHERE status = 'DRAFT';
@@ -89,17 +93,19 @@ async function main() {
 
     // Clean up any partial migration state
     console.log('\n🧹 Cleaning up partial migration state...')
-    
+
     // Check for enum types
     const enumTypes = await db.$queryRaw<Array<{ typname: string }>>`
       SELECT typname FROM pg_type WHERE typname LIKE 'BookingStatus%'
     `
-    
+
     // Clean up BookingStatus_old if it exists
-    if (enumTypes.some(e => e.typname === 'BookingStatus_old')) {
+    if (enumTypes.some((e) => e.typname === 'BookingStatus_old')) {
       console.log('   Removing BookingStatus_old enum...')
       try {
-        await db.$executeRawUnsafe(`DROP TYPE IF EXISTS "BookingStatus_old" CASCADE;`)
+        await db.$executeRawUnsafe(
+          `DROP TYPE IF EXISTS "BookingStatus_old" CASCADE;`,
+        )
         console.log('   ✅ Removed BookingStatus_old')
       } catch (e) {
         console.log(`   ⚠️  Could not remove BookingStatus_old: ${e}`)
@@ -107,7 +113,7 @@ async function main() {
     }
 
     // Fix BookingStatus_new if it exists
-    if (enumTypes.some(e => e.typname === 'BookingStatus_new')) {
+    if (enumTypes.some((e) => e.typname === 'BookingStatus_new')) {
       console.log('   Fixing BookingStatus_new enum...')
       try {
         await db.$executeRawUnsafe(`
@@ -133,7 +139,7 @@ async function main() {
       await db.$executeRawUnsafe(
         `UPDATE "_prisma_migrations" 
         SET rolled_back_at = NOW() 
-        WHERE migration_name = '${migrationName}' AND finished_at IS NULL`
+        WHERE migration_name = '${migrationName}' AND finished_at IS NULL`,
       )
       console.log('✅ Migration marked as rolled back successfully!')
       console.log('   You can now re-run migrations.')
@@ -141,7 +147,6 @@ async function main() {
       console.error(`❌ Error marking migration as rolled back: ${e}`)
       throw e
     }
-
   } catch (error) {
     console.error('❌ Error during rollback:', error)
     throw error
@@ -157,4 +162,3 @@ main()
     await db.$disconnect()
     process.exit(1)
   })
-

@@ -3,15 +3,12 @@ import { validateHook } from '@/helpers/validate-hook'
 import { factory } from '@/lib/create-app'
 import { db } from '@/lib/prisma'
 import buildFindManyOptions from '@/lib/query'
-import { err, ok } from '@/lib/response'
+import { ok } from '@/lib/response'
 import {
-  createInventorySchema,
-  CreateInventorySchema,
   idSchema,
   IdSchema,
   searchQuerySchema,
   SearchQuerySchema,
-  updateInventorySchema,
 } from '@/lib/validation'
 import { zValidator } from '@hono/zod-validator'
 import status from 'http-status'
