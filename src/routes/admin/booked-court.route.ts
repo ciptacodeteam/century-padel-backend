@@ -5,6 +5,7 @@ import {
   getBookedCourtsSummaryHandler,
   getBookingsByCourtHandler,
   cancelBookingHandler,
+  rescheduleCourtBookingHandler,
 } from '@/handlers/admin/booked-court.handler'
 
 const adminBookedCourtRoute = createRouter()
@@ -14,5 +15,6 @@ const adminBookedCourtRoute = createRouter()
   .get('/:id', ...getBookedCourtDetailHandler)
   .get('/by-court/:id', ...getBookingsByCourtHandler)
   .put('/:id/cancel', ...cancelBookingHandler)
+  .put('/:id/reschedule', ...rescheduleCourtBookingHandler)
 
 export default adminBookedCourtRoute

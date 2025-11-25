@@ -10,7 +10,7 @@ import {
   searchQuerySchema,
 } from '@/lib/validation'
 import { zValidator } from '@hono/zod-validator'
-import { BookingStatus, PaymentStatus } from '@prisma/client'
+import { BookingStatus, PaymentStatus, SlotType } from '@prisma/client'
 import status from 'http-status'
 import dayjs from 'dayjs'
 import { z } from 'zod'
@@ -681,12 +681,20 @@ export const getBookingsByCourtHandler = factory.createHandlers(
   },
 )
 
+const MIN_RESCHEDULE_DAYS = 3
+
 // Schema for cancel booking request
 const cancelBookingSchema = z.object({
   reason: z.string().min(1, 'Cancellation reason is required').optional(),
 })
 
 type CancelBookingSchema = z.infer<typeof cancelBookingSchema>
+
+const rescheduleCourtSchema = z.object({
+  newSlotId: z.string().min(1, 'Target slot is required'),
+})
+
+type RescheduleCourtSchema = z.infer<typeof rescheduleCourtSchema>
 
 // PUT /admin/booked-courts/:id/cancel
 // Cancel a specific booking and update all related records
@@ -882,6 +890,172 @@ export const cancelBookingHandler = factory.createHandlers(
       )
     } catch (error) {
       c.var.logger.fatal(`Error in cancelBookingHandler: ${error}`)
+      throw error
+    }
+  },
+)
+
+// PUT /admin/booked-courts/:id/reschedule
+// Allow admin to move a court booking to a different slot
+export const rescheduleCourtBookingHandler = factory.createHandlers(
+  zValidator('param', idSchema, validateHook),
+  zValidator('json', rescheduleCourtSchema, validateHook),
+  async (c) => {
+    try {
+      const { id: bookingDetailId } = c.req.valid('param') as IdSchema
+      const { newSlotId } = c.req.valid('json') as RescheduleCourtSchema
+
+      const result = await db.$transaction(async (tx) => {
+        const bookingDetail = await tx.bookingDetail.findUnique({
+          where: { id: bookingDetailId },
+          include: {
+            slot: true,
+            court: true,
+            booking: {
+              include: {
+                invoice: true,
+              },
+            },
+          },
+        })
+
+        if (!bookingDetail) {
+          throw new NotFoundException('Booked court not found')
+        }
+
+        if (bookingDetail.booking.status === BookingStatus.CANCELLED) {
+          throw new BadRequestException('Cannot reschedule a cancelled booking')
+        }
+
+        const hoursUntilStart = dayjs(bookingDetail.slot.startAt).diff(
+          dayjs(),
+          'hour',
+          true,
+        )
+
+        if (hoursUntilStart < MIN_RESCHEDULE_DAYS * 24) {
+          throw new BadRequestException(
+            `Reschedule is only allowed at least ${MIN_RESCHEDULE_DAYS} days before play date`,
+          )
+        }
+
+        if (bookingDetail.slotId === newSlotId) {
+          throw new BadRequestException(
+            'Selected slot is the same as the current booking',
+          )
+        }
+
+        const newSlot = await tx.slot.findUnique({
+          where: { id: newSlotId },
+          include: {
+            court: true,
+          },
+        })
+
+        if (!newSlot || newSlot.type !== SlotType.COURT) {
+          throw new NotFoundException('Target court slot not found')
+        }
+
+        if (!newSlot.isAvailable) {
+          throw new BadRequestException('Selected slot is no longer available')
+        }
+
+        if (!newSlot.courtId || newSlot.courtId !== bookingDetail.courtId) {
+          throw new BadRequestException('Reschedule must stay on the same court')
+        }
+
+        if (dayjs(newSlot.startAt).isBefore(dayjs())) {
+          throw new BadRequestException('Selected slot time has already passed')
+        }
+
+        await tx.slot.update({
+          where: { id: bookingDetail.slotId },
+          data: {
+            isAvailable: true,
+          },
+        })
+
+        await tx.slot.update({
+          where: { id: newSlot.id },
+          data: {
+            isAvailable: false,
+          },
+        })
+
+        const updatedDetail = await tx.bookingDetail.update({
+          where: { id: bookingDetailId },
+          data: {
+            slotId: newSlot.id,
+            price: newSlot.price,
+            courtId: newSlot.courtId,
+          },
+          include: {
+            slot: true,
+            court: true,
+          },
+        })
+
+        const priceDifference = newSlot.price - bookingDetail.price
+        let updatedBooking = bookingDetail.booking
+
+        if (priceDifference !== 0) {
+          updatedBooking = await tx.booking.update({
+            where: { id: bookingDetail.bookingId },
+            data: {
+              totalPrice: {
+                increment: priceDifference,
+              },
+            },
+            include: {
+              invoice: true,
+            },
+          })
+
+          if (bookingDetail.booking.invoice) {
+            await tx.invoice.update({
+              where: { id: bookingDetail.booking.invoice.id },
+              data: {
+                subtotal: {
+                  increment: priceDifference,
+                },
+                total: {
+                  increment: priceDifference,
+                },
+              },
+            })
+          }
+        }
+
+        return {
+          updatedDetail,
+          updatedBooking,
+          previousSlot: bookingDetail.slot,
+          priceDifference,
+        }
+      })
+
+      return c.json(
+        ok(
+          {
+            bookingDetail: {
+              id: result.updatedDetail.id,
+              price: result.updatedDetail.price,
+              slot: result.updatedDetail.slot,
+              court: result.updatedDetail.court,
+            },
+            updatedBooking: {
+              id: result.updatedBooking.id,
+              totalPrice: result.updatedBooking.totalPrice,
+            },
+            previousSlot: result.previousSlot,
+            priceDifference: result.priceDifference,
+          },
+          'Court booking rescheduled successfully.',
+        ),
+        status.OK,
+      )
+    } catch (error) {
+      c.var.logger.fatal(`Error in rescheduleCourtBookingHandler: ${error}`)
       throw error
     }
   },
