@@ -1,6 +1,6 @@
 import { DEFAULT_DATE_FORMAT } from '@/config'
+import { Gender } from '@prisma/client'
 import dayjs from 'dayjs'
-import { Gender, Role } from '@prisma/client'
 import z from 'zod'
 
 export const idSchema = z.object({
@@ -225,7 +225,19 @@ export const createCourtSchema = z.object({
 
 export type CreateCourtSchema = z.infer<typeof createCourtSchema>
 
-export const updateCourtSchema = createCourtSchema.partial()
+export const updateCourtSchema = createCourtSchema
+  .partial()
+  .omit({
+    isActive: true,
+  })
+  .extend({
+    isActive: z.coerce
+      .number()
+      .optional()
+      .refine((val) => val === 0 || val === 1, {
+        message: 'isActive must be 0 or 1',
+      }),
+  })
 
 export type UpdateCourtSchema = z.infer<typeof updateCourtSchema>
 
@@ -331,7 +343,19 @@ export const createPartnershipSchema = z.object({
 
 export type CreatePartnershipSchema = z.infer<typeof createPartnershipSchema>
 
-export const updatePartnershipSchema = createPartnershipSchema.partial()
+export const updatePartnershipSchema = createPartnershipSchema
+  .partial()
+  .omit({
+    isActive: true,
+  })
+  .extend({
+    isActive: z.coerce
+      .number()
+      .optional()
+      .refine((val) => val === 0 || val === 1, {
+        message: 'isActive must be 0 or 1',
+      }),
+  })
 
 export type UpdatePartnershipSchema = z.infer<typeof updatePartnershipSchema>
 
@@ -362,7 +386,7 @@ export const createClassSchema = z.object({
   maxBookingPax: z.number().min(1),
   gender: z.enum(Gender).optional(),
   ageMin: z.number().min(0),
-  isActive: z.coerce.boolean(),
+  isActive: z.coerce.boolean().optional().default(true),
 })
 
 export type CreateClassSchema = z.infer<typeof createClassSchema>
@@ -443,7 +467,19 @@ export const createMembershipSchema = z.object({
 
 export type CreateMembershipSchema = z.infer<typeof createMembershipSchema>
 
-export const updateMembershipSchema = createMembershipSchema.partial()
+export const updateMembershipSchema = createMembershipSchema
+  .partial()
+  .omit({
+    isActive: true,
+  })
+  .extend({
+    isActive: z.coerce
+      .number()
+      .optional()
+      .refine((val) => val === 0 || val === 1, {
+        message: 'isActive must be 0 or 1',
+      }),
+  })
 
 export type UpdateMembershipSchema = z.infer<typeof updateMembershipSchema>
 
@@ -579,7 +615,19 @@ export const createCoachTypeSchema = z.object({
 
 export type CreateCoachTypeSchema = z.infer<typeof createCoachTypeSchema>
 
-export const updateCoachTypeSchema = createCoachTypeSchema.partial()
+export const updateCoachTypeSchema = createCoachTypeSchema
+  .partial()
+  .omit({
+    isActive: true,
+  })
+  .extend({
+    isActive: z.coerce
+      .number()
+      .optional()
+      .refine((val) => val === 0 || val === 1, {
+        message: 'isActive must be 0 or 1',
+      }),
+  })
 
 export type UpdateCoachTypeSchema = z.infer<typeof updateCoachTypeSchema>
 

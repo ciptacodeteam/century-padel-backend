@@ -166,7 +166,9 @@ export const updateCourtHandler = factory.createHandlers(
           name: name ?? existingItem.name,
           description: description ?? existingItem.description,
           image: imageUrl,
-          isActive: isActive ?? false,
+          isActive: Boolean(
+            isActive !== undefined ? isActive : existingItem.isActive,
+          ),
         },
       })
 

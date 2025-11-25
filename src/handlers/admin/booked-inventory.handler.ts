@@ -11,9 +11,9 @@ import {
   searchQuerySchema,
 } from '@/lib/validation'
 import { zValidator } from '@hono/zod-validator'
-import { BookingStatus, PaymentStatus } from '@prisma/client'
-import status from 'http-status'
+import { BookingStatus } from '@prisma/client'
 import dayjs from 'dayjs'
+import status from 'http-status'
 import { z } from 'zod'
 
 // Schema for cancel booking request
@@ -186,10 +186,7 @@ export const getBookedInventoryDetailHandler = factory.createHandlers(
       })
 
       if (!inventory) {
-        return c.json(
-          ok(null, 'Booked inventory not found'),
-          status.NOT_FOUND,
-        )
+        return c.json(ok(null, 'Booked inventory not found'), status.NOT_FOUND)
       }
 
       const detailedInventory = {
@@ -338,7 +335,8 @@ export const cancelInventoryBookingHandler = factory.createHandlers(
               quantity: result.inventoryBooking.quantity,
               unitPrice: result.inventoryBooking.price,
               totalPrice:
-                result.inventoryBooking.price * result.inventoryBooking.quantity,
+                result.inventoryBooking.price *
+                result.inventoryBooking.quantity,
               restoredQuantity: result.restoredQuantity,
             },
             updatedBooking: {
