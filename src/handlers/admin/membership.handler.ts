@@ -154,7 +154,10 @@ export const updateMembershipHandler = factory.createHandlers(
           sessions: membershipData.sessions,
           duration: membershipData.duration,
           sequence: membershipData.sequence,
-          isActive: membershipData.isActive,
+          isActive:
+            membershipData.isActive !== undefined
+              ? Boolean(membershipData.isActive)
+              : undefined,
         },
       })
 

@@ -176,7 +176,8 @@ export const updateCoachTypeHandler = factory.createHandlers(
         data: {
           name: data.name,
           description: data.description,
-          isActive: data.isActive,
+          isActive:
+            data.isActive !== undefined ? Boolean(data.isActive) : undefined,
         },
       })
 
