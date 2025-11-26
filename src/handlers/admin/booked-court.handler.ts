@@ -914,6 +914,11 @@ export const rescheduleCourtBookingHandler = factory.createHandlers(
             booking: {
               include: {
                 invoice: true,
+                coaches: {
+                  include: {
+                    slot: true,
+                  },
+                },
               },
             },
           },
@@ -968,6 +973,60 @@ export const rescheduleCourtBookingHandler = factory.createHandlers(
           throw new BadRequestException('Selected slot time has already passed')
         }
 
+        // Before actually moving the court slot, check if there are coach slots
+        // at the same time that also need to be moved. If any corresponding
+        // coach slot is not available at the new time, block the reschedule.
+        const relatedCoaches = bookingDetail.booking.coaches.filter((coach) => {
+          return (
+            dayjs(coach.slot.startAt).isSame(bookingDetail.slot.startAt) &&
+            dayjs(coach.slot.endAt).isSame(bookingDetail.slot.endAt)
+          )
+        })
+
+        const coachSlotReplacements: {
+          bookingCoachId: string
+          oldSlotId: string
+          newSlotId: string
+        }[] = []
+
+        for (const coach of relatedCoaches) {
+          const coachSlot = await tx.slot.findFirst({
+            where: {
+              type: SlotType.COACH,
+              staffId: coach.slot.staffId,
+              startAt: newSlot.startAt,
+              endAt: newSlot.endAt,
+              isAvailable: true,
+            },
+            include: {
+              bookingCoaches: {
+                where: {
+                  booking: {
+                    status: {
+                      not: BookingStatus.CANCELLED,
+                    },
+                  },
+                },
+                select: { id: true },
+                take: 1,
+              },
+            },
+          })
+
+          if (!coachSlot || coachSlot.bookingCoaches.length > 0) {
+            throw new BadRequestException(
+              'Selected slot is not available for the assigned coach at the new time',
+            )
+          }
+
+          coachSlotReplacements.push({
+            bookingCoachId: coach.id,
+            oldSlotId: coach.slotId,
+            newSlotId: coachSlot.id,
+          })
+        }
+
+        // Release old court slot and lock new court slot
         await tx.slot.update({
           where: { id: bookingDetail.slotId },
           data: {
@@ -995,11 +1054,41 @@ export const rescheduleCourtBookingHandler = factory.createHandlers(
           },
         })
 
+        // Apply coach slot moves (if any)
+        for (const item of coachSlotReplacements) {
+          // release old coach slot
+          await tx.slot.update({
+            where: { id: item.oldSlotId },
+            data: {
+              isAvailable: true,
+            },
+          })
+
+          // lock new coach slot
+          await tx.slot.update({
+            where: { id: item.newSlotId },
+            data: {
+              isAvailable: false,
+            },
+          })
+
+          // move booking coach to new slot
+          await tx.bookingCoach.update({
+            where: { id: item.bookingCoachId },
+            data: {
+              slotId: item.newSlotId,
+            },
+          })
+        }
+
         const priceDifference = newSlot.price - bookingDetail.price
-        let updatedBooking = bookingDetail.booking
+        let updatedBooking = bookingDetail.booking as (typeof bookingDetail.booking) & {
+          invoice: typeof bookingDetail.booking.invoice
+          coaches: typeof bookingDetail.booking.coaches
+        }
 
         if (priceDifference !== 0) {
-          updatedBooking = await tx.booking.update({
+          updatedBooking = (await tx.booking.update({
             where: { id: bookingDetail.bookingId },
             data: {
               totalPrice: {
@@ -1008,8 +1097,13 @@ export const rescheduleCourtBookingHandler = factory.createHandlers(
             },
             include: {
               invoice: true,
+              coaches: {
+                include: {
+                  slot: true,
+                },
+              },
             },
-          })
+          })) as typeof updatedBooking
 
           if (bookingDetail.booking.invoice) {
             await tx.invoice.update({
