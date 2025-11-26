@@ -142,7 +142,7 @@ services:
         condition: service_healthy
     networks:
       - quantum-sport-network
-    command: ['bun', 'run', './dist/src/workers/email.worker.js']
+    command: ['bun', '--bun', './dist/src/workers/email.worker.js']
     logging:
       driver: 'json-file'
       options:
