@@ -405,7 +405,7 @@ export const checkoutHandler = factory.createHandlers(
             processingFee,
             total: finalTotal,
             status: PaymentStatus.PENDING,
-            dueDate: dayjs().add(1, 'day').toDate(), // Payment due in 1 day
+            dueDate: dayjs().add(15, 'minutes').toDate(), // Payment due in 15 minutes for booking hold
             issuedAt: new Date(),
           },
         })
@@ -456,18 +456,18 @@ export const checkoutHandler = factory.createHandlers(
             })
             if (channelCode === 'MANDIRI_VIRTUAL_ACCOUNT') {
               channelProperties = {
-                expires_at: dayjs().add(24, 'hours').toISOString(),
+                expires_at: dayjs().add(15, 'minutes').toISOString(),
                 display_name: userDetails?.name || 'Customer',
               }
             } else if (channelCode.includes('VIRTUAL_ACCOUNT')) {
               // Other VA channels (BCA, BNI, BRI, etc.) also require display_name
               channelProperties = {
-                expires_at: dayjs().add(24, 'hours').toISOString(),
+                expires_at: dayjs().add(15, 'minutes').toISOString(),
                 display_name: userDetails?.name || 'Customer',
               }
             } else if (channelCode === 'QRIS' || channelCode === 'QR') {
               channelProperties = {
-                expires_at: dayjs().add(1, 'hour').toISOString(),
+                expires_at: dayjs().add(15, 'minutes').toISOString(),
               }
             } else if (
               channelCode.includes('EWALLET') ||
@@ -479,7 +479,7 @@ export const checkoutHandler = factory.createHandlers(
               }
             } else {
               channelProperties = {
-                expires_at: dayjs().add(1, 'hour').toISOString(),
+                expires_at: dayjs().add(15, 'minutes').toISOString(),
               }
             }
 
@@ -547,7 +547,7 @@ export const checkoutHandler = factory.createHandlers(
             amount: finalTotal,
             fees: paymentMethod.fees,
             status: PaymentStatus.PENDING,
-            dueDate: dayjs().add(24, 'hours').toDate(),
+            dueDate: dayjs().add(15, 'minutes').toDate(),
             externalRef: xenditInvoiceResponse?.id || null,
             // Store as JSON object to Prisma Json column (not string)
             meta: xenditInvoiceResponse
@@ -582,11 +582,8 @@ export const checkoutHandler = factory.createHandlers(
           c.var.logger.warn(`Failed to create booking admin notification: ${e}`)
         }
 
-        // Set hold expiry (if payment method requires it)
-        const holdExpiresAt =
-          paymentMethod.fees === 0
-            ? dayjs().add(24, 'hours').toDate()
-            : dayjs().add(15, 'minutes').toDate()
+        // Set hold expiry (15 minutes for all payment methods)
+        const holdExpiresAt = dayjs().add(15, 'minutes').toDate()
 
         // Update booking status to HOLD
         await tx.booking.update({
