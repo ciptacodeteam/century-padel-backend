@@ -10,6 +10,7 @@ import {
   SearchQuerySchema,
   searchQuerySchema,
 } from '@/lib/validation'
+import { getFileUrl } from '@/services/upload.service'
 import { zValidator } from '@hono/zod-validator'
 import { BookingStatus, PaymentStatus } from '@prisma/client'
 import status from 'http-status'
@@ -126,6 +127,184 @@ export const getAllBookingTransactionsHandler = factory.createHandlers(
       return c.json(ok(bookings), status.OK)
     } catch (error) {
       c.var.logger.fatal(`Error in getAllBookingTransactionsHandler: ${error}`)
+      throw error
+    }
+  },
+)
+
+// GET /admin/bookings/schedule
+// Get all bookings with full coach and inventory details for schedule tab
+export const getAllBookingScheduleHandler = factory.createHandlers(
+  zValidator('query', searchQuerySchema, validateHook),
+  async (c) => {
+    try {
+      const query = c.req.valid('query') as SearchQuerySchema
+      const queryOptions = buildFindManyOptions(query, {
+        defaultOrderBy: { createdAt: 'desc' },
+        searchableFields: [],
+      })
+
+      const bookings = await db.booking.findMany({
+        ...queryOptions,
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              phone: true,
+              image: true,
+            },
+          },
+          cashier: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              role: true,
+            },
+          },
+          details: {
+            include: {
+              court: {
+                select: {
+                  id: true,
+                  name: true,
+                  description: true,
+                  image: true,
+                },
+              },
+              slot: {
+                select: {
+                  id: true,
+                  startAt: true,
+                  endAt: true,
+                  price: true,
+                  isAvailable: true,
+                },
+              },
+            },
+          },
+          coaches: {
+            include: {
+              slot: {
+                select: {
+                  id: true,
+                  startAt: true,
+                  endAt: true,
+                  price: true,
+                  isAvailable: true,
+                  staff: {
+                    select: {
+                      id: true,
+                      name: true,
+                      email: true,
+                      phone: true,
+                      image: true,
+                      role: true,
+                      coachType: true,
+                      isActive: true,
+                    },
+                  },
+                },
+              },
+              bookingCoachType: {
+                select: {
+                  id: true,
+                  name: true,
+                  description: true,
+                },
+              },
+            },
+          },
+          ballboys: {
+            include: {
+              slot: {
+                select: {
+                  id: true,
+                  startAt: true,
+                  endAt: true,
+                  price: true,
+                  isAvailable: true,
+                  staff: {
+                    select: {
+                      id: true,
+                      name: true,
+                      email: true,
+                      phone: true,
+                      image: true,
+                      role: true,
+                      isActive: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
+          inventories: {
+            include: {
+              inventory: {
+                select: {
+                  id: true,
+                  name: true,
+                  description: true,
+                  quantity: true,
+                  price: true,
+                  isActive: true,
+                },
+              },
+            },
+          },
+          invoice: {
+            include: {
+              payment: {
+                include: {
+                  method: {
+                    select: {
+                      id: true,
+                      name: true,
+                      logo: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      })
+
+      // Process image URLs for user, court, and staff images
+      for (const booking of bookings) {
+        // Process user image
+        if (booking.user.image) {
+          booking.user.image = await getFileUrl(booking.user.image)
+        }
+
+        // Process court images
+        for (const detail of booking.details) {
+          if (detail.court?.image) {
+            detail.court.image = await getFileUrl(detail.court.image)
+          }
+        }
+
+        // Process coach staff images
+        for (const coach of booking.coaches) {
+          if (coach.slot.staff?.image) {
+            coach.slot.staff.image = await getFileUrl(coach.slot.staff.image)
+          }
+        }
+
+        // Process ballboy staff images
+        for (const ballboy of booking.ballboys) {
+          if (ballboy.slot.staff?.image) {
+            ballboy.slot.staff.image = await getFileUrl(ballboy.slot.staff.image)
+          }
+        }
+      }
+
+      return c.json(ok(bookings), status.OK)
+    } catch (error) {
+      c.var.logger.fatal(`Error in getAllBookingScheduleHandler: ${error}`)
       throw error
     }
   },
