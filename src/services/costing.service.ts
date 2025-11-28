@@ -63,19 +63,40 @@ export async function setCourtPricing({
       const endOfDay = dayjs(d.format('YYYY-MM-DD')).endOf('day').toDate()
 
       await db.$transaction(async (tx) => {
+        // First, find slots that can be safely deleted (no bookings)
+        const slotsToCheck = await tx.slot.findMany({
+          where: {
+            type: SlotType.COURT,
+            courtId,
+            startAt: { gte: startOfDay, lte: endOfDay },
+          },
+          select: {
+            id: true,
+            bookingDetails: {
+              select: { id: true },
+            },
+          },
+        })
+
+        // Only delete slots that have no booking details
+        const slotsToDelete = slotsToCheck
+          .filter((s) => s.bookingDetails.length === 0)
+          .map((s) => s.id)
+
         await tx.courtCostSchedule.deleteMany({
           where: {
             courtId,
             startAt: { gte: startOfDay, lte: endOfDay },
           },
         })
-        await tx.slot.deleteMany({
-          where: {
-            type: SlotType.COURT,
-            courtId,
-            startAt: { gte: startOfDay, lte: endOfDay },
-          },
-        })
+
+        if (slotsToDelete.length > 0) {
+          await tx.slot.deleteMany({
+            where: {
+              id: { in: slotsToDelete },
+            },
+          })
+        }
       })
 
       const slots: any[] = []
@@ -430,15 +451,40 @@ export async function setStaffPricingRange(p: SetStaffPricingRangePayload) {
 
       // remove existing slots for that staff+date+type, then rebuild
       await db.$transaction(async (tx) => {
-        await tx.slot.deleteMany({
+        // First, find slots that can be safely deleted (no bookings)
+        const slotsToCheck = await tx.slot.findMany({
           where: {
             type: p.type,
             staffId: p.staffId,
             startAt: { gte: dayStart, lte: dayEnd },
-            // NOTE: we’re doing a hard refresh. If you prefer to keep booked slots,
-            // comment this out and filter by isAvailable: true instead.
+          },
+          select: {
+            id: true,
+            bookingCoaches: {
+              select: { id: true },
+            },
+            bookingBallboys: {
+              select: { id: true },
+            },
           },
         })
+
+        // Only delete slots that have no bookings at all
+        const slotsToDelete = slotsToCheck
+          .filter((s) => {
+            const hasCoachBookings = s.bookingCoaches.length > 0
+            const hasBallboyBookings = s.bookingBallboys.length > 0
+            return !hasCoachBookings && !hasBallboyBookings
+          })
+          .map((s) => s.id)
+
+        if (slotsToDelete.length > 0) {
+          await tx.slot.deleteMany({
+            where: {
+              id: { in: slotsToDelete },
+            },
+          })
+        }
 
         const happy = hoursForBand(HAPPY_START, HAPPY_END).map((h) => ({
           h,
@@ -536,6 +582,30 @@ export async function updateStaffPricing(p: UpdateStaffPricingPayload) {
         },
       })
 
+      // Also check for ALL booking coaches/ballboys (including cancelled) to prevent FK constraint violations
+      const allSlotIds = existing.map((s) => s.id)
+      const allBookingCoaches = p.type === SlotType.COACH
+        ? await tx.bookingCoach.findMany({
+            where: { slotId: { in: allSlotIds } },
+            select: { slotId: true },
+          })
+        : []
+      const allBookingBallboys = p.type === SlotType.BALLBOY
+        ? await tx.bookingBallboy.findMany({
+            where: { slotId: { in: allSlotIds } },
+            select: { slotId: true },
+          })
+        : []
+      
+      // Create a map of slot IDs that have ANY bookings (regardless of status)
+      const slotsWithAnyBookings = new Set<string>()
+      for (const bc of allBookingCoaches) {
+        slotsWithAnyBookings.add(bc.slotId)
+      }
+      for (const bb of allBookingBallboys) {
+        slotsWithAnyBookings.add(bb.slotId)
+      }
+
       // index existing by local hour
       const byHour = new Map<number, (typeof existing)[number]>()
       for (const s of existing) {
@@ -566,14 +636,21 @@ export async function updateStaffPricing(p: UpdateStaffPricingPayload) {
       }
 
       // delete hours that are NOT in target (and unbooked)
+      // Must check for ANY bookings (including cancelled) to prevent FK constraint violations
       const toDeleteIds = existing
         .filter((e) => !keepIds.has(e.id))
         .filter((e) => {
-          const bookedCount =
+          // Check if slot has any active bookings (non-cancelled)
+          const activeBookedCount =
             p.type === SlotType.COACH
               ? e.bookingCoaches.length
               : e.bookingBallboys.length
-          return bookedCount === 0
+          
+          // Also check if slot has ANY bookings at all (including cancelled) to prevent FK violations
+          const hasAnyBookings = slotsWithAnyBookings.has(e.id)
+          
+          // Only delete if no active bookings AND no bookings at all exist
+          return activeBookedCount === 0 && !hasAnyBookings
         })
         .map((e) => e.id)
 
