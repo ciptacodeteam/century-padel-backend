@@ -121,6 +121,37 @@ services:
         max-size: '10m'
         max-file: '3'
 
+  # Scheduler Worker (Transaction Expiry Checker)
+  scheduler-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: scheduler-worker
+    env_file:
+      - .env
+      - .env.local
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-quantum_sport}
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - .:/app
+      - /app/node_modules
+    networks:
+      - quantum-sport-network
+    command: bun run worker:scheduler
+    restart: unless-stopped
+    logging:
+      driver: 'json-file'
+      options:
+        max-size: '10m'
+        max-file: '3'
+
   # Ngrok Tunnel for Webhook Testing
   ngrok:
     image: ngrok/ngrok:3-alpine

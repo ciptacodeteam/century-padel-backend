@@ -25,7 +25,8 @@
     "vercel:deploy": "vercel",
     "vercel:dev": "vercel dev",
     "vercel:prod": "vercel --prod",
-    "worker:email": "bun run src/workers/email.worker.ts"
+    "worker:email": "bun run src/workers/email.worker.ts",
+    "worker:scheduler": "bun run src/workers/scheduler.worker.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.5",

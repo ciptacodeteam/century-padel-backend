@@ -9,13 +9,13 @@ WORKDIR /app
 RUN apk add --no-cache postgresql-client git
 
 # Copy package files
-COPY package.json bun.lock ./
+COPY package.json ./
 
 # Copy prisma schema BEFORE bun install (needed for postinstall script)
 COPY prisma ./prisma
 
 # Install dependencies (postinstall will run prisma generate)
-RUN bun install --frozen-lockfile
+RUN bun install 
 
 # Copy config files
 COPY tsconfig.json ./
