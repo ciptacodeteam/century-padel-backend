@@ -19,6 +19,8 @@ const adminCheckoutSchema = z
     totalHours: z.number().positive(),
     courtSlots: z.array(z.string()).optional(),
     coachSlots: z.array(z.string()).optional(),
+    // Optional description for coach booking – e.g. names of up to 4 members
+    coachDescription: z.string().max(500).optional(),
     ballboySlots: z.array(z.string()).optional(),
     inventories: z
       .array(
@@ -53,6 +55,7 @@ export const adminCheckoutHandler = factory.createHandlers(
       totalHours,
       courtSlots,
       coachSlots,
+      coachDescription,
       ballboySlots,
       inventories,
     } = c.req.valid('json') as AdminCheckoutSchema
@@ -327,6 +330,8 @@ export const adminCheckoutHandler = factory.createHandlers(
                 bookingId: booking.id,
                 slotId: slot.id,
                 bookingCoachTypeId: defaultCoachType.id,
+                // Store names of members joining this coach session (if provided)
+                description: coachDescription?.trim() || undefined,
                 price: slot.price,
               },
             })

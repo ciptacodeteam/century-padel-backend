@@ -513,6 +513,7 @@ model BookingCoach {
   bookingId          String
   slotId             String // COACH slot
   bookingCoachTypeId String
+  description        String? // Optional: names of members joining this coach session
   price              Int      @db.Integer
   createdAt          DateTime @default(now())
   updatedAt          DateTime @default(now()) @updatedAt

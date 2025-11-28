@@ -186,7 +186,12 @@ export const getAllBookingScheduleHandler = factory.createHandlers(
             },
           },
           coaches: {
-            include: {
+            select: {
+              id: true,
+              description: true,
+              price: true,
+              createdAt: true,
+              updatedAt: true,
               slot: {
                 select: {
                   id: true,

@@ -87,6 +87,7 @@ export const getAllBookedCoachesHandler = factory.createHandlers(
         id: coach.id,
         coachType: coach.bookingCoachType,
         staff: coach.slot.staff,
+        description: coach.description,
         slot: {
           id: coach.slot.id,
           startAt: coach.slot.startAt,
@@ -172,6 +173,7 @@ export const getBookedCoachDetailHandler = factory.createHandlers(
         id: coach.id,
         coachType: coach.bookingCoachType,
         staff: coach.slot.staff,
+        description: coach.description,
         slot: {
           ...coach.slot,
           date: dayjs(coach.slot.startAt).format('YYYY-MM-DD'),
@@ -306,6 +308,7 @@ export const cancelCoachBookingHandler = factory.createHandlers(
               id: result.coachBooking.id,
               coachType: result.coachBooking.bookingCoachType.name,
               staff: result.releasedSlot.staff,
+              description: result.coachBooking.description,
               price: result.coachBooking.price,
               slot: {
                 startAt: result.releasedSlot.startAt,
