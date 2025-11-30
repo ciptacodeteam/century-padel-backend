@@ -27,13 +27,18 @@ const createTransporter = () => {
       user: smtpUser,
       pass: smtpPass,
     },
-    connectionTimeout: 10000, // 10 seconds connection timeout
-    greetingTimeout: 10000, // 10 seconds greeting timeout
-    socketTimeout: 10000, // 10 seconds socket timeout
+    connectionTimeout: 30000, // 30 seconds connection timeout (increased for network issues)
+    greetingTimeout: 30000, // 30 seconds greeting timeout
+    socketTimeout: 30000, // 30 seconds socket timeout
     // For Mailgun and similar services, may need to set tls options
     tls: {
       rejectUnauthorized: false, // Allow self-signed certificates if needed
+      minVersion: 'TLSv1.2',
     },
+    // Additional options for better connection handling
+    pool: true, // Use connection pooling
+    maxConnections: 5, // Maximum number of connections in pool
+    maxMessages: 100, // Maximum messages per connection
   })
 }
 

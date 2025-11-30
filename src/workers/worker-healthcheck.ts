@@ -8,74 +8,60 @@ import Redis from 'ioredis'
 
 const checkHealth = async () => {
   let client: Redis | null = null
-  const maxRetries = 3
-  const retryDelay = 1000 // 1 second
+  try {
+    // Use Redis URL directly
+    const redisUrl = getRedisUrl()
+    
+    if (!redisUrl) {
+      console.error('REDIS_URL not configured')
+      process.exit(1)
+    }
+    
+    // Create Redis client with shorter timeout for healthcheck
+    client = new Redis(redisUrl, {
+      maxRetriesPerRequest: 0, // No retries for healthcheck
+      lazyConnect: false,
+      connectTimeout: 3000, // 3 second timeout
+      retryStrategy: () => null, // Don't retry
+      enableReadyCheck: false,
+      enableOfflineQueue: false,
+      showFriendlyErrorStack: false,
+    })
 
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      // Use Redis URL directly to avoid DNS resolution issues
-      const redisUrl = getRedisUrl()
-      
-      // Create Redis client using connection string (more reliable)
-      client = new Redis(redisUrl, {
-        maxRetriesPerRequest: 1,
-        lazyConnect: false,
-        connectTimeout: 5000,
-        retryStrategy: () => null, // Don't retry on connection failure
-        enableReadyCheck: false, // Skip ready check for faster connection
-        enableOfflineQueue: false, // Don't queue commands when offline
-      })
+    // Simple ping with timeout
+    const result = await Promise.race([
+      client.ping(),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Timeout')), 3000)
+      ),
+    ])
 
-      // Set a timeout for the ping operation
-      const pingPromise = client.ping()
-      const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Redis ping timeout')), 5000)
-      )
-
-      await Promise.race([pingPromise, timeoutPromise])
+    if (result === 'PONG') {
       await client.quit()
-
-      // If we get here, Redis is healthy
       process.exit(0)
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : String(error)
-      
-      // Clean up client
-      if (client) {
-        try {
-          await client.quit()
-        } catch {
-          // Ignore quit errors
-        }
-        client = null
-      }
-
-      // If it's a DNS error and we have retries left, wait and retry
-      if (
-        (message.includes('ESERVFAIL') ||
-          message.includes('getaddrinfo') ||
-          message.includes('ENOTFOUND')) &&
-        attempt < maxRetries
-      ) {
-        // Wait before retrying (DNS might not be ready yet)
-        await new Promise((resolve) => setTimeout(resolve, retryDelay))
-        continue
-      }
-
-      // If all retries exhausted or non-DNS error, fail
-      if (attempt === maxRetries || !message.includes('ESERVFAIL')) {
-        // Only log non-DNS errors to reduce noise
-        if (!message.includes('ESERVFAIL') && !message.includes('getaddrinfo')) {
-          console.error(`Worker health check failed: ${message}`)
-        }
-        process.exit(1)
+    } else {
+      await client.quit()
+      process.exit(1)
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    
+    // Clean up
+    if (client) {
+      try {
+        await client.quit()
+      } catch {
+        // Ignore
       }
     }
+    
+    // Don't log DNS errors (they're often transient)
+    if (!message.includes('ESERVFAIL') && !message.includes('getaddrinfo') && !message.includes('ENOTFOUND')) {
+      console.error(`Health check failed: ${message}`)
+    }
+    
+    process.exit(1)
   }
-
-  // Should not reach here, but just in case
-  process.exit(1)
 }
 
 checkHealth()

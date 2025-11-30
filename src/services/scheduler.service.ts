@@ -291,6 +291,18 @@ export function startSchedulerWorker() {
     log.error(`Scheduler job ${job?.id} failed: ${err.message}`)
   })
 
+  worker.on('error', (err) => {
+    log.error(`Scheduler worker error: ${err.message}`)
+  })
+
+  worker.on('closed', () => {
+    log.warn('Scheduler worker closed')
+  })
+
+  worker.on('stalled', (jobId) => {
+    log.warn(`Scheduler job ${jobId} stalled`)
+  })
+
   log.info('Scheduler worker started')
 
   return worker
