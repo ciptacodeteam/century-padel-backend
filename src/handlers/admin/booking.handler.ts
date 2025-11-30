@@ -146,6 +146,12 @@ export const getAllBookingScheduleHandler = factory.createHandlers(
 
       const bookings = await db.booking.findMany({
         ...queryOptions,
+        where: {
+          ...queryOptions.where,
+          status: {
+            not: BookingStatus.CANCELLED,
+          },
+        },
         include: {
           user: {
             select: {
