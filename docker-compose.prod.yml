@@ -145,6 +145,12 @@ services:
     networks:
       - quantum-sport-network
     command: ['bun', '--bun', './dist/src/workers/email.worker.js']
+    healthcheck:
+      test: ['CMD', 'bun', 'run', '--bun', '/app/dist/src/workers/worker-healthcheck.js']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     logging:
       driver: 'json-file'
       options:
@@ -183,6 +189,12 @@ services:
     networks:
       - quantum-sport-network
     command: ['bun', '--bun', './dist/src/workers/scheduler.worker.js']
+    healthcheck:
+      test: ['CMD', 'bun', 'run', '--bun', '/app/dist/src/workers/worker-healthcheck.js']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     logging:
       driver: 'json-file'
       options:
