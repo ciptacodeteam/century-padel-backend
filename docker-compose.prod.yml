@@ -146,7 +146,7 @@ services:
       - quantum-sport-network
     command: ['bun', '--bun', './dist/src/workers/email.worker.js']
     healthcheck:
-      test: ['CMD-SHELL', 'ps aux | grep -q "[s]cheduler.worker.js" || exit 1']
+      test: ['CMD-SHELL', 'ps aux | grep -q "[e]mail.worker.js" || exit 1']
       interval: 30s
       timeout: 5s
       retries: 3
@@ -236,6 +236,12 @@ services:
       - app
     networks:
       - quantum-sport-network
+    healthcheck:
+      test: ['CMD-SHELL', 'wget --no-verbose --tries=1 --spider http://localhost || exit 1']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
     logging:
       driver: 'json-file'
       options:
@@ -254,6 +260,12 @@ services:
     entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
     networks:
       - quantum-sport-network
+    healthcheck:
+      test: ['CMD-SHELL', 'ps aux | grep -q "[c]ertbot" || exit 1']
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
   # Prisma Studio (Database GUI) - Only start when needed
   # Usage: docker-compose -f docker-compose.prod.yml up -d prisma-studio
