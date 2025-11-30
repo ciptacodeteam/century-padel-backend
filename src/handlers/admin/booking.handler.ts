@@ -554,6 +554,26 @@ export const rejectBookingTransactionHandler = factory.createHandlers(
         const booking = await tx.booking.findUnique({
           where: { id },
           include: {
+            details: {
+              include: {
+                slot: true,
+              },
+            },
+            coaches: {
+              include: {
+                slot: true,
+              },
+            },
+            ballboys: {
+              include: {
+                slot: true,
+              },
+            },
+            inventories: {
+              include: {
+                inventory: true,
+              },
+            },
             invoice: {
               include: {
                 payment: true,
@@ -585,6 +605,48 @@ export const rejectBookingTransactionHandler = factory.createHandlers(
             cancellationReason: 'Rejected by admin',
           },
         })
+
+        // Release all court slots (make them available again)
+        for (const detail of booking.details) {
+          await tx.slot.update({
+            where: { id: detail.slotId },
+            data: {
+              isAvailable: true,
+            },
+          })
+        }
+
+        // Release all coach slots
+        for (const coach of booking.coaches) {
+          await tx.slot.update({
+            where: { id: coach.slotId },
+            data: {
+              isAvailable: true,
+            },
+          })
+        }
+
+        // Release all ballboy slots
+        for (const ballboy of booking.ballboys) {
+          await tx.slot.update({
+            where: { id: ballboy.slotId },
+            data: {
+              isAvailable: true,
+            },
+          })
+        }
+
+        // Restore inventory quantities
+        for (const bookingInventory of booking.inventories) {
+          await tx.inventory.update({
+            where: { id: bookingInventory.inventoryId },
+            data: {
+              quantity: {
+                increment: bookingInventory.quantity,
+              },
+            },
+          })
+        }
 
         // Update invoice status to CANCELLED
         if (booking.invoice) {
