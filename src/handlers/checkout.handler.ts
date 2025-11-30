@@ -369,10 +369,13 @@ export const checkoutHandler = factory.createHandlers(
           }
         }
 
-        // Calculate processing fee
-        // const processingFee = Math.round(totalPrice * PROCESSING_FEE_PERCENT)
-        const processingFee = paymentMethod.fees
+        // Calculate processing fee (fixed fee + percentage fee)
+        const percentageFee = Math.round(
+          totalPrice * (Number(paymentMethod.percentage) / 100),
+        )
+        const processingFee = paymentMethod.fees + percentageFee
         const finalTotal = totalPrice + processingFee
+
         if (processingFee > 0) {
           xenditItems.push({
             name: 'Processing fee',
