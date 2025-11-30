@@ -246,27 +246,19 @@ export const getAvailableCourtSlotsHandler = factory.createHandlers(
 
       const where: any = {
         type: SlotType.COURT,
-        court: {
-          isActive: true,
-        },
-        OR: [
-          // Slots with no booking details
-          {
-            bookingDetails: {
-              none: {},
-            },
-          },
-          // Slots with only cancelled bookings
-          {
-            bookingDetails: {
-              every: {
-                booking: {
-                  status: BookingStatus.CANCELLED,
-                },
+        isAvailable: true,
+        bookingDetails: {
+          none: {
+            booking: {
+              status: {
+                not: BookingStatus.CANCELLED,
               },
             },
           },
-        ],
+        },
+        court: {
+          isActive: true,
+        },
       }
 
       if (query.courtId) {
