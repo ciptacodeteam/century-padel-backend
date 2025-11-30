@@ -27,6 +27,13 @@ const createTransporter = () => {
       user: smtpUser,
       pass: smtpPass,
     },
+    connectionTimeout: 10000, // 10 seconds connection timeout
+    greetingTimeout: 10000, // 10 seconds greeting timeout
+    socketTimeout: 10000, // 10 seconds socket timeout
+    // For Mailgun and similar services, may need to set tls options
+    tls: {
+      rejectUnauthorized: false, // Allow self-signed certificates if needed
+    },
   })
 }
 
@@ -223,8 +230,16 @@ export const sendEmail = async (
 
     log.info({ messageId: result.messageId, to }, 'Email sent successfully')
     return result
-  } catch (error) {
-    log.error({ error, to }, 'Failed to send email')
+  } catch (error: any) {
+    const errorDetails = {
+      to,
+      error: error.message || error,
+      code: error.code,
+      command: error.command,
+      smtpHost: env.smtp.host,
+      smtpPort: env.smtp.port,
+    }
+    log.error(errorDetails, 'Failed to send email')
     throw error
   }
 }

@@ -965,8 +965,8 @@ export const rescheduleCourtBookingHandler = factory.createHandlers(
           throw new BadRequestException('Selected slot is no longer available')
         }
 
-        if (!newSlot.courtId || newSlot.courtId !== bookingDetail.courtId) {
-          throw new BadRequestException('Reschedule must stay on the same court')
+        if (!newSlot.courtId) {
+          throw new BadRequestException('Selected slot must be associated with a court')
         }
 
         if (dayjs(newSlot.startAt).isBefore(dayjs())) {
