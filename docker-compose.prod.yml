@@ -161,6 +161,44 @@ services:
           cpus: '0.5'
           memory: 512M
 
+  # Scheduler Worker (Transaction Expiry Checker)
+  scheduler-worker:
+    image: quantum-sport-backend:latest
+    container_name: quantum-sport-scheduler-worker-prod
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      NODE_ENV: production
+      # Increased connection limit for 4GB RAM
+      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/${DB_NAME:-quantum_sport}?schema=public&connection_limit=10
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      app:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - quantum-sport-network
+    command: ['bun', '--bun', './dist/src/workers/scheduler.worker.js']
+    logging:
+      driver: 'json-file'
+      options:
+        max-size: '20m'
+        max-file: '5'
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
   # Nginx Reverse Proxy (Optional but recommended)
   # NOTE: If you have system nginx running on port 80, either:
   # 1. Stop system nginx: sudo systemctl stop nginx
