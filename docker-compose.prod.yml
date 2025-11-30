@@ -13,8 +13,9 @@ services:
       POSTGRES_INITDB_ARGS: '-E UTF8'
     # Port exposed for external access (e.g., pgAdmin)
     # For security, consider restricting access via firewall or use SSH tunnel
+    # Maps host port (from DB_PORT env var) to container port 5432
     ports:
-      - '${DB_PORT:-5432}:5432'
+      - '${DB_PORT:-5433}:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./docker/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
