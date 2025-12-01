@@ -9,7 +9,7 @@ export const getCustomerPaymentMethodsHandler = factory.createHandlers(
     try {
       const paymentMethods = await db.paymentMethod.findMany({
         where: { isActive: true },
-        orderBy: { name: 'asc' },
+        orderBy: { sequence: 'asc' },
       })
 
       const enrichedPaymentMethods = await Promise.all(
@@ -28,9 +28,10 @@ export const getCustomerPaymentMethodsHandler = factory.createHandlers(
 
       return c.json(ok(enrichedPaymentMethods), status.OK)
     } catch (error) {
-      c.var.logger.fatal(`Error fetching payment methods for customer: ${error}`)
+      c.var.logger.fatal(
+        `Error fetching payment methods for customer: ${error}`,
+      )
       throw error
     }
   },
 )
-

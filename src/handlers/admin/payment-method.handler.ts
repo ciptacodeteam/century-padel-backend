@@ -26,7 +26,7 @@ export const getAllPaymentMethodsHandler = factory.createHandlers(
     try {
       const query = c.req.valid('query') as SearchQuerySchema
       const queryOptions = buildFindManyOptions(query, {
-        defaultOrderBy: { name: 'asc' },
+        defaultOrderBy: { sequence: 'asc' },
         searchableFields: ['name'],
       })
 
@@ -76,7 +76,8 @@ export const createPaymentMethodHandler = factory.createHandlers(
   async (c) => {
     try {
       const validated = c.req.valid('form') as CreatePaymentMethodSchema
-      const { name, logo, fees, isActive, percentage, channel } = validated
+      const { name, logo, fees, isActive, percentage, channel, sequence } =
+        validated
 
       // Check for duplicate name
       const existingPaymentMethod = await db.paymentMethod.findUnique({
@@ -107,6 +108,7 @@ export const createPaymentMethodHandler = factory.createHandlers(
           fees,
           percentage: parseFloat(percentage),
           channel,
+          sequence: sequence ?? 0,
           isActive: isActive ?? true,
         },
       })
@@ -126,7 +128,8 @@ export const updatePaymentMethodHandler = factory.createHandlers(
     try {
       const { id } = c.req.valid('param') as IdSchema
       const validated = c.req.valid('form') as UpdatePaymentMethodSchema
-      const { name, logo, fees, isActive, channel, percentage } = validated
+      const { name, logo, fees, isActive, channel, percentage, sequence } =
+        validated
 
       const existingPaymentMethod = await db.paymentMethod.findUnique({
         where: { id },
@@ -178,6 +181,7 @@ export const updatePaymentMethodHandler = factory.createHandlers(
           fees: fees ?? undefined,
           percentage: percentage ? parseFloat(percentage) : undefined,
           channel: channel ?? undefined,
+          sequence: sequence ?? undefined,
           isActive: isPaymentMethodActive,
         },
       })
