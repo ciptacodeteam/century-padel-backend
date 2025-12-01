@@ -8,7 +8,7 @@ import { requireAuth } from '@/middlewares/auth'
 import { zValidator } from '@hono/zod-validator'
 import status from 'http-status'
 import { z } from 'zod'
-import { PaymentStatus } from '@prisma/client'
+import { PaymentStatus, BookingStatus } from '@prisma/client'
 import xenditService from '@/services/xendit.service'
 import { getFileUrl } from '@/services/upload.service'
 
@@ -286,6 +286,178 @@ export const getInvoiceDetailHandler = factory.createHandlers(
       )
     } catch (error) {
       c.var.logger.fatal(`Error in getInvoiceDetailHandler: ${error}`)
+      throw error
+    }
+  },
+)
+
+// POST /invoices/:id/expire
+// Manually expire a transaction when the frontend timer finishes
+const expireInvoiceSchema = z.object({
+  id: z.string(),
+})
+
+export const expireInvoiceHandler = factory.createHandlers(
+  requireAuth,
+  zValidator('param', expireInvoiceSchema, validateHook),
+  async (c) => {
+    try {
+      const user = c.get('user')
+      if (!user || !user.id) {
+        throw new Error('Unauthorized')
+      }
+
+      const { id } = c.req.valid('param') as { id: string }
+
+      // Find the invoice
+      const invoice = await db.invoice.findUnique({
+        where: { id },
+        include: {
+          payment: true,
+          booking: true,
+          classBooking: true,
+          membershipUser: true,
+        },
+      })
+
+      if (!invoice) {
+        return c.json(
+          { success: false, message: 'Invoice not found', data: null },
+          status.NOT_FOUND,
+        )
+      }
+
+      // Verify the invoice belongs to the user
+      if (invoice.userId !== user.id) {
+        return c.json(
+          {
+            success: false,
+            message: 'Unauthorized access to invoice',
+            data: null,
+          },
+          status.FORBIDDEN,
+        )
+      }
+
+      // Only expire if status is PENDING
+      if (invoice.status !== PaymentStatus.PENDING) {
+        return c.json(
+          {
+            success: false,
+            message: `Cannot expire invoice with status ${invoice.status}`,
+            data: null,
+          },
+          status.BAD_REQUEST,
+        )
+      }
+
+      const now = new Date()
+
+      // Perform the expiration in a transaction
+      await db.$transaction(async (tx) => {
+        // Update payment status to EXPIRED if exists
+        if (invoice.payment) {
+          await tx.payment.update({
+            where: { id: invoice.payment.id },
+            data: {
+              status: PaymentStatus.EXPIRED,
+            },
+          })
+        }
+
+        // Update invoice status to EXPIRED
+        await tx.invoice.update({
+          where: { id: invoice.id },
+          data: {
+            status: PaymentStatus.EXPIRED,
+          },
+        })
+
+        // Cancel booking and release slots if exists
+        if (invoice.booking) {
+          await tx.booking.update({
+            where: { id: invoice.booking.id },
+            data: {
+              status: BookingStatus.CANCELLED,
+              cancellationReason: 'Payment expired (user timeout)',
+              cancelledAt: now,
+            },
+          })
+
+          // Release all booked slots
+          const bookingDetails = await tx.bookingDetail.findMany({
+            where: { bookingId: invoice.booking.id },
+            select: { slotId: true },
+          })
+          const courtSlotIds = bookingDetails.map((bd) => bd.slotId)
+
+          const coachDetails = await tx.bookingCoach.findMany({
+            where: { bookingId: invoice.booking.id },
+            select: { slotId: true },
+          })
+          const coachSlotIds = coachDetails.map((bc) => bc.slotId)
+
+          const ballboyDetails = await tx.bookingBallboy.findMany({
+            where: { bookingId: invoice.booking.id },
+            select: { slotId: true },
+          })
+          const ballboySlotIds = ballboyDetails.map((bb) => bb.slotId)
+
+          const allSlotIds = [
+            ...courtSlotIds,
+            ...coachSlotIds,
+            ...ballboySlotIds,
+          ]
+
+          if (allSlotIds.length > 0) {
+            await tx.slot.updateMany({
+              where: { id: { in: allSlotIds } },
+              data: { isAvailable: true },
+            })
+          }
+        }
+
+        // Cancel class booking and restore capacity if exists
+        if (invoice.classBooking) {
+          await tx.classBooking.update({
+            where: { id: invoice.classBooking.id },
+            data: {
+              status: BookingStatus.CANCELLED,
+              cancellationReason: 'Payment expired (user timeout)',
+              cancelledAt: now,
+            },
+          })
+
+          // Restore class capacity
+          await tx.class.update({
+            where: { id: invoice.classBooking.classId },
+            data: {
+              remaining: {
+                increment: 1,
+              },
+            },
+          })
+        }
+
+        // Delete unpaid membership if exists
+        if (invoice.membershipUser) {
+          await tx.membershipUser.delete({
+            where: { id: invoice.membershipUser.id },
+          })
+        }
+      })
+
+      c.var.logger.info(`Invoice ${invoice.id} expired by user ${user.id}`)
+
+      return c.json(
+        ok(
+          { invoiceId: invoice.id, status: PaymentStatus.EXPIRED },
+          'Invoice expired successfully',
+        ),
+        status.OK,
+      )
+    } catch (error) {
+      c.var.logger.fatal(`Error in expireInvoiceHandler: ${error}`)
       throw error
     }
   },
