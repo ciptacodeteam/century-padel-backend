@@ -318,6 +318,51 @@ export const getAllBookingScheduleHandler = factory.createHandlers(
         }
       }
 
+      // Format all datetime fields in bookings
+      for (const booking of bookings) {
+        // Format booking detail slots
+        for (const detail of booking.details) {
+          if (detail.slot?.startAt) {
+            detail.slot.startAt = dayjs(detail.slot.startAt).format(
+              'YYYY-MM-DD HH:mm:ss',
+            ) as any
+          }
+          if (detail.slot?.endAt) {
+            detail.slot.endAt = dayjs(detail.slot.endAt).format(
+              'YYYY-MM-DD HH:mm:ss',
+            ) as any
+          }
+        }
+
+        // Format coach slots
+        for (const coach of booking.coaches) {
+          if (coach.slot?.startAt) {
+            coach.slot.startAt = dayjs(coach.slot.startAt).format(
+              'YYYY-MM-DD HH:mm:ss',
+            ) as any
+          }
+          if (coach.slot?.endAt) {
+            coach.slot.endAt = dayjs(coach.slot.endAt).format(
+              'YYYY-MM-DD HH:mm:ss',
+            ) as any
+          }
+        }
+
+        // Format ballboy slots
+        for (const ballboy of booking.ballboys) {
+          if (ballboy.slot?.startAt) {
+            ballboy.slot.startAt = dayjs(ballboy.slot.startAt).format(
+              'YYYY-MM-DD HH:mm:ss',
+            ) as any
+          }
+          if (ballboy.slot?.endAt) {
+            ballboy.slot.endAt = dayjs(ballboy.slot.endAt).format(
+              'YYYY-MM-DD HH:mm:ss',
+            ) as any
+          }
+        }
+      }
+
       return c.json(ok(bookings), status.OK)
     } catch (error) {
       c.var.logger.fatal(`Error in getAllBookingScheduleHandler: ${error}`)
