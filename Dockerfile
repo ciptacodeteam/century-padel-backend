@@ -50,6 +50,7 @@ RUN --mount=type=cache,target=/root/.bun/install/cache \
 # Copy source code and config
 COPY tsconfig.json ./
 COPY src ./src
+COPY scripts ./scripts
 COPY serve.ts ./
 
 # Build TypeScript
@@ -76,6 +77,7 @@ RUN addgroup -g 1001 -S nodejs && \
 COPY --from=deps --chown=nodejs:nodejs /app/node_modules ./node_modules
 COPY --from=deps --chown=nodejs:nodejs /app/prisma ./prisma
 COPY --from=builder --chown=nodejs:nodejs /app/dist ./dist
+COPY --from=builder --chown=nodejs:nodejs /app/scripts ./scripts
 COPY --from=builder --chown=nodejs:nodejs /app/package.json ./
 
 # Copy entrypoint script and make it executable (must be done as root)
