@@ -332,10 +332,7 @@ export const getBookedCourtDetailHandler = factory.createHandlers(
       })
 
       if (!bookingDetail) {
-        return c.json(
-          ok(null, 'Booked court not found'),
-          status.NOT_FOUND,
-        )
+        return c.json(ok(null, 'Booked court not found'), status.NOT_FOUND)
       }
 
       const detailedBookedCourt = {
@@ -448,7 +445,9 @@ export const getBookedCourtsSummaryHandler = factory.createHandlers(
       })
 
       // Fetch court details for top 10
-      const courtIds = courtUsage.map((u) => u.courtId).filter(Boolean) as string[]
+      const courtIds = courtUsage
+        .map((u) => u.courtId)
+        .filter(Boolean) as string[]
       const courts = await db.court.findMany({
         where: {
           id: {
@@ -744,9 +743,9 @@ export const cancelBookingHandler = factory.createHandlers(
         }
 
         // 2. Check if booking can be cancelled
-        if (booking.status === BookingStatus.CANCELLED) {
-          throw new BadRequestException('Booking is already cancelled')
-        }
+        // if (booking.status === BookingStatus.CANCELLED) {
+        //   throw new BadRequestException('Booking is already cancelled')
+        // }
 
         // Track counts for response
         const releasedCounts = {
@@ -966,7 +965,9 @@ export const rescheduleCourtBookingHandler = factory.createHandlers(
         }
 
         if (!newSlot.courtId) {
-          throw new BadRequestException('Selected slot must be associated with a court')
+          throw new BadRequestException(
+            'Selected slot must be associated with a court',
+          )
         }
 
         if (dayjs(newSlot.startAt).isBefore(dayjs())) {
@@ -1082,10 +1083,11 @@ export const rescheduleCourtBookingHandler = factory.createHandlers(
         }
 
         const priceDifference = newSlot.price - bookingDetail.price
-        let updatedBooking = bookingDetail.booking as (typeof bookingDetail.booking) & {
-          invoice: typeof bookingDetail.booking.invoice
-          coaches: typeof bookingDetail.booking.coaches
-        }
+        let updatedBooking =
+          bookingDetail.booking as typeof bookingDetail.booking & {
+            invoice: typeof bookingDetail.booking.invoice
+            coaches: typeof bookingDetail.booking.coaches
+          }
 
         if (priceDifference !== 0) {
           updatedBooking = (await tx.booking.update({
