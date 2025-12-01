@@ -355,36 +355,9 @@ export const expireInvoiceHandler = factory.createHandlers(
 
       // Perform the expiration in a transaction
       await db.$transaction(async (tx) => {
-        // Update payment status to EXPIRED if exists
-        if (invoice.payment) {
-          await tx.payment.update({
-            where: { id: invoice.payment.id },
-            data: {
-              status: PaymentStatus.EXPIRED,
-            },
-          })
-        }
-
-        // Update invoice status to EXPIRED
-        await tx.invoice.update({
-          where: { id: invoice.id },
-          data: {
-            status: PaymentStatus.EXPIRED,
-          },
-        })
-
-        // Cancel booking and release slots if exists
+        // First, release slots if booking exists
         if (invoice.booking) {
-          await tx.booking.update({
-            where: { id: invoice.booking.id },
-            data: {
-              status: BookingStatus.CANCELLED,
-              cancellationReason: 'Payment expired (user timeout)',
-              cancelledAt: now,
-            },
-          })
-
-          // Release all booked slots
+          // Collect all slot IDs
           const bookingDetails = await tx.bookingDetail.findMany({
             where: { bookingId: invoice.booking.id },
             select: { slotId: true },
@@ -409,12 +382,43 @@ export const expireInvoiceHandler = factory.createHandlers(
             ...ballboySlotIds,
           ]
 
+          // Release slots immediately BEFORE updating statuses
           if (allSlotIds.length > 0) {
             await tx.slot.updateMany({
               where: { id: { in: allSlotIds } },
               data: { isAvailable: true },
             })
           }
+        }
+
+        // Update payment status to EXPIRED if exists
+        if (invoice.payment) {
+          await tx.payment.update({
+            where: { id: invoice.payment.id },
+            data: {
+              status: PaymentStatus.EXPIRED,
+            },
+          })
+        }
+
+        // Update invoice status to EXPIRED
+        await tx.invoice.update({
+          where: { id: invoice.id },
+          data: {
+            status: PaymentStatus.EXPIRED,
+          },
+        })
+
+        // Cancel booking if exists
+        if (invoice.booking) {
+          await tx.booking.update({
+            where: { id: invoice.booking.id },
+            data: {
+              status: BookingStatus.CANCELLED,
+              cancellationReason: 'Payment expired (user timeout)',
+              cancelledAt: now,
+            },
+          })
         }
 
         // Cancel class booking and restore capacity if exists
