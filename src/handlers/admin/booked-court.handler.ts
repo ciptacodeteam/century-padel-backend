@@ -743,9 +743,9 @@ export const cancelBookingHandler = factory.createHandlers(
         }
 
         // 2. Check if booking can be cancelled
-        // if (booking.status === BookingStatus.CANCELLED) {
-        //   throw new BadRequestException('Booking is already cancelled')
-        // }
+        if (booking.status === BookingStatus.CANCELLED) {
+          throw new BadRequestException('Booking is already cancelled')
+        }
 
         // Track counts for response
         const releasedCounts = {
