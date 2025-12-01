@@ -22,6 +22,7 @@ COPY tsconfig.json ./
 
 # Copy source code and entry point
 COPY src ./src
+COPY scripts ./scripts
 COPY serve.ts ./
 
 # Expose ports (app + prisma studio)
