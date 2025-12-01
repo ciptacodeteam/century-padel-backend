@@ -194,6 +194,9 @@ export const getAllBookingScheduleHandler = factory.createHandlers(
           coaches: {
             select: {
               id: true,
+              bookingId: true,
+              slotId: true,
+              bookingCoachTypeId: true,
               description: true,
               price: true,
               createdAt: true,
@@ -308,7 +311,9 @@ export const getAllBookingScheduleHandler = factory.createHandlers(
         // Process ballboy staff images
         for (const ballboy of booking.ballboys) {
           if (ballboy.slot.staff?.image) {
-            ballboy.slot.staff.image = await getFileUrl(ballboy.slot.staff.image)
+            ballboy.slot.staff.image = await getFileUrl(
+              ballboy.slot.staff.image,
+            )
           }
         }
       }
