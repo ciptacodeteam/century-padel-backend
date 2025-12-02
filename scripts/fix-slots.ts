@@ -4,8 +4,9 @@
  * and resets their isAvailable flag to true
  */
 
-import { db } from '../src/lib/prisma'
-import { BookingStatus, PaymentStatus } from '@prisma/client'
+import { PrismaClient, BookingStatus, PaymentStatus } from '@prisma/client'
+
+const db = new PrismaClient()
 
 async function fixSlots() {
   console.log('🔍 Finding slots that need to be fixed...\n')
