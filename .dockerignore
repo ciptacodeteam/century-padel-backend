@@ -54,7 +54,6 @@ Dockerfile*
 .dockerignore
 
 # Development scripts
-scripts/
 Makefile
 *.sh
 
