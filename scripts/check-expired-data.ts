@@ -2,8 +2,9 @@
  * Check the current state of expired payments and their related data
  */
 
-import { db } from '../src/lib/prisma'
-import { PaymentStatus } from '@prisma/client'
+import { PrismaClient, PaymentStatus } from '@prisma/client'
+
+const db = new PrismaClient()
 
 async function checkExpiredData() {
   console.log('🔍 Checking expired payments and slots...\n')
