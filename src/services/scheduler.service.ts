@@ -41,13 +41,50 @@ export async function checkExpiredTransactions() {
       },
     })
 
-    log.info(
-      `Found ${expiredPayments.length} expired payments to process`,
-    )
+    log.info(`Found ${expiredPayments.length} expired payments to process`)
 
     // Update expired payments and related records
     for (const payment of expiredPayments) {
       await db.$transaction(async (tx) => {
+        // First, release slots if booking exists
+        if (payment.invoice?.booking) {
+          // Collect all slot IDs
+          const bookingDetails = await tx.bookingDetail.findMany({
+            where: { bookingId: payment.invoice.booking.id },
+            select: { slotId: true },
+          })
+          const courtSlotIds = bookingDetails.map((bd) => bd.slotId)
+
+          const coachDetails = await tx.bookingCoach.findMany({
+            where: { bookingId: payment.invoice.booking.id },
+            select: { slotId: true },
+          })
+          const coachSlotIds = coachDetails.map((bc) => bc.slotId)
+
+          const ballboyDetails = await tx.bookingBallboy.findMany({
+            where: { bookingId: payment.invoice.booking.id },
+            select: { slotId: true },
+          })
+          const ballboySlotIds = ballboyDetails.map((bb) => bb.slotId)
+
+          const allSlotIds = [
+            ...courtSlotIds,
+            ...coachSlotIds,
+            ...ballboySlotIds,
+          ]
+
+          // Release slots immediately BEFORE updating statuses
+          if (allSlotIds.length > 0) {
+            await tx.slot.updateMany({
+              where: { id: { in: allSlotIds } },
+              data: { isAvailable: true },
+            })
+            log.info(
+              `Released ${allSlotIds.length} slots for booking ${payment.invoice.booking.id}`,
+            )
+          }
+        }
+
         // Update payment status to EXPIRED
         await tx.payment.update({
           where: { id: payment.id },
@@ -75,41 +112,6 @@ export async function checkExpiredTransactions() {
                 cancelledAt: now,
               },
             })
-
-            // Release booked slots back to available
-            const bookingDetails = await tx.bookingDetail.findMany({
-              where: { bookingId: payment.invoice.booking.id },
-              select: { slotId: true },
-            })
-            const courtSlotIds = bookingDetails.map((bd) => bd.slotId)
-
-            const coachDetails = await tx.bookingCoach.findMany({
-              where: { bookingId: payment.invoice.booking.id },
-              select: { slotId: true },
-            })
-            const coachSlotIds = coachDetails.map((bc) => bc.slotId)
-
-            const ballboyDetails = await tx.bookingBallboy.findMany({
-              where: { bookingId: payment.invoice.booking.id },
-              select: { slotId: true },
-            })
-            const ballboySlotIds = ballboyDetails.map((bb) => bb.slotId)
-
-            const allSlotIds = [
-              ...courtSlotIds,
-              ...coachSlotIds,
-              ...ballboySlotIds,
-            ]
-
-            if (allSlotIds.length > 0) {
-              await tx.slot.updateMany({
-                where: { id: { in: allSlotIds } },
-                data: { isAvailable: true },
-              })
-              log.info(
-                `Released ${allSlotIds.length} slots for booking ${payment.invoice.booking.id}`,
-              )
-            }
           }
 
           // Update class booking status to CANCELLED if exists
@@ -166,17 +168,7 @@ export async function checkExpiredTransactions() {
 
     for (const booking of expiredHoldBookings) {
       await db.$transaction(async (tx) => {
-        // Update booking status to CANCELLED
-        await tx.booking.update({
-          where: { id: booking.id },
-          data: {
-            status: BookingStatus.CANCELLED,
-            cancellationReason: 'Hold period expired',
-            cancelledAt: now,
-          },
-        })
-
-        // Release booked slots
+        // First, collect and release slots
         const bookingDetails = await tx.bookingDetail.findMany({
           where: { bookingId: booking.id },
           select: { slotId: true },
@@ -197,6 +189,7 @@ export async function checkExpiredTransactions() {
 
         const allSlotIds = [...courtSlotIds, ...coachSlotIds, ...ballboySlotIds]
 
+        // Release slots immediately BEFORE updating statuses
         if (allSlotIds.length > 0) {
           await tx.slot.updateMany({
             where: { id: { in: allSlotIds } },
@@ -206,6 +199,16 @@ export async function checkExpiredTransactions() {
             `Released ${allSlotIds.length} slots for expired hold booking ${booking.id}`,
           )
         }
+
+        // Update booking status to CANCELLED
+        await tx.booking.update({
+          where: { id: booking.id },
+          data: {
+            status: BookingStatus.CANCELLED,
+            cancellationReason: 'Hold period expired',
+            cancelledAt: now,
+          },
+        })
 
         // Update related invoice status if exists
         const invoice = await tx.invoice.findFirst({
