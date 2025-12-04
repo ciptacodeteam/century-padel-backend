@@ -9,6 +9,7 @@ This project is a backend API built with [Hono](https://hono.dev/) for Quantum S
   - [Local Development](#local-development)
   - [Docker Development](#docker-development)
 - [Production Deployment](#production-deployment)
+- [Database Backup & Restore](./BACKUP.md)
 - [Development Guide](./develop-guide.md)
 - [Docker Production Guide](./DOCKER_PRODUCTION.md)
 - [Scripts](#scripts)
@@ -17,12 +18,14 @@ This project is a backend API built with [Hono](https://hono.dev/) for Quantum S
 ## Prerequisites
 
 ### Local Development
+
 - [Node.js](https://nodejs.org/) (v18+ recommended) or [Bun](https://bun.sh/)
 - [PostgreSQL](https://www.postgresql.org/) 16+
 - [Redis](https://redis.io/) 7+
 - [Git](https://git-scm.com/)
 
 ### Docker Development/Production
+
 - [Docker](https://www.docker.com/) 20.10+
 - [Docker Compose](https://docs.docker.com/compose/) 2.0+
 - [Git](https://git-scm.com/)
@@ -41,11 +44,13 @@ cd quantum-sport-backend
 #### 2. Install Dependencies
 
 Using npm:
+
 ```bash
 npm install
 ```
 
 Using Bun:
+
 ```bash
 bun install
 ```
@@ -103,6 +108,7 @@ make dev-logs
 ```
 
 Services will be available at:
+
 - **API**: http://localhost:8000
 - **Prisma Studio**: http://localhost:5555
 - **PostgreSQL**: localhost:5433
@@ -128,12 +134,14 @@ make dev-down
 ## Production Deployment
 
 ### 🌐 Domain & SSL Setup
+
 Your API domain: **api.quantumsocialclub.id**
 
 - **[SSL_QUICK_SETUP.md](./SSL_QUICK_SETUP.md)** - ⚡ **Quick SSL setup** (2 minutes!)
 - **[DOMAIN_AND_SSL_SETUP.md](./DOMAIN_AND_SSL_SETUP.md)** - 🔐 Complete domain & SSL guide
 
 ### 📚 Deployment Guides
+
 - **[DEPLOY_4GB_SERVER.md](./DEPLOY_4GB_SERVER.md)** - 🌟 **Recommended: 4GB RAM** (Optimal for production!)
 - **[UPGRADE_TO_4GB_CHECKLIST.md](./UPGRADE_TO_4GB_CHECKLIST.md)** - Upgrading from 2GB? Follow this!
 - **[QUICK_START_2GB.md](./QUICK_START_2GB.md)** - ⚠️ 2GB RAM minimum (add swap required)
@@ -144,6 +152,7 @@ Your API domain: **api.quantumsocialclub.id**
 ### Quick Production Setup
 
 1. **Configure Environment**
+
    ```bash
    cp docker/env.production.template .env.production
    # Edit .env.production with your production values
@@ -151,11 +160,12 @@ Your API domain: **api.quantumsocialclub.id**
    ```
 
 2. **Deploy (Automated - Recommended)**
+
    ```bash
    chmod +x deploy.sh
    ./deploy.sh
    ```
-   
+
    The script automatically:
    - ✅ Validates environment variables
    - ✅ Pulls latest code
@@ -165,11 +175,12 @@ Your API domain: **api.quantumsocialclub.id**
    - ✅ Verifies deployment health
 
 3. **Setup SSL (For api.quantumsocialclub.id)**
+
    ```bash
    chmod +x docker/setup-ssl.sh
    ./docker/setup-ssl.sh
    ```
-   
+
    Configures HTTPS with Let's Encrypt:
    - ✅ Free SSL certificate
    - ✅ Auto-renewal every 12 hours
@@ -177,6 +188,7 @@ Your API domain: **api.quantumsocialclub.id**
    - ✅ Security headers enabled
 
 **Alternative: Manual Deployment**
+
 ```bash
 # Manual build and deploy
 DOCKER_BUILDKIT=1 docker-compose -f docker-compose.prod.yml build
@@ -199,12 +211,79 @@ make prod-up
 - ✅ Log rotation
 - ✅ Email worker queue
 - ✅ Automated deployment with GitHub Actions
+- ✅ **Automated daily database backups**
+
+---
+
+## Database Backup & Restore
+
+The application includes an automated backup system that runs daily at 00:10.
+
+### Quick Start
+
+1. **Setup backup directory:**
+
+   ```bash
+   sudo mkdir -p /var/backups/quantum-sport-db
+   sudo chown $USER:$USER /var/backups/quantum-sport-db
+   ```
+
+2. **Configure in `.env.production`:**
+
+   ```bash
+   BACKUP_PATH=/var/backups/quantum-sport-db
+   ```
+
+3. **Start backup service:**
+   ```bash
+   docker compose -f docker-compose.prod.yml up -d db-backup
+   ```
+
+### Common Operations
+
+**Manual backup:**
+
+```bash
+npm run db:backup
+# or
+docker compose -f docker-compose.prod.yml exec db-backup /bin/sh /backup-db.sh
+```
+
+**Restore from latest backup:**
+
+```bash
+npm run db:restore
+# or
+docker compose -f docker-compose.prod.yml exec db-backup /bin/sh /restore-db.sh
+```
+
+**View backup logs:**
+
+```bash
+npm run db:backup-logs
+```
+
+**List backups:**
+
+```bash
+ls -lht /var/backups/quantum-sport-db/
+```
+
+### Backup Details
+
+- **Schedule:** Daily at 00:10
+- **Retention:** 3 most recent backups
+- **Format:** Compressed SQL dumps (`.sql.gz`)
+- **Location:** VM storage (outside Docker volumes)
+
+📖 **Full documentation:** [BACKUP.md](./BACKUP.md)
 
 ---
 
 ## Scripts
 
 ### Development
+
 - `dev`: Start the development server with hot reload
 - `build`: Build TypeScript to production
 - `start`: Start the production server
@@ -214,22 +293,31 @@ make prod-up
 - `typecheck`: Run TypeScript type checking
 
 ### Database
+
 - `db:push`: Push schema changes to database
 - `db:pull`: Pull schema from database
 - `db:fresh`: Reset and seed database
 - `db:seed`: Seed database with test data
 - `db:truncate`: Clear all database tables
 - `db:studio`: Open Prisma Studio
+- `db:fix-slots`: Fix expired booking slots
+- `db:check-expired`: Check expired transactions
+- `db:backup`: Create manual database backup
+- `db:restore`: Restore database from backup
+- `db:backup-logs`: View backup service logs
 
 ### Prisma
+
 - `prisma:generate`: Generate Prisma Client
 - `prisma:migrate`: Run database migrations
 - `prisma:studio`: Open Prisma Studio
 
 ### Workers
+
 - `worker:email`: Start email worker process
 
 ### Docker (via Makefile)
+
 - `make dev-up`: Start development environment
 - `make dev-down`: Stop development environment
 - `make prod-build`: Build production images
@@ -276,6 +364,7 @@ quantum-sport-backend/
 See `.env.example` for development and `.env.production.example` for production.
 
 Key variables:
+
 - `NODE_ENV`: Environment (development/production)
 - `PORT`: Server port
 - `DATABASE_URL`: PostgreSQL connection string
@@ -322,6 +411,7 @@ This project is proprietary software. All rights reserved.
 ## Support
 
 For issues or questions:
+
 - Open an issue on GitHub
 - Contact the development team
 - Check the [Development Guide](./develop-guide.md)

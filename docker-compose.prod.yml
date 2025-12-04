@@ -64,6 +64,56 @@ services:
     security_opt:
       - no-new-privileges:true
 
+  # Database Backup Service
+  db-backup:
+    image: postgres:16-alpine
+    container_name: quantum-sport-db-backup
+    restart: 'no'
+    env_file:
+      - .env.production
+    environment:
+      DB_NAME: ${DB_NAME:-quantum_sport}
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      BACKUP_DIR: /backups
+      BACKUP_RETENTION: 3
+    volumes:
+      # Mount VM storage directory for backups (outside Docker volumes)
+      - ${BACKUP_PATH:-/var/backups/quantum-sport-db}:/backups
+      - ./scripts/backup-db.sh:/backup-db.sh:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - quantum-sport-network
+    # Run backup via cron - scheduled at 00:10 daily
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        echo "Setting up database backup cron job..."
+        # Install required packages
+        apk add --no-cache dcron postgresql-client
+
+        # Create cron job for daily backup at 00:10
+        echo "10 0 * * * /bin/sh /backup-db.sh >> /var/log/backup.log 2>&1" > /etc/crontabs/root
+
+        # Create log file
+        touch /var/log/backup.log
+
+        # Run initial backup
+        echo "Running initial backup..."
+        /bin/sh /backup-db.sh
+
+        # Start cron in foreground
+        echo "Starting cron daemon..."
+        crond -f -l 2
+    logging:
+      driver: 'json-file'
+      options:
+        max-size: '10m'
+        max-file: '3'
+
   # Application Server
   app:
     build:
@@ -230,7 +280,7 @@ services:
         max-file: '3'
     security_opt:
       - no-new-privileges:true
-  
+
   # Certbot for SSL certificate management
   certbot:
     image: certbot/certbot:latest
