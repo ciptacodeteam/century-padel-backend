@@ -64,7 +64,7 @@ else
   
   # Try to mark any failed migrations as rolled back
   set +e
-  echo "UPDATE \"_prisma_migrations\" SET rolled_back_at = NOW() WHERE finished_at IS NULL AND rolled_back_at IS NULL;" | bunx prisma db execute --stdin 2>&1
+  echo "UPDATE \"_prisma_migrations\" SET rolled_back_at = NOW() WHERE finished_at IS NULL AND rolled_back_at IS NULL;" | bunx prisma db execute --stdin --url "$DATABASE_URL" 2>&1
   RECOVERY_EXIT=$?
   set -e
   
