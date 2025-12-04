@@ -25,7 +25,13 @@ export async function checkExpiredTransactions() {
     // Find expired payments
     const expiredPayments = await db.payment.findMany({
       where: {
-        status: PaymentStatus.PENDING,
+        status: {
+          in: [
+            PaymentStatus.PENDING,
+            PaymentStatus.CANCELLED,
+            PaymentStatus.EXPIRED,
+          ],
+        },
         dueDate: {
           lte: now,
         },
