@@ -108,8 +108,24 @@ export async function checkExpiredTransactions() {
             },
           })
 
-          // Update booking status to CANCELLED if exists
+          // Update booking status to CANCELLED if exists and restore inventory
           if (payment.invoice.booking) {
+            // Restore inventory quantities (they were decremented during checkout)
+            const bookingInventories = await tx.bookingInventory.findMany({
+              where: { bookingId: payment.invoice.booking.id },
+            })
+            for (const bookingInv of bookingInventories) {
+              await tx.inventory.update({
+                where: { id: bookingInv.inventoryId },
+                data: {
+                  quantity: { increment: bookingInv.quantity },
+                },
+              })
+              log.info(
+                `Restored inventory ${bookingInv.inventoryId} by ${bookingInv.quantity} for expired payment ${payment.id}`,
+              )
+            }
+
             await tx.booking.update({
               where: { id: payment.invoice.booking.id },
               data: {
@@ -203,6 +219,22 @@ export async function checkExpiredTransactions() {
           })
           log.info(
             `Released ${allSlotIds.length} slots for expired hold booking ${booking.id}`,
+          )
+        }
+
+        // Restore inventory quantities (they were decremented during checkout)
+        const bookingInventories = await tx.bookingInventory.findMany({
+          where: { bookingId: booking.id },
+        })
+        for (const bookingInv of bookingInventories) {
+          await tx.inventory.update({
+            where: { id: bookingInv.inventoryId },
+            data: {
+              quantity: { increment: bookingInv.quantity },
+            },
+          })
+          log.info(
+            `Restored inventory ${bookingInv.inventoryId} by ${bookingInv.quantity} for expired hold booking ${booking.id}`,
           )
         }
 

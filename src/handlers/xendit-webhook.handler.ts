@@ -160,6 +160,7 @@ async function handlePaymentWebhookV3(c: any, webhook: XenditPaymentWebhook) {
   // Update booking status
   if (invoice.bookingId) {
     if (event === 'payment.capture') {
+      // Inventory was already decremented during checkout, no need to decrement again
       await db.booking.update({
         where: { id: invoice.bookingId },
         data: {
@@ -168,6 +169,23 @@ async function handlePaymentWebhookV3(c: any, webhook: XenditPaymentWebhook) {
       })
       c.var.logger.info(`Booking confirmed: ${invoice.bookingId}`)
     } else if (event === 'payment.failure') {
+      // Restore inventory stock when payment fails (it was decremented during checkout)
+      const bookingInventories = await db.bookingInventory.findMany({
+        where: { bookingId: invoice.bookingId },
+      })
+      
+      for (const bookingInv of bookingInventories) {
+        await db.inventory.update({
+          where: { id: bookingInv.inventoryId },
+          data: {
+            quantity: { increment: bookingInv.quantity },
+          },
+        })
+        c.var.logger.info(
+          `Restored inventory ${bookingInv.inventoryId} by ${bookingInv.quantity} due to payment failure`,
+        )
+      }
+
       await db.booking.update({
         where: { id: invoice.bookingId },
         data: {
@@ -361,6 +379,7 @@ async function handleInvoiceWebhookV2(c: any, payload: XenditWebhookPayload) {
   // Update booking status
   if (invoice.bookingId) {
     if (payload.status === 'PAID') {
+      // Inventory was already decremented during checkout, no need to decrement again
       await db.booking.update({
         where: { id: invoice.bookingId },
         data: {
@@ -369,6 +388,23 @@ async function handleInvoiceWebhookV2(c: any, payload: XenditWebhookPayload) {
       })
       c.var.logger.info(`Booking confirmed: ${invoice.bookingId}`)
     } else if (payload.status === 'EXPIRED') {
+      // Restore inventory stock when payment expires (it was decremented during checkout)
+      const bookingInventories = await db.bookingInventory.findMany({
+        where: { bookingId: invoice.bookingId },
+      })
+      
+      for (const bookingInv of bookingInventories) {
+        await db.inventory.update({
+          where: { id: bookingInv.inventoryId },
+          data: {
+            quantity: { increment: bookingInv.quantity },
+          },
+        })
+        c.var.logger.info(
+          `Restored inventory ${bookingInv.inventoryId} by ${bookingInv.quantity} due to payment expiration`,
+        )
+      }
+
       await db.booking.update({
         where: { id: invoice.bookingId },
         data: {
@@ -725,6 +761,7 @@ export const xenditPaymentRequestWebhookHandler = factory.createHandlers(
       if (payload.data.status === 'COMPLETED') {
         // Update booking status
         if (invoice.bookingId) {
+          // Inventory was already decremented during checkout, no need to decrement again
           await db.booking.update({
             where: { id: invoice.bookingId },
             data: { status: BookingStatus.CONFIRMED },
@@ -760,8 +797,25 @@ export const xenditPaymentRequestWebhookHandler = factory.createHandlers(
         payload.data.status === 'FAILED' ||
         payload.data.status === 'EXPIRED'
       ) {
-        // Cancel bookings
+        // Cancel bookings and restore inventory
         if (invoice.bookingId) {
+          // Restore inventory stock when payment fails/expires (it was decremented during checkout)
+          const bookingInventories = await db.bookingInventory.findMany({
+            where: { bookingId: invoice.bookingId },
+          })
+          
+          for (const bookingInv of bookingInventories) {
+            await db.inventory.update({
+              where: { id: bookingInv.inventoryId },
+              data: {
+                quantity: { increment: bookingInv.quantity },
+              },
+            })
+            c.var.logger.info(
+              `Restored inventory ${bookingInv.inventoryId} by ${bookingInv.quantity} due to payment ${payload.data.status.toLowerCase()}`,
+            )
+          }
+
           await db.booking.update({
             where: { id: invoice.bookingId },
             data: { status: BookingStatus.CANCELLED },

@@ -361,6 +361,13 @@ export const checkoutHandler = factory.createHandlers(
                 price: inventory.price, // unit price captured at checkout
               },
             })
+            // Decrement inventory stock immediately (like admin checkout)
+            await tx.inventory.update({
+              where: { id: inv.inventoryId },
+              data: {
+                quantity: { decrement: inv.quantity },
+              },
+            })
             xenditItems.push({
               name: `Inventory - ${inventory.name}`,
               quantity: inv.quantity,
