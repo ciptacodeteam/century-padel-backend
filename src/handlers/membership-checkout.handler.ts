@@ -60,12 +60,14 @@ export const membershipCheckoutHandler = factory.createHandlers(
       }
 
       const result = await db.$transaction(async (tx) => {
-        // Calculate totals (fixed fee + percentage fee)
+        // Calculate totals (fixed fee + percentage fee + 11% VAT)
         const subtotal = membership.price
         const percentageFee = Math.round(
           subtotal * (Number(paymentMethod.percentage) / 100),
         )
-        const processingFee = paymentMethod.fees + percentageFee
+        const baseFee = paymentMethod.fees + percentageFee
+        const vat = Math.round(baseFee * 0.11) // 11% VAT on total fee
+        const processingFee = baseFee + vat
         const finalTotal = subtotal + processingFee
 
         // Generate invoice number

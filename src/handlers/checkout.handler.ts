@@ -376,11 +376,13 @@ export const checkoutHandler = factory.createHandlers(
           }
         }
 
-        // Calculate processing fee (fixed fee + percentage fee)
+        // Calculate processing fee (fixed fee + percentage fee + 11% VAT)
         const percentageFee = Math.round(
           totalPrice * (Number(paymentMethod.percentage) / 100),
         )
-        const processingFee = paymentMethod.fees + percentageFee
+        const baseFee = paymentMethod.fees + percentageFee
+        const vat = Math.round(baseFee * 0.11) // 11% VAT on total fee
+        const processingFee = baseFee + vat
         const finalTotal = totalPrice + processingFee
 
         if (processingFee > 0) {
