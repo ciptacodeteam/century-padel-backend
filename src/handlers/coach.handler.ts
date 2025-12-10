@@ -26,16 +26,23 @@ export const getAvailableCoachesHandler = factory.createHandlers(
       const startDateTime = dayjs(startAt).toDate()
       const endDateTime = dayjs(endAt).toDate()
 
-      // Find all available coach slots within the time range
+      // Find all available coach slots that overlap with the requested time range
+      // A slot overlaps if: slot.startAt < request.endAt AND slot.endAt > request.startAt
       const slots = await db.slot.findMany({
         where: {
           type: SlotType.COACH,
-          startAt: {
-            gte: startDateTime,
-          },
-          endAt: {
-            lte: endDateTime,
-          },
+          AND: [
+            {
+              startAt: {
+                lt: endDateTime,
+              },
+            },
+            {
+              endAt: {
+                gt: startDateTime,
+              },
+            },
+          ],
           isAvailable: true,
           bookingCoaches: { none: {} }, // ensure not already booked
         },

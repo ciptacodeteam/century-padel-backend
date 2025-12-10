@@ -46,10 +46,8 @@ export const getCoachCostHandler = factory.createHandlers(
       })
 
       for (const item of items) {
-        item['startAt'] = dayjs(item.startAt)
-          .startOf('day')
-          .format(DATETIME_FORMAT)
-        item['endAt'] = dayjs(item.endAt).endOf('day').format(DATETIME_FORMAT)
+        item['startAt'] = dayjs(item.startAt).format(DATETIME_FORMAT)
+        item['endAt'] = dayjs(item.endAt).format(DATETIME_FORMAT)
       }
 
       return c.json(ok(items, 'Coach cost endpoint is working'), status.OK)
