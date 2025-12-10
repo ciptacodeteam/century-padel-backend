@@ -5,6 +5,7 @@ import { ok } from '@/lib/response'
 import { zValidator } from '@hono/zod-validator'
 import status from 'http-status'
 import { availableCoachesQuerySchema } from '@/lib/validation'
+import dayjs from 'dayjs'
 
 enum SlotType {
 	COURT = 'COURT',
@@ -22,14 +23,26 @@ export const getAvailableBallboyHandler = factory.createHandlers(
 				endAt: string
 			}
 
-			const startDateTime = new Date(startAt)
-			const endDateTime = new Date(endAt)
+			const startDateTime = dayjs(startAt).toDate()
+			const endDateTime = dayjs(endAt).toDate()
 
+			// Find all available ballboy slots that overlap with the requested time range
+			// A slot overlaps if: slot.startAt < request.endAt AND slot.endAt > request.startAt
 			const slots = await db.slot.findMany({
 				where: {
 					type: SlotType.BALLBOY,
-					startAt: startDateTime,
-					endAt: endDateTime,
+					AND: [
+						{
+							startAt: {
+								lt: endDateTime,
+							},
+						},
+						{
+							endAt: {
+								gt: startDateTime,
+							},
+						},
+					],
 					isAvailable: true,
 					bookingBallboys: { none: {} },
 				},
