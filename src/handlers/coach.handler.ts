@@ -6,12 +6,7 @@ import { zValidator } from '@hono/zod-validator'
 import status from 'http-status'
 import { availableCoachesQuerySchema } from '@/lib/validation'
 import dayjs from 'dayjs'
-
-enum SlotType {
-  COURT = 'COURT',
-  COACH = 'COACH',
-  BALLBOY = 'BALLBOY',
-}
+import { BookingStatus, SlotType } from '@prisma/client'
 
 // GET /coaches/availability?startAt=YYYY-MM-DDTHH:mm&endAt=YYYY-MM-DDTHH:mm
 export const getAvailableCoachesHandler = factory.createHandlers(
@@ -44,7 +39,15 @@ export const getAvailableCoachesHandler = factory.createHandlers(
             },
           ],
           isAvailable: true,
-          bookingCoaches: { none: {} }, // ensure not already booked
+          bookingCoaches: {
+            none: {
+              booking: {
+                status: {
+                  not: BookingStatus.CANCELLED,
+                },
+              },
+            },
+          }, // ensure not already booked (excluding cancelled bookings)
         },
         include: {
           staff: {
