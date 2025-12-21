@@ -9,6 +9,12 @@ import status from 'http-status'
 import * as XLSX from 'xlsx'
 import dayjs from 'dayjs'
 import { z } from 'zod'
+import {
+  getIncomeBySourceAnalytics,
+  getPaymentMethodAnalytics,
+  exportDataToExcel,
+  getBusinessAnalytics,
+} from '@/services/analytics.service'
 
 // GET /admin/analytics
 // Get analytics overview with total transactions, revenue, and monthly trends
@@ -857,6 +863,124 @@ export const getDailyTransactionsHandler = factory.createHandlers(
       return c.json(ok(response), status.OK)
     } catch (error) {
       c.var.logger.fatal(`Error in getDailyTransactionsHandler: ${error}`)
+      throw error
+    }
+  },
+)
+
+// GET /admin/analytics/income-by-source
+// Get income analytics separated by source (online vs cashier, booking vs class vs membership)
+const dateRangeSchema = z.object({
+  startDate: z.string().datetime().optional(),
+  endDate: z.string().datetime().optional(),
+  source: z.enum(['cashier', 'online']).optional(),
+})
+
+export const getIncomeBySourceHandler = factory.createHandlers(
+  zValidator('query', dateRangeSchema, validateHook),
+  async (c) => {
+    try {
+      const query = c.req.valid('query')
+
+      const startDate = query.startDate
+        ? new Date(query.startDate)
+        : dayjs().subtract(1, 'month').startOf('day').toDate()
+      const endDate = query.endDate
+        ? new Date(query.endDate)
+        : dayjs().endOf('day').toDate()
+
+      const source = (query.source as 'cashier' | 'online') || undefined
+      const data = await getIncomeBySourceAnalytics(startDate, endDate, source)
+
+      return c.json(ok(data), status.OK)
+    } catch (error) {
+      c.var.logger.fatal(`Error in getIncomeBySourceHandler: ${error}`)
+      throw error
+    }
+  },
+)
+
+// GET /admin/analytics/payment-methods
+// Get payment method analytics showing which payment methods drive revenue
+export const getPaymentMethodsHandler = factory.createHandlers(
+  zValidator('query', dateRangeSchema, validateHook),
+  async (c) => {
+    try {
+      const query = c.req.valid('query')
+
+      const startDate = query.startDate
+        ? new Date(query.startDate)
+        : dayjs().subtract(1, 'month').startOf('day').toDate()
+      const endDate = query.endDate
+        ? new Date(query.endDate)
+        : dayjs().endOf('day').toDate()
+
+      const source = (query.source as 'cashier' | 'online') || undefined
+      const data = await getPaymentMethodAnalytics(startDate, endDate, source)
+
+      return c.json(ok(data), status.OK)
+    } catch (error) {
+      c.var.logger.fatal(`Error in getPaymentMethodsHandler: ${error}`)
+      throw error
+    }
+  },
+)
+
+// GET /admin/analytics/business-insights
+// Get comprehensive business analytics across all entities
+export const getBusinessInsightsHandler = factory.createHandlers(
+  zValidator('query', dateRangeSchema, validateHook),
+  async (c) => {
+    try {
+      const query = c.req.valid('query')
+
+      const startDate = query.startDate
+        ? new Date(query.startDate)
+        : dayjs().subtract(1, 'month').startOf('day').toDate()
+      const endDate = query.endDate
+        ? new Date(query.endDate)
+        : dayjs().endOf('day').toDate()
+
+      const data = await getBusinessAnalytics(startDate, endDate)
+
+      return c.json(ok(data), status.OK)
+    } catch (error) {
+      c.var.logger.fatal(`Error in getBusinessInsightsHandler: ${error}`)
+      throw error
+    }
+  },
+)
+
+// GET /admin/analytics/export/bulk-data
+// Export courts, inventory, and coach booking data to Excel
+const exportQuerySchema = z.object({
+  type: z.enum(['courts', 'inventory', 'coach-bookings', 'bookings']),
+  startDate: z.string().datetime().optional(),
+  endDate: z.string().datetime().optional(),
+})
+
+export const exportBulkDataHandler = factory.createHandlers(
+  zValidator('query', exportQuerySchema, validateHook),
+  async (c) => {
+    try {
+      const query = c.req.valid('query')
+
+      const startDate = query.startDate ? new Date(query.startDate) : undefined
+      const endDate = query.endDate ? new Date(query.endDate) : undefined
+
+      const buffer = await exportDataToExcel(query.type, startDate, endDate)
+
+      const filename = `${query.type}-export-${dayjs().format('YYYY-MM-DD')}.xlsx`
+
+      c.header(
+        'Content-Type',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      )
+      c.header('Content-Disposition', `attachment; filename="${filename}"`)
+
+      return c.body(buffer as any)
+    } catch (error) {
+      c.var.logger.fatal(`Error in exportBulkDataHandler: ${error}`)
       throw error
     }
   },

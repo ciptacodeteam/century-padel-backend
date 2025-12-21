@@ -4,6 +4,10 @@ import {
   getAnalyticsHandler,
   getDashboardStatsHandler,
   getDailyTransactionsHandler,
+  getIncomeBySourceHandler,
+  getPaymentMethodsHandler,
+  getBusinessInsightsHandler,
+  exportBulkDataHandler,
 } from '@/handlers/admin/analytics.handler'
 
 const adminAnalyticsRoute = createRouter()
@@ -11,6 +15,10 @@ const adminAnalyticsRoute = createRouter()
   .get('/', ...getAnalyticsHandler)
   .get('/dashboard', ...getDashboardStatsHandler)
   .get('/daily-transactions', ...getDailyTransactionsHandler)
+  .get('/income-by-source', ...getIncomeBySourceHandler)
+  .get('/payment-methods', ...getPaymentMethodsHandler)
+  .get('/business-insights', ...getBusinessInsightsHandler)
   .get('/export/excel', ...exportAnalyticsToExcelHandler)
+  .get('/export/bulk-data', ...exportBulkDataHandler)
 
 export default adminAnalyticsRoute

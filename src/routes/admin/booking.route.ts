@@ -2,6 +2,7 @@ import { createRouter } from '@/lib/create-app'
 import {
   approveBookingTransactionHandler,
   exportBookingTransactionsToExcelHandler,
+  exportBookingsHandler,
   getAllBookingTransactionsHandler,
   getAllBookingScheduleHandler,
   getBookingTransactionDetailHandler,
@@ -15,6 +16,7 @@ const adminBookingRoute = createRouter()
   .get('/', ...getAllBookingTransactionsHandler)
   .get('/schedule', ...getAllBookingScheduleHandler)
   .get('/ongoing-schedule', ...getOngoingBookingScheduleHandler)
+  .get('/export', ...exportBookingsHandler)
   .get('/export/excel', ...exportBookingTransactionsToExcelHandler)
   .get('/:id', ...getBookingTransactionDetailHandler)
   .put('/:id/approve', ...approveBookingTransactionHandler)

@@ -15,21 +15,43 @@ import { PaymentStatus } from '@prisma/client'
 import status from 'http-status'
 import * as XLSX from 'xlsx'
 import dayjs from 'dayjs'
+import { z } from 'zod'
 
 // GET /admin/membership-transactions
 // Get all membership transactions
+const membershipTransactionsQuerySchema = searchQuerySchema.extend({
+  source: z
+    .enum(['cashier', 'online'])
+    .optional()
+    .describe('Filter by transaction source: cashier or online'),
+})
+
 export const getAllMembershipTransactionsHandler = factory.createHandlers(
-  zValidator('query', searchQuerySchema, validateHook),
+  zValidator('query', membershipTransactionsQuerySchema, validateHook),
   async (c) => {
     try {
-      const query = c.req.valid('query') as SearchQuerySchema
+      const query = c.req.valid('query') as any
       const queryOptions = buildFindManyOptions(query, {
         defaultOrderBy: { createdAt: 'desc' },
         searchableFields: [],
       })
 
+      // Add source filter if provided
+      let where = queryOptions.where || {}
+      if (query.source) {
+        if (query.source === 'cashier') {
+          where = {
+            ...where,
+            invoice: { booking: { cashierId: { not: null } } },
+          }
+        } else if (query.source === 'online') {
+          where = { ...where, invoice: { booking: { cashierId: null } } }
+        }
+      }
+
       const membershipTransactions = await db.membershipUser.findMany({
         ...queryOptions,
+        where,
         include: {
           user: {
             select: {
@@ -450,9 +472,8 @@ export const exportMembershipTransactionsToExcelHandler =
         const excelData = membershipTransactions.map((transaction) => {
           // Get benefits
           const benefits =
-            transaction.membership.benefits
-              ?.map((b) => b.benefit)
-              .join(', ') || 'N/A'
+            transaction.membership.benefits?.map((b) => b.benefit).join(', ') ||
+            'N/A'
 
           return {
             'Transaction ID': transaction.id,
@@ -461,11 +482,12 @@ export const exportMembershipTransactionsToExcelHandler =
             'Customer Email': transaction.user.email || 'N/A',
             'Customer Phone': transaction.user.phone,
             'Membership Name': transaction.membership.name,
-            'Membership Description': transaction.membership.description || 'N/A',
+            'Membership Description':
+              transaction.membership.description || 'N/A',
             'Membership Price': transaction.membership.price,
             'Total Sessions': transaction.membership.sessions,
             'Duration (Days)': transaction.membership.duration,
-            'Benefits': benefits,
+            Benefits: benefits,
             'Start Date': dayjs(transaction.startDate).format('YYYY-MM-DD'),
             'End Date': dayjs(transaction.endDate).format('YYYY-MM-DD'),
             'Remaining Sessions': transaction.remainingSessions,
@@ -479,7 +501,8 @@ export const exportMembershipTransactionsToExcelHandler =
             'Payment Status': transaction.invoice?.status || 'N/A',
             'Payment Method':
               transaction.invoice?.payment?.method.name || 'N/A',
-            'Total Paid': transaction.invoice?.total || transaction.membership.price,
+            'Total Paid':
+              transaction.invoice?.total || transaction.membership.price,
             'Created At': dayjs(transaction.createdAt).format(
               'YYYY-MM-DD HH:mm:ss',
             ),
@@ -548,4 +571,3 @@ export const exportMembershipTransactionsToExcelHandler =
       }
     },
   )
-

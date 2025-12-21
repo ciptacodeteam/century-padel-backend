@@ -18,19 +18,37 @@ import { BadRequestException, NotFoundException } from '@/exceptions'
 
 // GET /admin/booked-courts
 // Get all booked courts with comprehensive booking information
+const bookedCourtsQuerySchema = searchQuerySchema.extend({
+  source: z
+    .enum(['cashier', 'online'])
+    .optional()
+    .describe('Filter by booking source: cashier or online'),
+})
+
 export const getAllBookedCourtsHandler = factory.createHandlers(
-  zValidator('query', searchQuerySchema, validateHook),
+  zValidator('query', bookedCourtsQuerySchema, validateHook),
   async (c) => {
     try {
-      const query = c.req.valid('query') as SearchQuerySchema
+      const query = c.req.valid('query') as any
       const queryOptions = buildFindManyOptions(query, {
         defaultOrderBy: { createdAt: 'desc' },
         searchableFields: [],
       })
 
+      // Add source filter if provided
+      let where = queryOptions.where || {}
+      if (query.source) {
+        if (query.source === 'cashier') {
+          where = { ...where, booking: { cashierId: { not: null } } }
+        } else if (query.source === 'online') {
+          where = { ...where, booking: { cashierId: null } }
+        }
+      }
+
       // Fetch all booking details with court information
       const bookingDetails = await db.bookingDetail.findMany({
         ...queryOptions,
+        where,
         include: {
           booking: {
             include: {

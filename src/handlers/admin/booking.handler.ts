@@ -16,21 +16,41 @@ import { BookingStatus, PaymentStatus } from '@prisma/client'
 import status from 'http-status'
 import * as XLSX from 'xlsx'
 import dayjs from 'dayjs'
+import { z } from 'zod'
+
+import { exportDataToExcel } from '@/services/analytics.service'
 
 // GET /admin/bookings
 // Get all booking transactions
+const bookingsQuerySchema = searchQuerySchema.extend({
+  source: z
+    .enum(['cashier', 'online'])
+    .optional()
+    .describe('Filter by booking source: cashier or online'),
+})
+
 export const getAllBookingTransactionsHandler = factory.createHandlers(
-  zValidator('query', searchQuerySchema, validateHook),
+  zValidator('query', bookingsQuerySchema, validateHook),
   async (c) => {
     try {
-      const query = c.req.valid('query') as SearchQuerySchema
+      const query = c.req.valid('query') as any
       const queryOptions = buildFindManyOptions(query, {
         defaultOrderBy: { createdAt: 'desc' },
         searchableFields: [],
       })
 
+      let where = queryOptions.where || {}
+      if (query.source) {
+        if (query.source === 'cashier') {
+          where = { ...where, cashierId: { not: null } }
+        } else if (query.source === 'online') {
+          where = { ...where, cashierId: null }
+        }
+      }
+
       const bookings = await db.booking.findMany({
         ...queryOptions,
+        where,
         include: {
           user: {
             select: {
@@ -950,6 +970,48 @@ export const exportBookingTransactionsToExcelHandler = factory.createHandlers(
       c.var.logger.fatal(
         `Error in exportBookingTransactionsToExcelHandler: ${error}`,
       )
+      throw error
+    }
+  },
+)
+
+// GET /admin/bookings/export
+// Export booking transactions to Excel using date range with enriched columns
+const bookingsExportQuerySchema = z.object({
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
+  source: z.enum(['cashier', 'online']).optional(),
+})
+
+export const exportBookingsHandler = factory.createHandlers(
+  zValidator('query', bookingsExportQuerySchema, validateHook),
+  async (c) => {
+    try {
+      const query = c.req.valid('query') as z.infer<
+        typeof bookingsExportQuerySchema
+      >
+      const startDate = query.startDate
+        ? dayjs(query.startDate).toDate()
+        : undefined
+      const endDate = query.endDate ? dayjs(query.endDate).toDate() : undefined
+
+      const buffer = await exportDataToExcel(
+        'bookings',
+        startDate,
+        endDate,
+        query.source,
+      )
+      const filename = `bookings-export-${dayjs().format('YYYY-MM-DD')}.xlsx`
+
+      c.header(
+        'Content-Type',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      )
+      c.header('Content-Disposition', `attachment; filename="${filename}"`)
+
+      return c.body(buffer as any)
+    } catch (error) {
+      c.var.logger.fatal(`Error in exportBookingsHandler: ${error}`)
       throw error
     }
   },

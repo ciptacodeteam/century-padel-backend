@@ -25,18 +25,36 @@ type CancelBookingSchema = z.infer<typeof cancelBookingSchema>
 
 // GET /admin/booked-inventories
 // Get all booked inventories
+const bookedInventoriesQuerySchema = searchQuerySchema.extend({
+  source: z
+    .enum(['cashier', 'online'])
+    .optional()
+    .describe('Filter by booking source: cashier or online'),
+})
+
 export const getAllBookedInventoriesHandler = factory.createHandlers(
-  zValidator('query', searchQuerySchema, validateHook),
+  zValidator('query', bookedInventoriesQuerySchema, validateHook),
   async (c) => {
     try {
-      const query = c.req.valid('query') as SearchQuerySchema
+      const query = c.req.valid('query') as any
       const queryOptions = buildFindManyOptions(query, {
         defaultOrderBy: { createdAt: 'desc' },
         searchableFields: [],
       })
 
+      // Add source filter if provided
+      let where = queryOptions.where || {}
+      if (query.source) {
+        if (query.source === 'cashier') {
+          where = { ...where, booking: { cashierId: { not: null } } }
+        } else if (query.source === 'online') {
+          where = { ...where, booking: { cashierId: null } }
+        }
+      }
+
       const bookedInventories = await db.bookingInventory.findMany({
         ...queryOptions,
+        where,
         include: {
           inventory: {
             select: {
