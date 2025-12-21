@@ -352,14 +352,8 @@ export function startSchedulerWorker() {
     {
       connection: redisConnection,
       concurrency: 1, // Process one at a time to avoid race conditions
-      settings: {
-        // Add longer maxStalledCount and stallInterval to handle role changes better
-        maxStalledCount: 2, // Retry twice before giving up
-        stalledInterval: 5000, // Check every 5 seconds
-        maxStalledInterval: 30000, // Max 30 seconds interval
-        lockDuration: 30000, // 30 seconds lock
-        lockRenewTime: 15000, // Renew every 15 seconds
-      },
+      lockDuration: 30000, // 30 seconds lock
+      lockRenewTime: 15000, // Renew every 15 seconds
     },
   )
 
