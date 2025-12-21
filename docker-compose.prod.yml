@@ -43,8 +43,10 @@ services:
     restart: unless-stopped
     env_file:
       - .env.production
-    ports:
-      - '${REDIS_PORT:-6379}:6379'
+    # SECURITY: Do NOT expose Redis port publicly (commented out)
+    # Redis should ONLY be accessible from internal Docker network
+    # ports:
+    #   - '${REDIS_PORT:-6379}:6379'
     volumes:
       - redis_data:/data
       - ./docker/redis.conf:/usr/local/etc/redis/redis.conf:ro
@@ -237,7 +239,11 @@ services:
     networks:
       - quantum-sport-network
     healthcheck:
-      test: ['CMD-SHELL', 'wget --no-verbose --tries=1 --spider http://localhost || exit 1']
+      test:
+        [
+          'CMD-SHELL',
+          'wget --no-verbose --tries=1 --spider http://localhost || exit 1',
+        ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -249,7 +255,7 @@ services:
         max-file: '3'
     security_opt:
       - no-new-privileges:true
-  
+
   # Certbot for SSL certificate management
   certbot:
     image: certbot/certbot:latest
