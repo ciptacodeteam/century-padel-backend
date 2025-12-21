@@ -4,12 +4,30 @@ import { BookingStatus, PaymentStatus } from '@prisma/client'
 import { log } from '@/lib/logger'
 import { getRedisConnection } from '@/lib/redis'
 
-const redisConnection = getRedisConnection()
+let redisConnection = getRedisConnection()
 
 // Queue for scheduled tasks
-const schedulerQueue = new Queue('scheduler', {
+let schedulerQueue = new Queue('scheduler', {
   connection: redisConnection,
 })
+
+/**
+ * Reconnect to Redis (handles role changes like master -> replica failover)
+ * This is called when we detect connection issues that might be due to Redis role changes
+ */
+function reconnectRedis() {
+  try {
+    log.warn('Attempting to reconnect to Redis...')
+    redisConnection = getRedisConnection()
+    schedulerQueue = new Queue('scheduler', {
+      connection: redisConnection,
+    })
+    log.info('Successfully reconnected to Redis')
+  } catch (error) {
+    log.error(`Failed to reconnect to Redis: ${error}`)
+    throw error
+  }
+}
 
 /**
  * Check for expired payments and update their status
@@ -297,6 +315,19 @@ export async function scheduleExpiryCheck() {
 
     log.info('Scheduled expiry check job to run every minute')
   } catch (error) {
+    // Handle READONLY errors - indicates Redis role change (master -> replica)
+    if (
+      error instanceof Error &&
+      (error.message.includes('READONLY') ||
+        error.message.includes('UNBLOCKED'))
+    ) {
+      log.warn(
+        `Redis role change detected (master -> replica): ${error.message}`,
+      )
+      reconnectRedis()
+      // Retry scheduling after reconnect
+      return scheduleExpiryCheck()
+    }
     log.error(`Error scheduling expiry check: ${error}`)
     throw error
   }
@@ -321,6 +352,14 @@ export function startSchedulerWorker() {
     {
       connection: redisConnection,
       concurrency: 1, // Process one at a time to avoid race conditions
+      settings: {
+        // Add longer maxStalledCount and stallInterval to handle role changes better
+        maxStalledCount: 2, // Retry twice before giving up
+        stalledInterval: 5000, // Check every 5 seconds
+        maxStalledInterval: 30000, // Max 30 seconds interval
+        lockDuration: 30000, // 30 seconds lock
+        lockRenewTime: 15000, // Renew every 15 seconds
+      },
     },
   )
 
@@ -330,10 +369,28 @@ export function startSchedulerWorker() {
 
   worker.on('failed', (job, err) => {
     log.error(`Scheduler job ${job?.id} failed: ${err.message}`)
+
+    // Handle READONLY errors - indicates Redis role change (master -> replica)
+    if (err.message.includes('READONLY') || err.message.includes('UNBLOCKED')) {
+      log.warn(`Redis role change detected: ${err.message}`)
+      log.info('Will attempt to reconnect on next job run')
+    }
   })
 
   worker.on('error', (err) => {
     log.error(`Scheduler worker error: ${err.message}`)
+
+    // Handle READONLY errors - indicates Redis role change (master -> replica)
+    if (err.message.includes('READONLY') || err.message.includes('UNBLOCKED')) {
+      log.warn(
+        `Redis role change detected (master -> replica), attempting reconnect: ${err.message}`,
+      )
+      try {
+        reconnectRedis()
+      } catch (reconnectError) {
+        log.error(`Failed to reconnect after role change: ${reconnectError}`)
+      }
+    }
   })
 
   worker.on('closed', () => {
@@ -341,7 +398,7 @@ export function startSchedulerWorker() {
   })
 
   worker.on('stalled', (jobId) => {
-    log.warn(`Scheduler job ${jobId} stalled`)
+    log.warn(`Scheduler job ${jobId} stalled - may be due to Redis role change`)
   })
 
   log.info('Scheduler worker started')
