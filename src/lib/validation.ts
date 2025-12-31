@@ -598,6 +598,14 @@ export type AvailableCourtSlotsQuerySchema = z.infer<
   typeof availableCourtSlotsQuerySchema
 >
 
+export const updateCourtSlotAvailabilitySchema = z.object({
+  isAvailable: z.boolean(),
+})
+
+export type UpdateCourtSlotAvailabilitySchema = z.infer<
+  typeof updateCourtSlotAvailabilitySchema
+>
+
 export const updateUserSchema = z.object({
   name: z.string().min(3).max(100).optional(),
   email: z.string().email().min(5).max(100).optional(),

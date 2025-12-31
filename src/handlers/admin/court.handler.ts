@@ -17,6 +17,8 @@ import {
   SearchQuerySchema,
   UpdateCourtSchema,
   updateCourtSchema,
+  UpdateCourtSlotAvailabilitySchema,
+  updateCourtSlotAvailabilitySchema,
 } from '@/lib/validation'
 import { deleteFile, getFileUrl, uploadFile } from '@/services/upload.service'
 import { zValidator } from '@hono/zod-validator'
@@ -350,6 +352,82 @@ export const getCostHandler = factory.createHandlers(
       return c.json(ok(courtCostSlot), status.OK)
     } catch (error) {
       c.var.logger.fatal(`Error in getCostHandler: ${error}`)
+      throw error
+    }
+  },
+)
+
+export const updateCourtSlotAvailabilityHandler = factory.createHandlers(
+  zValidator('param', idSchema, validateHook),
+  zValidator('json', updateCourtSlotAvailabilitySchema, validateHook),
+  async (c) => {
+    try {
+      const { id } = c.req.valid('param') as IdSchema
+      const { isAvailable } = c.req.valid('json') as UpdateCourtSlotAvailabilitySchema
+
+      // Check if slot exists and is a court slot
+      const slot = await db.slot.findUnique({
+        where: { id },
+        include: {
+          bookingDetails: {
+            where: {
+              booking: {
+                status: {
+                  not: BookingStatus.CANCELLED,
+                },
+              },
+            },
+          },
+        },
+      })
+
+      if (!slot) {
+        throw new NotFoundException('Court slot not found')
+      }
+
+      if (slot.type !== SlotType.COURT) {
+        throw new BadRequestException('Slot is not a court slot')
+      }
+
+      // Prevent disabling slots that have active bookings
+      if (!isAvailable && slot.bookingDetails.length > 0) {
+        throw new BadRequestException(
+          'Cannot disable court slot with active bookings',
+        )
+      }
+
+      const updatedSlot = await db.slot.update({
+        where: { id },
+        data: {
+          isAvailable,
+        },
+        include: {
+          court: true,
+        },
+      })
+
+      // Transform court image if exists
+      if (updatedSlot.court?.image) {
+        updatedSlot.court.image = await getFileUrl(updatedSlot.court.image)
+      }
+
+      const formattedSlot = {
+        ...updatedSlot,
+        startAt: dayjs(updatedSlot.startAt).format(DATETIME_FORMAT),
+        endAt: dayjs(updatedSlot.endAt).format(DATETIME_FORMAT),
+        createdAt: dayjs(updatedSlot.createdAt).format(DATETIME_FORMAT),
+        updatedAt: dayjs(updatedSlot.updatedAt).format(DATETIME_FORMAT),
+      }
+
+      return c.json(
+        ok(
+          formattedSlot,
+          `Court slot ${isAvailable ? 'enabled' : 'disabled'} successfully`,
+        ),
+        status.OK,
+      )
+    } catch (error) {
+      c.var.logger.fatal(`Error in updateCourtSlotAvailabilityHandler: ${error}`)
       throw error
     }
   },

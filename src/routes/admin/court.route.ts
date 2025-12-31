@@ -6,6 +6,7 @@ import {
   getCostHandler,
   getCourtHandler,
   updateCourtHandler,
+  updateCourtSlotAvailabilityHandler,
 } from '@/handlers/admin/court.handler'
 import { createRouter } from '@/lib/create-app'
 
@@ -18,5 +19,6 @@ const adminCourtRoute = createRouter()
   .put('/:id', ...updateCourtHandler)
   .post('/', ...createCourtHandler)
   .delete('/:id', ...deleteCourtHandler)
+  .put('/slots/:id/availability', ...updateCourtSlotAvailabilityHandler)
 
 export default adminCourtRoute
