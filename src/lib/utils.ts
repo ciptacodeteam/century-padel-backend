@@ -1,3 +1,7 @@
+import dayjs from 'dayjs'
+import { db } from './prisma'
+import crypto from 'crypto'
+
 export async function formatPhone(phone: string) {
   // Remove spaces, dashes, and parentheses
   const cleaned = phone.replace(/[\s\-()]/g, '')
@@ -35,18 +39,31 @@ export async function generateOtp(otpLength: number) {
  * Generate invoice number in format: INV-YYMMDD-XXXXXX
  * Example: INV-251116-A3K9FT
  */
-export function generateInvoiceNumber(): string {
-  const now = new Date()
-  const year = now.getFullYear().toString().slice(-2)
-  const month = (now.getMonth() + 1).toString().padStart(2, '0')
-  const day = now.getDate().toString().padStart(2, '0')
+const CHARSET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+function randomCode(len = 6) {
+  return Array.from({ length: len })
+    .map(() => CHARSET[crypto.randomInt(0, CHARSET.length)])
+    .join('')
+}
 
-  // Generate 6 random uppercase alphanumeric characters
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-  let randomStr = ''
-  for (let i = 0; i < 6; i++) {
-    randomStr += chars.charAt(Math.floor(Math.random() * chars.length))
+export async function generateInvoiceNumber(maxAttempts = 5): Promise<string> {
+  const now = new Date()
+  const year = dayjs(now).format('YY')
+  const month = dayjs(now).format('MM')
+  const day = dayjs(now).format('DD')
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const number = `INV-${year}${month}${day}-${randomCode(6)}`
+
+    const exist = await db.invoice.findUnique({
+      where: { number },
+      select: { id: true },
+    })
+
+    if (!exist) return number
   }
 
-  return `INV-${year}${month}${day}-${randomStr}`
+  throw new Error(
+    'Unable to generate unique invoice number after several attempts',
+  )
 }

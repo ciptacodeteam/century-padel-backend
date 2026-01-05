@@ -405,7 +405,7 @@ export const checkoutHandler = factory.createHandlers(
         // (User details fetched later per-channel when needed)
 
         // Generate invoice number
-        const invoiceNumber = generateInvoiceNumber()
+        const invoiceNumber = await generateInvoiceNumber()
 
         // Create invoice
         const invoice = await tx.invoice.create({
@@ -499,7 +499,7 @@ export const checkoutHandler = factory.createHandlers(
               `Creating Xendit payment request channel=${channelCode} amount=${finalTotal}`,
             )
             xenditInvoiceResponse = await xenditService.createPaymentRequestV3({
-              referenceId: invoice.id,
+              referenceId: invoiceNumber,
               requestAmount: finalTotal,
               country: 'ID',
               currency: 'IDR',
