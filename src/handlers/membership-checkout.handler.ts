@@ -71,7 +71,7 @@ export const membershipCheckoutHandler = factory.createHandlers(
         const finalTotal = subtotal + processingFee
 
         // Generate invoice number
-        const invoiceNumber = generateInvoiceNumber()
+        const invoiceNumber = await generateInvoiceNumber()
 
         // Create MembershipUser record
         const startDate = dayjs().toDate()
@@ -155,7 +155,7 @@ export const membershipCheckoutHandler = factory.createHandlers(
               `Creating Xendit payment request channel=${channelCode} amount=${finalTotal}`,
             )
             xenditInvoiceResponse = await xenditService.createPaymentRequestV3({
-              referenceId: invoice.id,
+              referenceId: invoiceNumber,
               requestAmount: finalTotal,
               country: 'ID',
               currency: 'IDR',

@@ -208,15 +208,14 @@ const adminMembershipCheckoutSchema = z
       })
       .optional(),
   })
-  .refine(
-    (data) => !!data.userId || (!!data.name && !!data.phone),
-    {
-      message: 'Provide either userId or both name and phone for a new customer',
-      path: ['userId'],
-    },
-  )
+  .refine((data) => !!data.userId || (!!data.name && !!data.phone), {
+    message: 'Provide either userId or both name and phone for a new customer',
+    path: ['userId'],
+  })
 
-type AdminMembershipCheckoutSchema = z.infer<typeof adminMembershipCheckoutSchema>
+type AdminMembershipCheckoutSchema = z.infer<
+  typeof adminMembershipCheckoutSchema
+>
 
 export const adminMembershipCheckoutHandler = factory.createHandlers(
   zValidator('json', adminMembershipCheckoutSchema, validateHook),
@@ -294,11 +293,13 @@ export const adminMembershipCheckoutHandler = factory.createHandlers(
           },
         })
 
+        const invoiceNumber = await generateInvoiceNumber()
+
         const invoice = await tx.invoice.create({
           data: {
             userId: resolvedUserId!,
             membershipUserId: membershipUser.id,
-            number: generateInvoiceNumber(),
+            number: invoiceNumber,
             subtotal: membership.price,
             processingFee: 0,
             total: membership.price,

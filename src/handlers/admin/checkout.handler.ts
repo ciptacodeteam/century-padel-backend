@@ -5,7 +5,12 @@ import { db } from '@/lib/prisma'
 import { ok } from '@/lib/response'
 import { generateInvoiceNumber, formatPhone } from '@/lib/utils'
 import { zValidator } from '@hono/zod-validator'
-import { BookingStatus, MembershipUser, PaymentStatus, SlotType } from '@prisma/client'
+import {
+  BookingStatus,
+  MembershipUser,
+  PaymentStatus,
+  SlotType,
+} from '@prisma/client'
 import dayjs from 'dayjs'
 import status from 'http-status'
 import { z } from 'zod'
@@ -223,7 +228,7 @@ export const adminCheckoutHandler = factory.createHandlers(
             } else {
               totalPrice += slotPrice
             }
-            
+
             await tx.bookingDetail.create({
               data: {
                 bookingId: booking.id,
@@ -247,7 +252,9 @@ export const adminCheckoutHandler = factory.createHandlers(
 
         // Coaches
         if (coachSlots && coachSlots.length > 0) {
-          c.var.logger.info(`Processing ${coachSlots.length} coach slots: ${coachSlots.join(', ')}`)
+          c.var.logger.info(
+            `Processing ${coachSlots.length} coach slots: ${coachSlots.join(', ')}`,
+          )
           const slotData = await tx.slot.findMany({
             where: {
               id: { in: coachSlots },
@@ -271,8 +278,8 @@ export const adminCheckoutHandler = factory.createHandlers(
           if (slotData.length !== coachSlots.length) {
             c.var.logger.warn(
               `Coach slots mismatch: requested ${coachSlots.length}, found ${slotData.length}. ` +
-              `Requested IDs: ${coachSlots.join(', ')}. ` +
-              `Found IDs: ${slotData.map(s => s.id).join(', ')}`
+                `Requested IDs: ${coachSlots.join(', ')}. ` +
+                `Found IDs: ${slotData.map((s) => s.id).join(', ')}`,
             )
             throw new BadRequestException(
               'One or more coach slots not found or unavailable',
@@ -284,7 +291,8 @@ export const adminCheckoutHandler = factory.createHandlers(
             defaultCoachType = await tx.bookingCoachType.create({
               data: {
                 name: 'Default',
-                description: 'Auto-created default coach type for admin checkout',
+                description:
+                  'Auto-created default coach type for admin checkout',
               },
             })
           }
@@ -305,7 +313,11 @@ export const adminCheckoutHandler = factory.createHandlers(
             const hour = start.hour()
             const key = `${start.format('YYYY-MM-DD')}-${hour}`
             const courtInfo = courtTimeMap.get(key)
-            if (courtInfo && !activeMembership && !discountedTimeKeys.has(key)) {
+            if (
+              courtInfo &&
+              !activeMembership &&
+              !discountedTimeKeys.has(key)
+            ) {
               let discountBase = 0
               if (courtInfo.band === 'HAPPY') {
                 discountBase = 100_000
@@ -336,9 +348,13 @@ export const adminCheckoutHandler = factory.createHandlers(
               },
             })
             bookedItems.coachSlots.push(slot.id)
-            c.var.logger.info(`Coach slot ${slot.id} booked successfully. Price: ${slot.price}`)
+            c.var.logger.info(
+              `Coach slot ${slot.id} booked successfully. Price: ${slot.price}`,
+            )
           }
-          c.var.logger.info(`Total coach slots booked: ${bookedItems.coachSlots.length}. Total coach price: ${slotData.reduce((sum, s) => sum + s.price, 0)}`)
+          c.var.logger.info(
+            `Total coach slots booked: ${bookedItems.coachSlots.length}. Total coach price: ${slotData.reduce((sum, s) => sum + s.price, 0)}`,
+          )
           // Update slots to unavailable
           await tx.slot.updateMany({
             where: {
@@ -454,9 +470,9 @@ export const adminCheckoutHandler = factory.createHandlers(
         if (activeMembership && totalHours > 0) {
           const newRemainingSessions = Math.max(
             0,
-            activeMembership.remainingSessions - totalHours
+            activeMembership.remainingSessions - totalHours,
           )
-          
+
           await tx.membershipUser.update({
             where: { id: activeMembership.id },
             data: {
@@ -469,13 +485,13 @@ export const adminCheckoutHandler = factory.createHandlers(
           // Log for tracking
           c.var.logger.info(
             `Deducted ${totalHours} hours from membership ${activeMembership.id}. ` +
-            `Court cost covered: ${courtCostCoveredByMembership}. ` +
-            `Remaining: ${newRemainingSessions} sessions`
+              `Court cost covered: ${courtCostCoveredByMembership}. ` +
+              `Remaining: ${newRemainingSessions} sessions`,
           )
         } else if (totalHours > 0) {
           // No active membership with available sessions
           c.var.logger.warn(
-            `User ${resolvedUserId} has no active membership with available sessions for ${totalHours} hours`
+            `User ${resolvedUserId} has no active membership with available sessions for ${totalHours} hours`,
           )
         }
 
@@ -491,7 +507,7 @@ export const adminCheckoutHandler = factory.createHandlers(
         })
 
         // Generate invoice (marked as PAID immediately)
-        const invoiceNumber = generateInvoiceNumber()
+        const invoiceNumber = await generateInvoiceNumber()
         const invoice = await tx.invoice.create({
           data: {
             userId: resolvedUserId!,

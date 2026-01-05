@@ -428,7 +428,7 @@ export const checkoutHandler = factory.createHandlers(
         if (env.xendit.apiKey) {
           try {
             xenditInvoiceResponse = await xenditService.createInvoice({
-              externalId: invoice.id,
+              externalId: invoice.number,
               amount: finalTotal,
               payerEmail: userDetails?.email || undefined,
               description: `Payment for booking ${booking.id}`,
