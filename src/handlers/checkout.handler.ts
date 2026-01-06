@@ -4,7 +4,11 @@ import { factory } from '@/lib/create-app'
 import { db } from '@/lib/prisma'
 import { err, ok } from '@/lib/response'
 import { generateInvoiceNumber } from '@/lib/utils'
-import { checkoutSchema, CheckoutSchema } from '@/lib/validation'
+import {
+  checkoutSchema,
+  CheckoutSchema,
+  extendedCheckoutSchema,
+} from '@/lib/validation'
 import { xenditService } from '@/services/xendit.service'
 import { notificationService } from '@/services/notification.service'
 import { zValidator } from '@hono/zod-validator'
@@ -13,6 +17,7 @@ import dayjs from 'dayjs'
 import status from 'http-status'
 import { env } from '@/env'
 import { requireAuth } from '@/middlewares/auth'
+import crypto from 'crypto'
 
 // const PROCESSING_FEE_PERCENT = 0.02 // 2% processing fee
 
@@ -28,9 +33,128 @@ function cleanSlotIds(slotIds: string[] | undefined): string[] | undefined {
   return slotIds.map((id) => id.replace(/-\d{2}:\d{2}(:\d{2})?$/, ''))
 }
 
+/**
+ * Handle credit card payment with 3DS authentication
+ */
+async function handleCreditCardPayment(
+  tx: any,
+  paymentMethodId: string,
+  invoiceNumber: string,
+  bookingId: string,
+  userId: string,
+  finalTotal: number,
+  cardPaymentData?: any,
+) {
+  // Check if payment method is credit card
+  const paymentMethod = await tx.paymentMethod.findUnique({
+    where: { id: paymentMethodId },
+  })
+
+  if (!paymentMethod || paymentMethod.channel !== 'CREDIT_CARD') {
+    return null
+  }
+
+  // Get user details for billing
+  const userDetails = await tx.user.findUnique({
+    where: { id: userId },
+    select: { name: true, email: true, phone: true },
+  })
+
+  try {
+    // Determine whether to use saved card or new card
+    let cardTokenId: string | null = null
+    let cardCvv: string | null = null
+
+    if (cardPaymentData?.savedCardId) {
+      // Use existing saved card
+      const savedCard = await tx.userCreditCard.findUnique({
+        where: { id: cardPaymentData.savedCardId },
+      })
+
+      if (!savedCard || savedCard.userId !== userId) {
+        throw new BadRequestException('Invalid credit card selected')
+      }
+
+      cardTokenId = savedCard.xenditTokenId
+      cardCvv = cardPaymentData.cvv // CVV still required for security
+    } else if (cardPaymentData?.cardNumber) {
+      // Tokenize new card
+      const tokenResponse = await xenditService.tokenizeCreditCard({
+        cardNumber: cardPaymentData.cardNumber,
+        cardholderName: cardPaymentData.cardholderName,
+        expiryMonth: cardPaymentData.expiryMonth,
+        expiryYear: cardPaymentData.expiryYear,
+        cvv: cardPaymentData.newCardCvv,
+      })
+
+      if (!tokenResponse?.id) {
+        throw new BadRequestException(
+          'Failed to tokenize card. Please check your details.',
+        )
+      }
+
+      cardTokenId = tokenResponse.id
+      cardCvv = cardPaymentData.newCardCvv
+
+      // Optionally save card for future use
+      if (cardPaymentData.saveCard) {
+        await tx.userCreditCard.create({
+          data: {
+            userId,
+            cardToken: tokenResponse.id,
+            xenditTokenId: tokenResponse.id,
+            cardBrand: tokenResponse.card_brand || 'UNKNOWN',
+            last4: tokenResponse.card_number_last_four,
+            expMonth: tokenResponse.expiry_month,
+            expYear: tokenResponse.expiry_year,
+            isDefault: false,
+          },
+        })
+      }
+    } else {
+      throw new BadRequestException(
+        'Credit card or saved card ID is required for this payment method',
+      )
+    }
+
+    // Create payment request with credit card and 3DS
+    const xenditPaymentRequest =
+      await xenditService.createPaymentRequestWithCard({
+        referenceId: invoiceNumber,
+        requestAmount: finalTotal,
+        country: 'ID',
+        currency: 'IDR',
+        captureMethod: 'AUTOMATIC',
+        channelCode: 'CREDIT_CARD',
+        cardTokenId,
+        cardCvv: cardCvv || undefined,
+        channelProperties: {
+          three_d_secure_enabled: true,
+        },
+        billingDetails: {
+          billingName: userDetails?.name,
+          billingEmail: userDetails?.email,
+          billingPhone: userDetails?.phone,
+        },
+        description: `Payment for booking ${bookingId}`,
+        metadata: {
+          bookingId,
+          userId,
+          invoiceNumber,
+          paymentType: 'credit_card_3ds',
+        },
+      })
+
+    return xenditPaymentRequest
+  } catch (error) {
+    console.error('Credit card payment error:', error)
+    throw error
+  }
+}
+
 export const checkoutHandler = factory.createHandlers(
   requireAuth,
-  zValidator('json', checkoutSchema, validateHook),
+  zValidator('json', extendedCheckoutSchema, validateHook),
   async (c) => {
     try {
       const user = c.get('user')
@@ -41,7 +165,7 @@ export const checkoutHandler = factory.createHandlers(
         )
       }
 
-      const validated = c.req.valid('json') as CheckoutSchema
+      const validated = c.req.valid('json') as any
       const {
         bookingId,
         paymentMethodId,
@@ -466,7 +590,19 @@ export const checkoutHandler = factory.createHandlers(
               where: { id: user.id },
               select: { name: true, email: true, phone: true },
             })
-            if (channelCode === 'MANDIRI_VIRTUAL_ACCOUNT') {
+
+            // Handle credit card payment with 3DS
+            if (channelCode === 'CREDIT_CARD') {
+              xenditInvoiceResponse = await handleCreditCardPayment(
+                tx,
+                paymentMethodId,
+                invoiceNumber,
+                booking.id,
+                user.id,
+                finalTotal,
+                validated.cardPayment,
+              )
+            } else if (channelCode === 'MANDIRI_VIRTUAL_ACCOUNT') {
               channelProperties = {
                 expires_at: dayjs().add(15, 'minutes').toISOString(),
                 display_name: userDetails?.name || 'Customer',
@@ -495,24 +631,28 @@ export const checkoutHandler = factory.createHandlers(
               }
             }
 
-            c.var.logger.info(
-              `Creating Xendit payment request channel=${channelCode} amount=${finalTotal}`,
-            )
-            xenditInvoiceResponse = await xenditService.createPaymentRequestV3({
-              referenceId: invoiceNumber,
-              requestAmount: finalTotal,
-              country: 'ID',
-              currency: 'IDR',
-              captureMethod: 'AUTOMATIC',
-              channelCode,
-              channelProperties,
-              description: `Payment for booking ${booking.id}`,
-              metadata: {
-                bookingId: booking.id,
-                userId: user.id,
-                invoiceNumber: invoice.number,
-              },
-            })
+            // Skip payment request creation for credit card (already handled above)
+            if (channelCode !== 'CREDIT_CARD') {
+              c.var.logger.info(
+                `Creating Xendit payment request channel=${channelCode} amount=${finalTotal}`,
+              )
+              xenditInvoiceResponse =
+                await xenditService.createPaymentRequestV3({
+                  referenceId: invoiceNumber,
+                  requestAmount: finalTotal,
+                  country: 'ID',
+                  currency: 'IDR',
+                  captureMethod: 'AUTOMATIC',
+                  channelCode,
+                  channelProperties,
+                  description: `Payment for booking ${booking.id}`,
+                  metadata: {
+                    bookingId: booking.id,
+                    userId: user.id,
+                    invoiceNumber: invoice.number,
+                  },
+                })
+            }
           } catch (errX: any) {
             const errMsg = errX?.message || 'Payment gateway error'
             xenditError = {
@@ -525,7 +665,9 @@ export const checkoutHandler = factory.createHandlers(
                     : errMsg.includes('below the minimum limit') ||
                         errMsg.includes('minimum amount')
                       ? 'XENDIT_AMOUNT_TOO_LOW'
-                      : 'XENDIT_ERROR',
+                      : errMsg.includes('tokenize') || errMsg.includes('card')
+                        ? 'XENDIT_CARD_ERROR'
+                        : 'XENDIT_ERROR',
             }
             c.var.logger.error(
               `Xendit error: ${xenditError.code} - ${xenditError.message}`,
@@ -544,6 +686,9 @@ export const checkoutHandler = factory.createHandlers(
             ) {
               userMessage =
                 'Payment method configuration error. Please try a different payment method or contact support.'
+            } else if (xenditError?.code === 'XENDIT_CARD_ERROR') {
+              userMessage =
+                'Card processing failed. Please check your card details and try again. If the problem persists, contact support.'
             }
 
             throw new BadRequestException(

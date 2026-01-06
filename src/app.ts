@@ -61,6 +61,7 @@ import clubRoute from './routes/club.route'
 import adminClubRoute from './routes/admin/club.route'
 import notificationRoute from './routes/notification.route'
 import adminNotificationRoute from './routes/admin/notification.route'
+import creditCardRoute from './routes/credit-card.route'
 
 dayjs.locale('id')
 dayjs.extend(utc)
@@ -94,6 +95,7 @@ const routes = [
   notificationRoute,
   tournamentRoute,
   clubRoute,
+  creditCardRoute,
   xenditWebhookRoute,
   xenditTestRoute,
   passwordResetRoute,

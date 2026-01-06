@@ -12,10 +12,23 @@ import status from 'http-status'
 import { env } from '@/env'
 import { requireAuth } from '@/middlewares/auth'
 import { z } from 'zod'
+import crypto from 'crypto'
 
 const membershipCheckoutSchema = z.object({
   membershipId: z.string(),
   paymentMethodId: z.string(),
+  cardPayment: z
+    .object({
+      savedCardId: z.string().optional(),
+      cvv: z.string().optional(),
+      cardNumber: z.string().optional(),
+      cardholderName: z.string().optional(),
+      expiryMonth: z.number().optional(),
+      expiryYear: z.number().optional(),
+      newCardCvv: z.string().optional(),
+      saveCard: z.boolean().optional(),
+    })
+    .optional(),
 })
 
 type MembershipCheckoutSchema = z.infer<typeof membershipCheckoutSchema>

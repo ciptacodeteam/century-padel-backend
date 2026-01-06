@@ -681,3 +681,59 @@ export const verifyPasswordSchema = z.object({
 })
 
 export type VerifyPasswordSchema = z.infer<typeof verifyPasswordSchema>
+// Credit card schemas
+export const saveCreditCardSchema = z.object({
+  cardNumber: z
+    .string()
+    .regex(/^\d{13,19}$/, 'Card number must be 13-19 digits'),
+  cardholderName: z.string().min(1, 'Cardholder name is required'),
+  expiryMonth: z.number().int().min(1).max(12),
+  expiryYear: z.number().int().min(2024).max(2099),
+  cvv: z
+    .string()
+    .regex(/^\d{3,4}$/, 'CVV must be 3 or 4 digits'),
+  isDefault: z.boolean().optional().default(false),
+})
+
+export type SaveCreditCardSchema = z.infer<typeof saveCreditCardSchema>
+
+export const updateCreditCardSchema = z.object({
+  isDefault: z.boolean(),
+})
+
+export type UpdateCreditCardSchema = z.infer<typeof updateCreditCardSchema>
+
+export const creditCardPaymentSchema = z.object({
+  savedCardId: z.string().optional(), // Use existing saved card
+  cvv: z.string().regex(/^\d{3,4}$/, 'CVV is required for saved cards').optional(),
+  // Or provide new card details
+  cardNumber: z.string().optional(),
+  cardholderName: z.string().optional(),
+  expiryMonth: z.number().optional(),
+  expiryYear: z.number().optional(),
+  newCardCvv: z.string().optional(),
+  saveCard: z.boolean().optional(),
+})
+
+export type CreditCardPaymentSchema = z.infer<typeof creditCardPaymentSchema>
+
+// Update checkout schema to support credit card
+export const extendedCheckoutSchema = z.object({
+  bookingId: z.string().optional(),
+  paymentMethodId: z.string(),
+  courtSlots: z.array(z.string()).optional(),
+  coachSlots: z.array(z.string()).optional(),
+  ballboySlots: z.array(z.string()).optional(),
+  inventories: z
+    .array(
+      z.object({
+        inventoryId: z.string(),
+        quantity: z.number().min(1),
+      }),
+    )
+    .optional(),
+  // Credit card specific fields
+  cardPayment: creditCardPaymentSchema.optional(),
+})
+
+export type ExtendedCheckoutSchema = z.infer<typeof extendedCheckoutSchema>

@@ -99,6 +99,47 @@ export interface XenditPaymentRequestV3Response {
   failure_code?: string
 }
 
+// Credit Card Tokenization Interfaces
+export interface TokenizeCreditCardRequest {
+  cardNumber: string
+  cardholderName: string
+  expiryMonth: number
+  expiryYear: number
+  cvv: string
+  currency?: string // e.g., "IDR"
+}
+
+export interface TokenizeCreditCardResponse {
+  id: string // Token ID for use in payment requests
+  status: string
+  card_number_last_four: string
+  card_brand: string
+  card_fingerprint?: string
+  created: string
+  updated: string
+  expiry_month: number
+  expiry_year: number
+  cardholder_name: string
+}
+
+// 3DS Challenge Interfaces
+export interface Create3DSChallengeRequest {
+  paymentRequestId: string
+  threeDsActionToken?: string // From challenge action
+}
+
+export interface Authenticate3DSRequest {
+  paymentRequestId: string
+  authenticationToken: string // OTP or challenge response
+}
+
+export interface Authenticate3DSResponse {
+  id: string
+  status: 'SUCCEEDED' | 'FAILED' | 'REQUIRES_ACTION'
+  payment_id?: string
+  message?: string
+}
+
 // Webhook event types
 export interface XenditPaymentWebhookData {
   payment_id: string
@@ -462,6 +503,226 @@ class XenditService {
     } catch (error) {
       log.error(`Error simulating Xendit payment request: ${error}`)
       return null
+    }
+  }
+
+  /**
+   * Tokenize a credit card for storage and reuse
+   * Xendit's tokenization securely stores card data server-side
+   */
+  async tokenizeCreditCard(
+    data: TokenizeCreditCardRequest,
+  ): Promise<TokenizeCreditCardResponse | null> {
+    try {
+      log.info(
+        `Tokenizing credit card for ${data.cardholder_name || 'customer'}`,
+      )
+
+      const requestBody = {
+        card_number: data.cardNumber,
+        cardholder_name: data.cardholderName,
+        expiry_month: data.expiryMonth,
+        expiry_year: data.expiryYear,
+        cvv: data.cvv,
+        currency: data.currency || 'IDR',
+      }
+
+      const response = await fetch(`${this.baseUrl}/v2/card_tokens`, {
+        method: 'POST',
+        headers: this.getHeaders('2022-07-31'),
+        body: JSON.stringify(requestBody),
+      })
+
+      const result = (await response.json()) as any
+
+      if (!response.ok) {
+        log.error(
+          `Xendit tokenization error: ${response.status} - ${JSON.stringify(result)}`,
+        )
+        return null
+      }
+
+      log.info(`Credit card tokenized: ${result.id}`)
+      return result
+    } catch (error) {
+      log.error(`Error tokenizing credit card: ${error}`)
+      return null
+    }
+  }
+
+  /**
+   * Create a payment request with a tokenized credit card
+   * Automatically handles 3DS authentication if required
+   */
+  async createPaymentRequestWithCard(
+    data: CreatePaymentRequestV3 & {
+      cardTokenId: string
+      cardCvv?: string
+      billingDetails?: {
+        billingName?: string
+        billingEmail?: string
+        billingPhone?: string
+      }
+    },
+  ): Promise<XenditPaymentRequestV3Response | null> {
+    try {
+      log.info(`Creating payment request with card token: ${data.cardTokenId}`)
+
+      const requestBody = {
+        reference_id: data.referenceId,
+        type: 'PAY',
+        country: data.country || 'ID',
+        currency: data.currency || 'IDR',
+        request_amount: data.requestAmount,
+        capture_method: data.captureMethod || 'AUTOMATIC',
+        channel_code: data.channelCode,
+        channel_properties: {
+          ...data.channelProperties,
+          card_token_id: data.cardTokenId,
+          ...(data.cardCvv && { card_cvv: data.cardCvv }),
+          ...(data.billingDetails && { billing_details: data.billingDetails }),
+          // Enable 3DS for additional security
+          three_d_secure_enabled: true,
+        },
+        description: data.description,
+        metadata: data.metadata,
+      }
+
+      const response = await fetch(`${this.baseUrl}/v3/payment_requests`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify(requestBody),
+      })
+
+      const rawResult = (await response.json()) as any
+
+      if (!response.ok) {
+        const errorMessage =
+          rawResult?.message || rawResult?.error_code || 'Unknown error'
+        log.error(
+          `Xendit card payment error: ${response.status} - ${JSON.stringify(rawResult)}`,
+        )
+        throw new Error(`Xendit card payment error: ${errorMessage}`)
+      }
+
+      const result = (rawResult?.data ??
+        rawResult) as XenditPaymentRequestV3Response
+
+      log.info(
+        `Payment request with card created: ${result.id}, status: ${result.status}`,
+      )
+      return result
+    } catch (error) {
+      log.error(`Error creating payment request with card: ${error}`)
+      return null
+    }
+  }
+
+  /**
+   * Complete 3DS authentication for a payment
+   * Retrieves challenge details and prepares for OTP submission
+   */
+  async get3DSChallenge(
+    paymentRequestId: string,
+  ): Promise<{ challengeUrl?: string; challengeId?: string } | null> {
+    try {
+      log.info(`Retrieving 3DS challenge for payment: ${paymentRequestId}`)
+
+      const response = await fetch(
+        `${this.baseUrl}/v3/payment_requests/${paymentRequestId}`,
+        {
+          method: 'GET',
+          headers: this.getHeaders(),
+        },
+      )
+
+      const rawResult = (await response.json()) as any
+
+      if (!response.ok) {
+        log.error(
+          `Error retrieving challenge: ${response.status} - ${JSON.stringify(rawResult)}`,
+        )
+        return null
+      }
+
+      const result = (rawResult?.data ??
+        rawResult) as XenditPaymentRequestV3Response
+
+      // Extract 3DS action from payment response
+      const threeDsAction = result.actions?.find(
+        (action: any) =>
+          action.type === 'REDIRECT_CUSTOMER' &&
+          action.descriptor === 'WEB_URL',
+      )
+
+      if (threeDsAction) {
+        log.info(`3DS challenge URL obtained`)
+        return {
+          challengeUrl: threeDsAction.value,
+          challengeId: result.id,
+        }
+      }
+
+      return null
+    } catch (error) {
+      log.error(`Error getting 3DS challenge: ${error}`)
+      return null
+    }
+  }
+
+  /**
+   * Complete 3DS authentication by submitting OTP or password
+   * Verifies the 3DS challenge response
+   */
+  async complete3DSAuthentication(
+    paymentRequestId: string,
+    authToken: string,
+  ): Promise<Authenticate3DSResponse | null> {
+    try {
+      log.info(`Completing 3DS authentication for payment: ${paymentRequestId}`)
+
+      const requestBody = {
+        authentication_token: authToken,
+      }
+
+      const response = await fetch(
+        `${this.baseUrl}/v3/payment_requests/${paymentRequestId}/authenticate_3ds`,
+        {
+          method: 'POST',
+          headers: this.getHeaders(),
+          body: JSON.stringify(requestBody),
+        },
+      )
+
+      const rawResult = (await response.json()) as any
+
+      if (!response.ok) {
+        log.error(
+          `3DS authentication failed: ${response.status} - ${JSON.stringify(rawResult)}`,
+        )
+        return {
+          id: paymentRequestId,
+          status: 'FAILED',
+          message: rawResult?.message || 'Authentication failed',
+        }
+      }
+
+      const result = (rawResult?.data ?? rawResult) as any
+
+      log.info(`3DS authentication completed: ${result.status || 'SUCCESS'}`)
+      return {
+        id: result.id || paymentRequestId,
+        status: result.status || 'SUCCEEDED',
+        payment_id: result.payment_id,
+        message: 'Authentication successful',
+      }
+    } catch (error) {
+      log.error(`Error completing 3DS authentication: ${error}`)
+      return {
+        id: paymentRequestId,
+        status: 'FAILED',
+        message: `Authentication error: ${error}`,
+      }
     }
   }
 }
