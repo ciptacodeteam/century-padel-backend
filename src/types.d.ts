@@ -2,6 +2,12 @@ import { Role } from '@prisma/client'
 import { Context } from 'hono'
 import type { PinoLogger } from 'hono-pino'
 
+declare global {
+  // Allow the prisma client to be stored on the global object in development
+  // to prevent creating new clients during hot-reloads.
+  var prisma: PrismaClient | undefined
+}
+
 type UserTokenPayload = {
   id: string
   phone: string

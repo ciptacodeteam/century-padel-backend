@@ -515,7 +515,7 @@ class XenditService {
   ): Promise<TokenizeCreditCardResponse | null> {
     try {
       log.info(
-        `Tokenizing credit card for ${data.cardholder_name || 'customer'}`,
+        `Tokenizing credit card for ${data.cardholderName || 'customer'}`,
       )
 
       const requestBody = {

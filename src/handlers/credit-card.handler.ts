@@ -163,7 +163,6 @@ export const saveCreditCardHandler = factory.createHandlers(
         data: {
           userId: user.id,
           cardToken: tokenResponse.id,
-          xenditTokenId: tokenResponse.id, // Same as cardToken for Xendit
           cardBrand: tokenResponse.card_brand || 'UNKNOWN',
           last4: tokenResponse.card_number_last_four,
           expMonth: tokenResponse.expiry_month,

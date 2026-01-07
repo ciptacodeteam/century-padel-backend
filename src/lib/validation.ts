@@ -116,35 +116,38 @@ export const searchQuerySchema = z.object({
 
 export type SearchQuerySchema = z.infer<typeof searchQuerySchema>
 
-export const createStaffSchema = z
-  .object({
-    name: z.string().min(3).max(100),
-    email: z.email().min(5).max(100),
-    phone: z.string().min(10).max(15),
-    password: z.string().min(6).max(100),
-    confirmPassword: z.string().min(6).max(100),
-    joinedAt: z
-      .string()
-      .refine((val) => dayjs(val, 'YYYY-MM-DD', true).isValid(), {
-        message: 'Invalid date format, expected YYYY-MM-DD',
-      })
-      .optional()
-      .default(dayjs().format(DEFAULT_DATE_FORMAT)),
-    role: z
-      .enum(['ADMIN', 'ADMIN_VIEWER', 'BALLBOY', 'COACH', 'CASHIER'] as const)
-      .default('ADMIN'),
-    coachType: z.enum(['GUIDED_MATCH', 'COACH'] as const).optional(),
-    isActive: z.coerce.boolean().optional(),
-    image: z.file().optional(),
-  })
-  .refine((data) => data.password === data.confirmPassword, {
+const staffBaseSchema = z.object({
+  name: z.string().min(3).max(100),
+  email: z.email().min(5).max(100),
+  phone: z.string().min(10).max(15),
+  password: z.string().min(6).max(100),
+  confirmPassword: z.string().min(6).max(100),
+  joinedAt: z
+    .string()
+    .refine((val) => dayjs(val, 'YYYY-MM-DD', true).isValid(), {
+      message: 'Invalid date format, expected YYYY-MM-DD',
+    })
+    .optional()
+    .default(dayjs().format(DEFAULT_DATE_FORMAT)),
+  role: z
+    .enum(['ADMIN', 'ADMIN_VIEWER', 'BALLBOY', 'COACH', 'CASHIER'] as const)
+    .default('ADMIN'),
+  coachType: z.enum(['GUIDED_MATCH', 'COACH'] as const).optional(),
+  isActive: z.coerce.boolean().optional(),
+  image: z.file().optional(),
+})
+
+export const createStaffSchema = staffBaseSchema.refine(
+  (data) => data.password === data.confirmPassword,
+  {
     message: "Passwords don't match",
     path: ['confirmPassword'],
-  })
+  },
+)
 
 export type CreateStaffSchema = z.infer<typeof createStaffSchema>
 
-export const updateStaffSchema = createStaffSchema
+export const updateStaffSchema = staffBaseSchema
   .partial()
   .omit({ password: true, confirmPassword: true, isActive: true })
   .extend({
@@ -689,9 +692,7 @@ export const saveCreditCardSchema = z.object({
   cardholderName: z.string().min(1, 'Cardholder name is required'),
   expiryMonth: z.number().int().min(1).max(12),
   expiryYear: z.number().int().min(2024).max(2099),
-  cvv: z
-    .string()
-    .regex(/^\d{3,4}$/, 'CVV must be 3 or 4 digits'),
+  cvv: z.string().regex(/^\d{3,4}$/, 'CVV must be 3 or 4 digits'),
   isDefault: z.boolean().optional().default(false),
 })
 
@@ -705,7 +706,10 @@ export type UpdateCreditCardSchema = z.infer<typeof updateCreditCardSchema>
 
 export const creditCardPaymentSchema = z.object({
   savedCardId: z.string().optional(), // Use existing saved card
-  cvv: z.string().regex(/^\d{3,4}$/, 'CVV is required for saved cards').optional(),
+  cvv: z
+    .string()
+    .regex(/^\d{3,4}$/, 'CVV is required for saved cards')
+    .optional(),
   // Or provide new card details
   cardNumber: z.string().optional(),
   cardholderName: z.string().optional(),
