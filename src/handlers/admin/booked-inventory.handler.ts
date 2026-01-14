@@ -4,12 +4,7 @@ import { factory } from '@/lib/create-app'
 import { db } from '@/lib/prisma'
 import buildFindManyOptions from '@/lib/query'
 import { ok } from '@/lib/response'
-import {
-  IdSchema,
-  idSchema,
-  SearchQuerySchema,
-  searchQuerySchema,
-} from '@/lib/validation'
+import { IdSchema, idSchema, searchQuerySchema } from '@/lib/validation'
 import { zValidator } from '@hono/zod-validator'
 import { BookingStatus } from '@prisma/client'
 import dayjs from 'dayjs'

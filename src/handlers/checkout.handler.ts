@@ -1,23 +1,18 @@
+import { env } from '@/env'
 import { BadRequestException, NotFoundException } from '@/exceptions'
 import { validateHook } from '@/helpers/validate-hook'
 import { factory } from '@/lib/create-app'
 import { db } from '@/lib/prisma'
 import { err, ok } from '@/lib/response'
 import { generateInvoiceNumber } from '@/lib/utils'
-import {
-  checkoutSchema,
-  CheckoutSchema,
-  extendedCheckoutSchema,
-} from '@/lib/validation'
-import { xenditService } from '@/services/xendit.service'
+import { extendedCheckoutSchema } from '@/lib/validation'
+import { requireAuth } from '@/middlewares/auth'
 import { notificationService } from '@/services/notification.service'
+import { xenditService } from '@/services/xendit.service'
 import { zValidator } from '@hono/zod-validator'
 import { BookingStatus, PaymentStatus, SlotType } from '@prisma/client'
 import dayjs from 'dayjs'
 import status from 'http-status'
-import { env } from '@/env'
-import { requireAuth } from '@/middlewares/auth'
-import crypto from 'crypto'
 
 // const PROCESSING_FEE_PERCENT = 0.02 // 2% processing fee
 
@@ -126,7 +121,7 @@ async function handleCreditCardPayment(
         currency: 'IDR',
         captureMethod: 'AUTOMATIC',
         channelCode: 'CREDIT_CARD',
-        cardTokenId,
+        cardTokenId: cardTokenId!,
         cardCvv: cardCvv || undefined,
         channelProperties: {
           three_d_secure_enabled: true,
