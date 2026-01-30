@@ -519,6 +519,44 @@ export async function getBusinessAnalytics(startDate: Date, endDate: Date) {
     select: { courtId: true },
   })
 
+  // Top hours and days analytics
+  // Get all booking slots in the period
+  const bookingSlots = await db.bookingDetail.findMany({
+    where: {
+      createdAt: { gte: startDate, lte: endDate },
+    },
+    select: {
+      slot: {
+        select: {
+          startAt: true,
+        },
+      },
+    },
+  })
+
+  // Count frequency by hour and day
+  const hourCounts: Record<string, number> = {}
+  const dayCounts: Record<string, number> = {}
+  for (const bd of bookingSlots) {
+    const startAt = bd.slot?.startAt
+    if (startAt) {
+      const dateObj = new Date(startAt)
+      const hour = dateObj.getHours().toString().padStart(2, '0') + ':00'
+      const day = dateObj.toLocaleDateString('en-US', { weekday: 'long' })
+      hourCounts[hour] = (hourCounts[hour] || 0) + 1
+      dayCounts[day] = (dayCounts[day] || 0) + 1
+    }
+  }
+  // Sort and get top 5 for each
+  const topHours = Object.entries(hourCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([hour, count]) => ({ hour, count }))
+  const topDays = Object.entries(dayCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 7)
+    .map(([day, count]) => ({ day, count }))
+
   // Coach statistics (Staff with coach role)
   const totalStaff = await db.staff.count()
   const activeCoaches = await db.bookingCoach.findMany({
@@ -644,6 +682,8 @@ export async function getBusinessAnalytics(startDate: Date, endDate: Date) {
           ? ((bookedCourts.length / totalCourts) * 100).toFixed(2) + '%'
           : '0%',
       topCourts: topCourtDetails,
+      topHours,
+      topDays,
     },
     coaches: {
       total: totalStaff,
