@@ -578,6 +578,10 @@ class XenditService {
         channel_code: data.channelCode,
         channel_properties: {
           ...data.channelProperties,
+          card_details: {
+            card_token_id: data.cardTokenId,
+            ...(data.cardCvv && { card_cvv: data.cardCvv }),
+          },
           card_token_id: data.cardTokenId,
           ...(data.cardCvv && { card_cvv: data.cardCvv }),
           ...(data.billingDetails && { billing_details: data.billingDetails }),
