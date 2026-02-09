@@ -268,18 +268,19 @@ model Inventory {
 // Non-overlap is enforced via unique constraints per resource.
 
 model Slot {
-  id          String   @id @default(cuid())
-  type        SlotType
+  id            String   @id @default(cuid())
+  type          SlotType
   // Resource pointers (exactly one must be set depending on type)
-  courtId     String?
-  staffId     String? // for COACH or BALLBOY
+  courtId       String?
+  staffId       String? // for COACH or BALLBOY
   // The actual time window (timestamptz)
-  startAt     DateTime
-  endAt       DateTime
-  price       Int      @default(0) @db.Integer // in rupiah, 0 for free/ballboy if bundled
-  isAvailable Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @default(now()) @updatedAt
+  startAt       DateTime
+  endAt         DateTime
+  price         Int      @default(0) @db.Integer // in rupiah, 0 for free/ballboy if bundled
+  discountPrice Int      @default(0) @db.Integer // discounted court price (0 means no discount)
+  isAvailable   Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @default(now()) @updatedAt
 
   court Court? @relation(fields: [courtId], references: [id])
   staff Staff? @relation(fields: [staffId], references: [id])
@@ -299,15 +300,16 @@ model Slot {
 // Legacy CourtCostSchedule kept as a published price table (optional)
 // Often still useful for “price calendar” UIs and batch slot generation.
 model CourtCostSchedule {
-  id          String   @id @default(cuid())
-  courtId     String
+  id            String   @id @default(cuid())
+  courtId       String
   // For a whole-day price grid (e.g., 08:00-09:00), store range:
-  startAt     DateTime
-  endAt       DateTime
-  price       Int      @db.Integer
-  isAvailable Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @default(now()) @updatedAt
+  startAt       DateTime
+  endAt         DateTime
+  price         Int      @db.Integer
+  discountPrice Int      @default(0) @db.Integer // discounted court price (0 means no discount)
+  isAvailable   Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @default(now()) @updatedAt
 
   court Court @relation(fields: [courtId], references: [id])
 
@@ -398,6 +400,8 @@ model Booking {
   status             BookingStatus @default(HOLD)
   totalPrice         Int           @default(0) @db.Integer
   processingFee      Int           @default(0) @db.Integer
+  courtNormalPrice   Int           @default(0) @db.Integer
+  courtDiscountPrice Int           @default(0) @db.Integer
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @default(now()) @updatedAt
   holdExpiresAt      DateTime? // for HOLD; auto-release slots when passed
@@ -433,10 +437,11 @@ model Booking {
  */
 
 model BookingDetail {
-  id        String @id @default(cuid())
-  bookingId String
-  slotId    String // COURT slot
-  price     Int    @db.Integer
+  id            String @id @default(cuid())
+  bookingId     String
+  slotId        String // COURT slot
+  price         Int    @db.Integer
+  discountPrice Int    @default(0) @db.Integer
 
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now()) @updatedAt

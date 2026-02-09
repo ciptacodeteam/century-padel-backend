@@ -66,7 +66,9 @@ export const createCourtCostHandler = factory.createHandlers(
         toDate,
         days,
         happyHourPrice,
+        happyHourDiscountPrice,
         peakHourPrice,
+        peakHourDiscountPrice,
         closedHours,
       } = validated
 
@@ -75,7 +77,9 @@ export const createCourtCostHandler = factory.createHandlers(
         days,
         fromDate,
         happyHourPrice,
+        happyHourDiscountPrice,
         peakHourPrice,
+        peakHourDiscountPrice,
         toDate,
         closedHours,
       })
@@ -102,7 +106,14 @@ export const updateCourtCostHandler = factory.createHandlers(
     try {
       const { id } = c.req.valid('param') as IdSchema
       const validated = c.req.valid('json') as UpdateCourtCostSchema
-      const { date, happyHourPrice, peakHourPrice, closedHours } = validated
+      const {
+        date,
+        happyHourPrice,
+        happyHourDiscountPrice,
+        peakHourPrice,
+        peakHourDiscountPrice,
+        closedHours,
+      } = validated
 
       const existing = await db.courtCostSchedule.findUnique({
         where: { id },
@@ -116,7 +127,9 @@ export const updateCourtCostHandler = factory.createHandlers(
         courtId: id,
         date,
         happyHourPrice,
+        happyHourDiscountPrice,
         peakHourPrice,
+        peakHourDiscountPrice,
         closedHours,
       })
 
@@ -142,7 +155,7 @@ export const overrideSingleCourtCostHandler = factory.createHandlers(
     try {
       const { id: courtId } = c.req.valid('param') as IdSchema
       const validated = c.req.valid('json') as OverrideSingleCourtCostSchema
-      const { date, hour, price } = validated
+      const { date, hour, price, discountPrice } = validated
 
       const existing = await db.courtCostSchedule.findUnique({
         where: { id: courtId },
@@ -156,6 +169,7 @@ export const overrideSingleCourtCostHandler = factory.createHandlers(
         courtId,
         date,
         price,
+        discountPrice,
         hour,
       })
 

@@ -156,14 +156,9 @@ export const adminCheckoutHandler = factory.createHandlers(
         })
 
         let totalPrice = 0
+        let courtNormalPrice = 0
+        let courtDiscountPrice = 0
         let courtCostCoveredByMembership = 0 // Track court costs covered by membership
-        let totalDiscount = 0 // Track total discount applied for overlapping court+coach
-        // Map "YYYY-MM-DD-HH" -> court slot info so we can detect overlaps with coach slots
-        const courtTimeMap = new Map<
-          string,
-          { band: 'HAPPY' | 'PEAK' | 'OTHER'; courtPrice: number }
-        >()
-        const discountedTimeKeys = new Set<string>() // ensure only one discount per overlapping hour
         const bookedItems = {
           courtSlots: [] as string[],
           coachSlots: [] as string[],
@@ -205,35 +200,29 @@ export const adminCheckoutHandler = factory.createHandlers(
               )
             }
 
-            // Store original price for record-keeping
-            const slotPrice = slot.price
-
-            // Track this court slot's time band (happy / peak / other) for discount logic
-            const start = dayjs(slot.startAt)
-            const hour = start.hour()
-            const key = `${start.format('YYYY-MM-DD')}-${hour}`
-            let band: 'HAPPY' | 'PEAK' | 'OTHER' = 'OTHER'
-            if (hour >= 6 && hour < 15) {
-              band = 'HAPPY'
-            } else if (hour >= 15 && hour < 24) {
-              band = 'PEAK'
-            }
-            courtTimeMap.set(key, { band, courtPrice: slotPrice })
+            const normalPrice = slot.price
+            const discountedPrice =
+              slot.discountPrice && slot.discountPrice > 0
+                ? slot.discountPrice
+                : slot.price
+            courtNormalPrice += normalPrice
+            courtDiscountPrice += discountedPrice
 
             // If membership covers this booking, exclude court costs from totalPrice
             // but still track the original price
             if (activeMembership) {
-              courtCostCoveredByMembership += slotPrice
+              courtCostCoveredByMembership += normalPrice
               // Don't add to totalPrice - membership covers it
             } else {
-              totalPrice += slotPrice
+              totalPrice += discountedPrice
             }
 
             await tx.bookingDetail.create({
               data: {
                 bookingId: booking.id,
                 slotId: slot.id,
-                price: slotPrice, // Always store original price for records
+                price: normalPrice,
+                discountPrice: discountedPrice,
                 courtId: slot.courtId || undefined,
               },
             })
@@ -301,40 +290,6 @@ export const adminCheckoutHandler = factory.createHandlers(
               throw new BadRequestException(
                 'One or more coach slots are already booked',
               )
-            }
-
-            // Before adding coach price, check if there is a court slot with the same time.
-            // If so, apply a discount on the court price for that hour:
-            // - Happy hour (06–14) -> Rp 100.000
-            // - Peak hour  (15–23) -> Rp 70.000
-            // Discount only applies once per overlapping hour and only when
-            // court cost is actually being charged (no active membership).
-            const start = dayjs(slot.startAt)
-            const hour = start.hour()
-            const key = `${start.format('YYYY-MM-DD')}-${hour}`
-            const courtInfo = courtTimeMap.get(key)
-            if (
-              courtInfo &&
-              !activeMembership &&
-              !discountedTimeKeys.has(key)
-            ) {
-              let discountBase = 0
-              if (courtInfo.band === 'HAPPY') {
-                discountBase = 100_000
-              } else if (courtInfo.band === 'PEAK') {
-                discountBase = 70_000
-              }
-              if (discountBase > 0) {
-                const applied = Math.min(discountBase, courtInfo.courtPrice)
-                if (applied > 0) {
-                  totalPrice = Math.max(0, totalPrice - applied)
-                  totalDiscount += applied
-                  discountedTimeKeys.add(key)
-                  c.var.logger.info(
-                    `Applied court discount of ${applied} for overlapping coach slot at ${key} (band=${courtInfo.band}). Total discount so far: ${totalDiscount}`,
-                  )
-                }
-              }
             }
             totalPrice += slot.price
             await tx.bookingCoach.create({
@@ -498,11 +453,17 @@ export const adminCheckoutHandler = factory.createHandlers(
         // Update totals on booking
         // (totalPrice already excludes court costs if covered by membership)
         const processingFee = 0
+        if (activeMembership) {
+          courtNormalPrice = 0
+          courtDiscountPrice = 0
+        }
         await tx.booking.update({
           where: { id: booking.id },
           data: {
             totalPrice,
             processingFee,
+            courtNormalPrice,
+            courtDiscountPrice,
           },
         })
 

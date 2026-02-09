@@ -249,6 +249,8 @@ export const checkoutHandler = factory.createHandlers(
         }
 
         let totalPrice = 0
+        let courtNormalPrice = 0
+        let courtDiscountPrice = 0
         const xenditItems: Array<{
           name: string
           quantity: number
@@ -290,20 +292,28 @@ export const checkoutHandler = factory.createHandlers(
                 'One or more court slots are already booked',
               )
             }
-            totalPrice += slot.price
+            const normalPrice = slot.price
+            const discountedPrice =
+              slot.discountPrice && slot.discountPrice > 0
+                ? slot.discountPrice
+                : slot.price
+            courtNormalPrice += normalPrice
+            courtDiscountPrice += discountedPrice
+            totalPrice += discountedPrice
 
             await tx.bookingDetail.create({
               data: {
                 bookingId: booking.id,
                 slotId: slot.id,
-                price: slot.price,
+                price: normalPrice,
+                discountPrice: discountedPrice,
                 courtId: slot.courtId || undefined,
               },
             })
             xenditItems.push({
               name: `Court booking ${dayjs(slot.startAt).format('YYYY-MM-DD HH:mm')} - ${dayjs(slot.endAt).format('HH:mm')}`,
               quantity: 1,
-              price: slot.price,
+              price: discountedPrice,
             })
           }
           // Update slots to unavailable
@@ -518,6 +528,8 @@ export const checkoutHandler = factory.createHandlers(
           data: {
             totalPrice,
             processingFee,
+            courtNormalPrice,
+            courtDiscountPrice,
           },
         })
 

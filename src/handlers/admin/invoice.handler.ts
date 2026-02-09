@@ -93,11 +93,25 @@ export const getInvoiceDetailAdminHandler = factory.createHandlers(
       where: { id },
       include: {
         user: {
-          select: { id: true, name: true, email: true, phone: true, image: true },
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            phone: true,
+            image: true,
+          },
         },
         payment: true,
         booking: {
-          include: {
+          select: {
+            id: true,
+            status: true,
+            totalPrice: true,
+            processingFee: true,
+            courtNormalPrice: true,
+            courtDiscountPrice: true,
+            createdAt: true,
+            updatedAt: true,
             user: {
               select: { id: true, name: true, email: true, phone: true },
             },
@@ -135,14 +149,18 @@ export const getInvoiceDetailAdminHandler = factory.createHandlers(
         },
         classBooking: {
           include: {
-            user: { select: { id: true, name: true, email: true, phone: true } },
+            user: {
+              select: { id: true, name: true, email: true, phone: true },
+            },
             class: true,
             details: true,
           },
         },
         membershipUser: {
           include: {
-            user: { select: { id: true, name: true, email: true, phone: true } },
+            user: {
+              select: { id: true, name: true, email: true, phone: true },
+            },
             membership: true,
           },
         },
@@ -175,47 +193,46 @@ export const getInvoiceDetailAdminHandler = factory.createHandlers(
       paidAt: invoice.paidAt,
       cancelledAt: invoice.cancelledAt,
       payment: invoice.payment,
-      booking:
-        invoice.booking &&
-        {
-          ...invoice.booking,
-          courts: invoice.booking.details.map((d) => ({
-            court: d.court,
-            slot: {
-              ...d.slot,
-              date: dayjs(d.slot.startAt).format('YYYY-MM-DD'),
-              startTime: dayjs(d.slot.startAt).format('HH:mm'),
-              endTime: dayjs(d.slot.endAt).format('HH:mm'),
-            },
-            price: d.price,
-          })),
-          coaches: invoice.booking.coaches.map((c) => ({
-            staff: c.slot.staff,
-            coachType: c.bookingCoachType,
-            slot: {
-              ...c.slot,
-              date: dayjs(c.slot.startAt).format('YYYY-MM-DD'),
-              startTime: dayjs(c.slot.startAt).format('HH:mm'),
-              endTime: dayjs(c.slot.endAt).format('HH:mm'),
-            },
-            price: c.price,
-          })),
-          ballboys: invoice.booking.ballboys.map((b) => ({
-            staff: b.slot.staff,
-            slot: {
-              ...b.slot,
-              date: dayjs(b.slot.startAt).format('YYYY-MM-DD'),
-              startTime: dayjs(b.slot.startAt).format('HH:mm'),
-              endTime: dayjs(b.slot.endAt).format('HH:mm'),
-            },
-            price: b.price,
-          })),
-          inventories: invoice.booking.inventories.map((i) => ({
-            inventory: i.inventory,
-            quantity: i.quantity,
-            price: i.price,
-          })),
-        },
+      booking: invoice.booking && {
+        ...invoice.booking,
+        courts: invoice.booking.details.map((d) => ({
+          court: d.court,
+          slot: {
+            ...d.slot,
+            date: dayjs(d.slot.startAt).format('YYYY-MM-DD'),
+            startTime: dayjs(d.slot.startAt).format('HH:mm'),
+            endTime: dayjs(d.slot.endAt).format('HH:mm'),
+          },
+          price: d.price,
+          discountPrice: d.discountPrice,
+        })),
+        coaches: invoice.booking.coaches.map((c) => ({
+          staff: c.slot.staff,
+          coachType: c.bookingCoachType,
+          slot: {
+            ...c.slot,
+            date: dayjs(c.slot.startAt).format('YYYY-MM-DD'),
+            startTime: dayjs(c.slot.startAt).format('HH:mm'),
+            endTime: dayjs(c.slot.endAt).format('HH:mm'),
+          },
+          price: c.price,
+        })),
+        ballboys: invoice.booking.ballboys.map((b) => ({
+          staff: b.slot.staff,
+          slot: {
+            ...b.slot,
+            date: dayjs(b.slot.startAt).format('YYYY-MM-DD'),
+            startTime: dayjs(b.slot.startAt).format('HH:mm'),
+            endTime: dayjs(b.slot.endAt).format('HH:mm'),
+          },
+          price: b.price,
+        })),
+        inventories: invoice.booking.inventories.map((i) => ({
+          inventory: i.inventory,
+          quantity: i.quantity,
+          price: i.price,
+        })),
+      },
       classBooking: invoice.classBooking,
       membership: invoice.membershipUser
         ? {
@@ -228,5 +245,3 @@ export const getInvoiceDetailAdminHandler = factory.createHandlers(
     return c.json(ok(response), status.OK)
   },
 )
-
-

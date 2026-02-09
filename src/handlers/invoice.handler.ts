@@ -41,12 +41,15 @@ export const getUserInvoicesHandler = factory.createHandlers(
               id: true,
               status: true,
               totalPrice: true,
+              courtNormalPrice: true,
+              courtDiscountPrice: true,
               createdAt: true,
               details: {
                 select: {
                   id: true,
                   court: { select: { id: true, name: true } },
                   price: true,
+                  discountPrice: true,
                   slot: true,
                   createdAt: true,
                 },
@@ -103,11 +106,14 @@ export const getInvoiceDetailHandler = factory.createHandlers(
               status: true,
               totalPrice: true,
               processingFee: true,
+              courtNormalPrice: true,
+              courtDiscountPrice: true,
               createdAt: true,
               details: {
                 select: {
                   id: true,
                   price: true,
+                  discountPrice: true,
                   slot: true,
                   court: { select: { id: true, name: true } },
                 },

@@ -9,7 +9,9 @@ type SetCourtPricingPayload = {
   toDate: string // YYYY-MM-DD
   days: number[] // 1=Mon, 2=Tue, ..., 7=Sun
   happyHourPrice: number
+  happyHourDiscountPrice?: number
   peakHourPrice: number
+  peakHourDiscountPrice?: number
   closedHours?: number[]
 }
 
@@ -43,7 +45,9 @@ export async function setCourtPricing({
   toDate,
   days,
   happyHourPrice,
+  happyHourDiscountPrice = 0,
   peakHourPrice,
+  peakHourDiscountPrice = 0,
   closedHours = [0, 1, 2, 3, 4, 5],
 }: SetCourtPricingPayload) {
   try {
@@ -104,11 +108,19 @@ export async function setCourtPricing({
       const peakHours = Array.from({ length: 9 }, (_, i) => i + 15) // 15–23
 
       const allHours = [
-        ...happyHours.map((h) => ({ hour: h, price: happyHourPrice })),
-        ...peakHours.map((h) => ({ hour: h, price: peakHourPrice })),
+        ...happyHours.map((h) => ({
+          hour: h,
+          price: happyHourPrice,
+          discountPrice: happyHourDiscountPrice,
+        })),
+        ...peakHours.map((h) => ({
+          hour: h,
+          price: peakHourPrice,
+          discountPrice: peakHourDiscountPrice,
+        })),
       ].filter((r) => !closedHours.includes(r.hour))
 
-      for (const { hour, price } of allHours) {
+      for (const { hour, price, discountPrice } of allHours) {
         const startAt = d.hour(hour).minute(0).second(0).toDate()
         const endAt = d
           .hour(hour + 1)
@@ -122,6 +134,7 @@ export async function setCourtPricing({
           startAt,
           endAt,
           price,
+          discountPrice,
           isAvailable: true,
         })
       }
@@ -130,11 +143,19 @@ export async function setCourtPricing({
         await db.$transaction(async (tx) => {
           await tx.courtCostSchedule.createMany({
             data: slots.map(
-              ({ courtId, startAt, endAt, price, isAvailable }) => ({
+              ({
                 courtId,
                 startAt,
                 endAt,
                 price,
+                discountPrice,
+                isAvailable,
+              }) => ({
+                courtId,
+                startAt,
+                endAt,
+                price,
+                discountPrice,
                 isAvailable,
               }),
             ),
@@ -162,7 +183,9 @@ type UpdateCourtPricingPayload = {
   courtId: string
   date: string // YYYY-MM-DD (local)
   happyHourPrice: number // 06–15
+  happyHourDiscountPrice?: number
   peakHourPrice: number // 15–24
+  peakHourDiscountPrice?: number
   closedHours?: number[] // 0..23 (default: 0–5 closed)
 }
 
@@ -170,7 +193,9 @@ export async function updateCourtPricing({
   courtId,
   date,
   happyHourPrice,
+  happyHourDiscountPrice = 0,
   peakHourPrice,
+  peakHourDiscountPrice = 0,
   closedHours = [0, 1, 2, 3, 4, 5],
 }: UpdateCourtPricingPayload) {
   try {
@@ -179,10 +204,12 @@ export async function updateCourtPricing({
       const happy = hoursForBand(HAPPY_START, HAPPY_END).map((h) => ({
         h,
         price: happyHourPrice,
+        discountPrice: happyHourDiscountPrice,
       }))
       const peak = hoursForBand(PEAK_START, PEAK_END).map((h) => ({
         h,
         price: peakHourPrice,
+        discountPrice: peakHourDiscountPrice,
       }))
 
       const closed = new Set<number>(closedHours)
@@ -205,6 +232,7 @@ export async function updateCourtPricing({
             startAt: true,
             endAt: true,
             price: true,
+            discountPrice: true,
             isAvailable: true,
             bookingDetails: {
               where: {
@@ -228,22 +256,33 @@ export async function updateCourtPricing({
         }
 
         // 4) Decide create/update/keep/delete
-        const toCreate: Array<{ startAt: Date; endAt: Date; price: number }> =
-          []
-        const toUpdate: Array<{ id: string; price: number }> = []
+        const toCreate: Array<{
+          startAt: Date
+          endAt: Date
+          price: number
+          discountPrice: number
+        }> = []
+        const toUpdate: Array<{
+          id: string
+          price: number
+          discountPrice: number
+        }> = []
         const keepIds = new Set<string>()
 
-        for (const { h, price } of target) {
+        for (const { h, price, discountPrice } of target) {
           const found = existByHour.get(h)
           if (!found) {
             const { startAt, endAt } = toUtcRange(date, h)
-            toCreate.push({ startAt, endAt, price })
+            toCreate.push({ startAt, endAt, price, discountPrice })
           } else {
             keepIds.add(found.id)
             // Only update if unbooked AND price differs
             const booked = found.bookingDetails.length > 0
-            if (!booked && found.price !== price) {
-              toUpdate.push({ id: found.id, price })
+            if (
+              !booked &&
+              (found.price !== price || found.discountPrice !== discountPrice)
+            ) {
+              toUpdate.push({ id: found.id, price, discountPrice })
             }
           }
         }
@@ -256,7 +295,7 @@ export async function updateCourtPricing({
         // 5) Reflect the same in CourtCostSchedule
         const existingCCS = await tx.courtCostSchedule.findMany({
           where: { courtId, startAt: { gte: dayStart, lte: dayEnd } },
-          select: { id: true, startAt: true, price: true },
+          select: { id: true, startAt: true, price: true, discountPrice: true },
         })
         const ccsByHour = new Map<number, (typeof existingCCS)[number]>()
         for (const r of existingCCS) {
@@ -264,19 +303,29 @@ export async function updateCourtPricing({
           ccsByHour.set(h, r)
         }
 
-        const ccsCreate: Array<{ startAt: Date; endAt: Date; price: number }> =
-          []
-        const ccsUpdate: Array<{ id: string; price: number }> = []
+        const ccsCreate: Array<{
+          startAt: Date
+          endAt: Date
+          price: number
+          discountPrice: number
+        }> = []
+        const ccsUpdate: Array<{
+          id: string
+          price: number
+          discountPrice: number
+        }> = []
         const ccsKeep = new Set<string>()
 
-        for (const { h, price } of target) {
+        for (const { h, price, discountPrice } of target) {
           const row = ccsByHour.get(h)
           if (!row) {
             const { startAt, endAt } = toUtcRange(date, h)
-            ccsCreate.push({ startAt, endAt, price })
+            ccsCreate.push({ startAt, endAt, price, discountPrice })
           } else {
             ccsKeep.add(row.id)
-            if (row.price !== price) ccsUpdate.push({ id: row.id, price })
+            if (row.price !== price || row.discountPrice !== discountPrice) {
+              ccsUpdate.push({ id: row.id, price, discountPrice })
+            }
           }
         }
         const ccsDeleteIds = existingCCS
@@ -292,7 +341,7 @@ export async function updateCourtPricing({
           for (const u of toUpdate) {
             await tx.slot.update({
               where: { id: u.id },
-              data: { price: u.price },
+              data: { price: u.price, discountPrice: u.discountPrice },
             })
           }
         }
@@ -304,6 +353,7 @@ export async function updateCourtPricing({
               startAt: x.startAt,
               endAt: x.endAt,
               price: x.price,
+              discountPrice: x.discountPrice,
               isAvailable: true,
             })),
             skipDuplicates: true,
@@ -319,7 +369,7 @@ export async function updateCourtPricing({
           for (const u of ccsUpdate) {
             await tx.courtCostSchedule.update({
               where: { id: u.id },
-              data: { price: u.price },
+              data: { price: u.price, discountPrice: u.discountPrice },
             })
           }
         }
@@ -330,6 +380,7 @@ export async function updateCourtPricing({
               startAt: x.startAt,
               endAt: x.endAt,
               price: x.price,
+              discountPrice: x.discountPrice,
               isAvailable: true,
             })),
             skipDuplicates: true,
@@ -352,6 +403,7 @@ type OverrideSingleCourtHourPricePayload = {
   date: string
   hour: number
   price: number
+  discountPrice?: number
 }
 
 export async function overrideSingleCourtHourPrice({
@@ -359,6 +411,7 @@ export async function overrideSingleCourtHourPrice({
   date,
   hour,
   price,
+  discountPrice = 0,
 }: OverrideSingleCourtHourPricePayload) {
   try {
     const { startAt, endAt } = toUtcRange(date, hour)
@@ -384,7 +437,10 @@ export async function overrideSingleCourtHourPrice({
 
       if (slot) {
         if (slot.bookingDetails.length > 0) return // booked: do nothing
-        await tx.slot.update({ where: { id: slot.id }, data: { price } })
+        await tx.slot.update({
+          where: { id: slot.id },
+          data: { price, discountPrice },
+        })
       } else {
         await tx.slot.create({
           data: {
@@ -393,6 +449,7 @@ export async function overrideSingleCourtHourPrice({
             startAt,
             endAt,
             price,
+            discountPrice,
             isAvailable: true,
           },
         })
@@ -404,11 +461,18 @@ export async function overrideSingleCourtHourPrice({
       if (ccs) {
         await tx.courtCostSchedule.update({
           where: { id: ccs.id },
-          data: { price },
+          data: { price, discountPrice },
         })
       } else {
         await tx.courtCostSchedule.create({
-          data: { courtId, startAt, endAt, price, isAvailable: true },
+          data: {
+            courtId,
+            startAt,
+            endAt,
+            price,
+            discountPrice,
+            isAvailable: true,
+          },
         })
       }
     })
@@ -584,19 +648,21 @@ export async function updateStaffPricing(p: UpdateStaffPricingPayload) {
 
       // Also check for ALL booking coaches/ballboys (including cancelled) to prevent FK constraint violations
       const allSlotIds = existing.map((s) => s.id)
-      const allBookingCoaches = p.type === SlotType.COACH
-        ? await tx.bookingCoach.findMany({
-            where: { slotId: { in: allSlotIds } },
-            select: { slotId: true },
-          })
-        : []
-      const allBookingBallboys = p.type === SlotType.BALLBOY
-        ? await tx.bookingBallboy.findMany({
-            where: { slotId: { in: allSlotIds } },
-            select: { slotId: true },
-          })
-        : []
-      
+      const allBookingCoaches =
+        p.type === SlotType.COACH
+          ? await tx.bookingCoach.findMany({
+              where: { slotId: { in: allSlotIds } },
+              select: { slotId: true },
+            })
+          : []
+      const allBookingBallboys =
+        p.type === SlotType.BALLBOY
+          ? await tx.bookingBallboy.findMany({
+              where: { slotId: { in: allSlotIds } },
+              select: { slotId: true },
+            })
+          : []
+
       // Create a map of slot IDs that have ANY bookings (regardless of status)
       const slotsWithAnyBookings = new Set<string>()
       for (const bc of allBookingCoaches) {
@@ -645,10 +711,10 @@ export async function updateStaffPricing(p: UpdateStaffPricingPayload) {
             p.type === SlotType.COACH
               ? e.bookingCoaches.length
               : e.bookingBallboys.length
-          
+
           // Also check if slot has ANY bookings at all (including cancelled) to prevent FK violations
           const hasAnyBookings = slotsWithAnyBookings.has(e.id)
-          
+
           // Only delete if no active bookings AND no bookings at all exist
           return activeBookedCount === 0 && !hasAnyBookings
         })

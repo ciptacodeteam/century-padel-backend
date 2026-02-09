@@ -213,6 +213,8 @@ export const getCourtSlotsHandler = factory.createHandlers(
       // Format datetime fields
       const formattedSlots = slots.map((slot) => ({
         ...slot,
+        normalPrice: slot.price,
+        discountPrice: slot.discountPrice,
         startAt: dayjs(slot.startAt).format(DATETIME_FORMAT),
         endAt: dayjs(slot.endAt).format(DATETIME_FORMAT),
         createdAt: dayjs(slot.createdAt).format(DATETIME_FORMAT),
@@ -294,6 +296,8 @@ export const getAvailableCourtSlotsHandler = factory.createHandlers(
 
       const formattedSlots = slots.map((slot) => ({
         ...slot,
+        normalPrice: slot.price,
+        discountPrice: slot.discountPrice,
         startAt: dayjs(slot.startAt).format(DATETIME_FORMAT),
         endAt: dayjs(slot.endAt).format(DATETIME_FORMAT),
         createdAt: dayjs(slot.createdAt).format(DATETIME_FORMAT),

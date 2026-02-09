@@ -304,6 +304,8 @@ export const getAvailableCourtSlotsHandler = factory.createHandlers(
 
       const formattedSlots = slots.map((slot) => ({
         ...slot,
+        normalPrice: slot.price,
+        discountPrice: slot.discountPrice,
         startAt: dayjs(slot.startAt).format(DATETIME_FORMAT),
         endAt: dayjs(slot.endAt).format(DATETIME_FORMAT),
         createdAt: dayjs(slot.createdAt).format(DATETIME_FORMAT),
@@ -334,6 +336,7 @@ export const getCostHandler = factory.createHandlers(
               'startAt', s."startAt",
               'endAt', s."endAt",
               'price', s.price,
+              'discountPrice', s."discountPrice",
               'isAvailable', s."isAvailable",
               'createdAt', s."createdAt",
               'updatedAt', s."updatedAt"
@@ -363,7 +366,9 @@ export const updateCourtSlotAvailabilityHandler = factory.createHandlers(
   async (c) => {
     try {
       const { id } = c.req.valid('param') as IdSchema
-      const { isAvailable } = c.req.valid('json') as UpdateCourtSlotAvailabilitySchema
+      const { isAvailable } = c.req.valid(
+        'json',
+      ) as UpdateCourtSlotAvailabilitySchema
 
       // Check if slot exists and is a court slot
       const slot = await db.slot.findUnique({
@@ -427,7 +432,9 @@ export const updateCourtSlotAvailabilityHandler = factory.createHandlers(
         status.OK,
       )
     } catch (error) {
-      c.var.logger.fatal(`Error in updateCourtSlotAvailabilityHandler: ${error}`)
+      c.var.logger.fatal(
+        `Error in updateCourtSlotAvailabilityHandler: ${error}`,
+      )
       throw error
     }
   },

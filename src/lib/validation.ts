@@ -190,7 +190,9 @@ export const createCourtCostSchema = z.object({
   }),
   days: z.array(z.number().min(0).max(7)),
   happyHourPrice: z.number().min(0),
+  happyHourDiscountPrice: z.number().min(0).optional(),
   peakHourPrice: z.number().min(0),
+  peakHourDiscountPrice: z.number().min(0).optional(),
   closedHours: z.array(z.number()).optional(),
 })
 
@@ -213,6 +215,7 @@ export const overrideSingleCourtCostSchema = z.object({
   hour: z.number().min(0),
   courtId: z.string(),
   price: z.number().min(0),
+  discountPrice: z.number().min(0).optional(),
 })
 
 export type OverrideSingleCourtCostSchema = z.infer<
