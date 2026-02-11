@@ -688,14 +688,31 @@ export const verifyPasswordSchema = z.object({
 
 export type VerifyPasswordSchema = z.infer<typeof verifyPasswordSchema>
 // Credit card schemas
+// Save card using Cards Session JS token (recommended)
 export const saveCreditCardSchema = z.object({
+  // Cards Session JS flow (recommended)
+  cardToken: z.string().optional(), // payment_method_id from Cards Session JS
+  cardBrand: z.string().optional(), // e.g., "VISA", "MASTERCARD"
+  last4: z
+    .string()
+    .regex(/^\d{4}$/, 'Card last4 must be 4 digits')
+    .optional(),
+  expMonth: z.number().int().min(1).max(12).optional(),
+  expYear: z.number().int().min(2024).max(2099).optional(),
+
+  // Legacy tokenization flow (fallback)
   cardNumber: z
     .string()
-    .regex(/^\d{13,19}$/, 'Card number must be 13-19 digits'),
-  cardholderName: z.string().min(1, 'Cardholder name is required'),
-  expiryMonth: z.number().int().min(1).max(12),
-  expiryYear: z.number().int().min(2024).max(2099),
-  cvv: z.string().regex(/^\d{3,4}$/, 'CVV must be 3 or 4 digits'),
+    .regex(/^\d{13,19}$/, 'Card number must be 13-19 digits')
+    .optional(),
+  cardholderName: z.string().min(1, 'Cardholder name is required').optional(),
+  expiryMonth: z.number().int().min(1).max(12).optional(),
+  expiryYear: z.number().int().min(2024).max(2099).optional(),
+  cvv: z
+    .string()
+    .regex(/^\d{3,4}$/, 'CVV must be 3 or 4 digits')
+    .optional(),
+
   isDefault: z.boolean().optional().default(false),
 })
 
@@ -707,19 +724,21 @@ export const updateCreditCardSchema = z.object({
 
 export type UpdateCreditCardSchema = z.infer<typeof updateCreditCardSchema>
 
+// Credit card payment schemas
+// Using Payment Sessions + Cards Session JS (correct flow)
 export const creditCardPaymentSchema = z.object({
+  // --- Payment Session Flow (correct) ---
+  // Backend creates payment session, frontend uses card_session.js to collect card
+  // No card data is sent to backend anymore!
+  saveCard: z.boolean().optional(), // Whether to save card for future use (PAY_AND_SAVE session type)
+
+  // --- Legacy: Saved card flow (kept for backward compatibility) ---
+  // TODO: Will be deprecated once frontend implements new save card flow via webhooks
   savedCardId: z.string().optional(), // Use existing saved card
   cvv: z
     .string()
     .regex(/^\d{3,4}$/, 'CVV is required for saved cards')
     .optional(),
-  // Or provide new card details
-  cardNumber: z.string().optional(),
-  cardholderName: z.string().optional(),
-  expiryMonth: z.number().optional(),
-  expiryYear: z.number().optional(),
-  newCardCvv: z.string().optional(),
-  saveCard: z.boolean().optional(),
 })
 
 export type CreditCardPaymentSchema = z.infer<typeof creditCardPaymentSchema>

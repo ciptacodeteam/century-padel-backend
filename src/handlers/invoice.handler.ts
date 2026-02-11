@@ -11,6 +11,8 @@ import { z } from 'zod'
 import { PaymentStatus, BookingStatus } from '@prisma/client'
 import xenditService from '@/services/xendit.service'
 import { getFileUrl } from '@/services/upload.service'
+import { BadRequestException, NotFoundException } from '@/exceptions'
+import dayjs from 'dayjs'
 
 // GET /invoices
 export const getUserInvoicesHandler = factory.createHandlers(
@@ -468,6 +470,237 @@ export const expireInvoiceHandler = factory.createHandlers(
       )
     } catch (error) {
       c.var.logger.fatal(`Error in expireInvoiceHandler: ${error}`)
+      throw error
+    }
+  },
+)
+
+// Minimum hours before booking starts to allow cancellation
+const MIN_CANCELLATION_HOURS = 24
+
+// Schema for cancel booking request (user)
+const cancelBookingSchema = z.object({
+  reason: z.string().min(1, 'Cancellation reason is required').optional(),
+})
+
+type CancelBookingSchema = z.infer<typeof cancelBookingSchema>
+
+/**
+ * Cancel User Booking Handler
+ * POST /invoices/:id/cancel-booking
+ *
+ * Allows users to cancel their own booking with the following validations:
+ * 1. User must own the booking
+ * 2. Booking must not be already cancelled or completed
+ * 3. Must cancel at least 24 hours before the booking starts
+ * 4. Refunds payment if already paid
+ * 5. Releases all slots (court, coach, ballboy)
+ * 6. Restores inventory quantities
+ */
+export const cancelUserBookingHandler = factory.createHandlers(
+  requireAuth,
+  zValidator('param', z.object({ id: z.string().min(1) }), validateHook),
+  zValidator('json', cancelBookingSchema, validateHook),
+  async (c) => {
+    try {
+      const user = c.get('user')
+      if (!user || !user.id) {
+        throw new Error('Unauthorized')
+      }
+
+      const { id: invoiceNumber } = c.req.valid('param') as { id: string }
+      const { reason } = c.req.valid('json') as CancelBookingSchema
+
+      const result = await db.$transaction(async (tx) => {
+        // 1. Fetch invoice with all related data
+        const invoice = await tx.invoice.findFirst({
+          where: {
+            number: invoiceNumber,
+            userId: user.id, // Ensure user owns this invoice
+          },
+          include: {
+            booking: {
+              include: {
+                details: {
+                  include: {
+                    slot: true,
+                    court: true,
+                  },
+                },
+                coaches: {
+                  include: {
+                    slot: true,
+                  },
+                },
+                ballboys: {
+                  include: {
+                    slot: true,
+                  },
+                },
+                inventories: {
+                  include: {
+                    inventory: true,
+                  },
+                },
+              },
+            },
+            payment: true,
+          },
+        })
+
+        if (!invoice) {
+          throw new NotFoundException('Invoice not found')
+        }
+
+        if (!invoice.booking) {
+          throw new BadRequestException('No booking found for this invoice')
+        }
+
+        const booking = invoice.booking
+
+        // 2. Check if booking can be cancelled
+        if (booking.status === BookingStatus.CANCELLED) {
+          throw new BadRequestException('Booking is already cancelled')
+        }
+
+        if (
+          booking.status === BookingStatus.CONFIRMED ||
+          booking.status === BookingStatus.HOLD
+        ) {
+          // Check minimal cancellation time (24 hours before booking starts)
+          const firstSlot = booking.details[0]?.slot
+          if (firstSlot) {
+            const bookingStartTime = dayjs(firstSlot.startAt)
+            const now = dayjs()
+            const hoursUntilBooking = bookingStartTime.diff(now, 'hour')
+
+            if (hoursUntilBooking < MIN_CANCELLATION_HOURS) {
+              throw new BadRequestException(
+                `Cannot cancel booking less than ${MIN_CANCELLATION_HOURS} hours before the scheduled time. Please contact support for assistance.`,
+              )
+            }
+          }
+        }
+
+        // Track counts for response
+        const releasedCounts = {
+          courtSlots: booking.details.length,
+          coachSlots: booking.coaches.length,
+          ballboySlots: booking.ballboys.length,
+          inventories: booking.inventories.length,
+        }
+
+        // 3. Update booking status to CANCELLED
+        const updatedBooking = await tx.booking.update({
+          where: { id: booking.id },
+          data: {
+            status: BookingStatus.CANCELLED,
+            cancelledAt: new Date(),
+            cancellationReason: reason || 'Cancelled by user',
+          },
+        })
+
+        // 4. Release all court slots (make them available again)
+        for (const detail of booking.details) {
+          await tx.slot.update({
+            where: { id: detail.slotId },
+            data: {
+              isAvailable: true,
+            },
+          })
+        }
+
+        // 5. Release all coach slots
+        for (const coach of booking.coaches) {
+          await tx.slot.update({
+            where: { id: coach.slotId },
+            data: {
+              isAvailable: true,
+            },
+          })
+        }
+
+        // 6. Release all ballboy slots
+        for (const ballboy of booking.ballboys) {
+          await tx.slot.update({
+            where: { id: ballboy.slotId },
+            data: {
+              isAvailable: true,
+            },
+          })
+        }
+
+        // 7. Restore inventory quantities
+        for (const bookingInventory of booking.inventories) {
+          await tx.inventory.update({
+            where: { id: bookingInventory.inventoryId },
+            data: {
+              quantity: {
+                increment: bookingInventory.quantity,
+              },
+            },
+          })
+        }
+
+        // 8. Update invoice status to CANCELLED
+        await tx.invoice.update({
+          where: { id: invoice.id },
+          data: {
+            status: PaymentStatus.CANCELLED,
+            cancelledAt: new Date(),
+          },
+        })
+
+        // 9. Handle payment refund
+        let refundInfo: unknown = null
+        if (invoice.payment && invoice.payment.status === PaymentStatus.PAID) {
+          // Mark payment as refund pending
+          await tx.payment.update({
+            where: { id: invoice.payment.id },
+            data: {
+              status: PaymentStatus.CANCELLED,
+              cancelledAt: new Date(),
+            },
+          })
+
+          refundInfo = {
+            refundPending: true,
+            amount: invoice.total,
+            message: 'Refund will be processed within 3-5 business days',
+          }
+
+          c.var.logger.info(
+            `Refund pending for payment ${invoice.payment.id}, amount: ${invoice.total}`,
+          )
+        }
+
+        return { updatedBooking, releasedCounts, refundInfo }
+      })
+
+      c.var.logger.info(
+        `User ${user.id} cancelled booking ${result.updatedBooking.id} via invoice ${invoiceNumber}`,
+      )
+
+      return c.json(
+        ok(
+          {
+            bookingId: result.updatedBooking.id,
+            invoiceNumber: invoiceNumber,
+            status: BookingStatus.CANCELLED,
+            releasedSlots: {
+              courtSlots: result.releasedCounts.courtSlots,
+              coachSlots: result.releasedCounts.coachSlots,
+              ballboySlots: result.releasedCounts.ballboySlots,
+            },
+            restoredInventories: result.releasedCounts.inventories,
+            refund: result.refundInfo,
+          },
+          'Booking cancelled successfully. All resources have been released.',
+        ),
+        status.OK,
+      )
+    } catch (error) {
+      c.var.logger.fatal(`Error in cancelUserBookingHandler: ${error}`)
       throw error
     }
   },

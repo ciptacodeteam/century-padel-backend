@@ -110,7 +110,7 @@ export const getCreditCardHandler = factory.createHandlers(
 
 /**
  * Save a new credit card
- * Tokenizes the card via Xendit and stores metadata locally
+ * Supports Cards Session JS token (recommended) or legacy tokenization
  */
 export const saveCreditCardHandler = factory.createHandlers(
   requireAuth,
@@ -126,27 +126,61 @@ export const saveCreditCardHandler = factory.createHandlers(
       }
 
       const validated = c.req.valid('json') as SaveCreditCardSchema
-      const {
-        cardNumber,
-        cardholderName,
-        expiryMonth,
-        expiryYear,
-        cvv,
-        isDefault,
-      } = validated
+      const { isDefault } = validated
 
-      // Tokenize card via Xendit
-      const tokenResponse = await xenditService.tokenizeCreditCard({
-        cardNumber,
-        cardholderName,
-        expiryMonth,
-        expiryYear,
-        cvv,
-      })
+      let cardToken: string
+      let cardBrand: string
+      let last4: string
+      let expMonth: number
+      let expYear: number
 
-      if (!tokenResponse || !tokenResponse.id) {
+      // Priority 1: Cards Session JS token (recommended)
+      if (validated.cardToken) {
+        if (
+          !validated.cardBrand ||
+          !validated.last4 ||
+          !validated.expMonth ||
+          !validated.expYear
+        ) {
+          throw new BadRequestException(
+            'When using cardToken, you must provide cardBrand, last4, expMonth, and expYear',
+          )
+        }
+
+        cardToken = validated.cardToken
+        cardBrand = validated.cardBrand
+        last4 = validated.last4
+        expMonth = validated.expMonth
+        expYear = validated.expYear
+      }
+      // Priority 2: Legacy tokenization
+      else if (
+        validated.cardNumber &&
+        validated.cardholderName &&
+        validated.cvv
+      ) {
+        const tokenResponse = await xenditService.tokenizeCreditCard({
+          cardNumber: validated.cardNumber,
+          cardholderName: validated.cardholderName,
+          expiryMonth: validated.expiryMonth!,
+          expiryYear: validated.expiryYear!,
+          cvv: validated.cvv,
+        })
+
+        if (!tokenResponse || !tokenResponse.id) {
+          throw new BadRequestException(
+            'Failed to tokenize card. Please check your card details and try again.',
+          )
+        }
+
+        cardToken = tokenResponse.id
+        cardBrand = tokenResponse.card_brand || 'UNKNOWN'
+        last4 = tokenResponse.card_number_last_four
+        expMonth = tokenResponse.expiry_month
+        expYear = tokenResponse.expiry_year
+      } else {
         throw new BadRequestException(
-          'Failed to tokenize card. Please check your card details and try again.',
+          'Provide either cardToken with metadata, or cardNumber with cardholderName and cvv',
         )
       }
 
@@ -158,15 +192,42 @@ export const saveCreditCardHandler = factory.createHandlers(
         })
       }
 
+      // Check if card already saved (avoid duplicate)
+      const existingCard = await db.userCreditCard.findUnique({
+        where: { cardToken },
+      })
+
+      if (existingCard) {
+        if (existingCard.userId !== user.id) {
+          throw new BadRequestException(
+            'Card already registered to another user',
+          )
+        }
+        return c.json(
+          ok(
+            {
+              id: existingCard.id,
+              cardBrand: existingCard.cardBrand,
+              last4: existingCard.last4,
+              expMonth: existingCard.expMonth,
+              expYear: existingCard.expYear,
+              isDefault: existingCard.isDefault,
+              createdAt: existingCard.createdAt,
+            },
+            'Card already saved',
+          ),
+        )
+      }
+
       // Save card metadata to database
       const card = await db.userCreditCard.create({
         data: {
           userId: user.id,
-          cardToken: tokenResponse.id,
-          cardBrand: tokenResponse.card_brand || 'UNKNOWN',
-          last4: tokenResponse.card_number_last_four,
-          expMonth: tokenResponse.expiry_month,
-          expYear: tokenResponse.expiry_year,
+          cardToken,
+          cardBrand,
+          last4,
+          expMonth,
+          expYear,
           isDefault: isDefault || false,
         },
         select: {

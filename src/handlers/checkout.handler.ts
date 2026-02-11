@@ -13,6 +13,7 @@ import { zValidator } from '@hono/zod-validator'
 import { BookingStatus, PaymentStatus, SlotType } from '@prisma/client'
 import dayjs from 'dayjs'
 import status from 'http-status'
+import { z } from 'zod'
 
 // const PROCESSING_FEE_PERCENT = 0.02 // 2% processing fee
 
@@ -29,7 +30,18 @@ function cleanSlotIds(slotIds: string[] | undefined): string[] | undefined {
 }
 
 /**
- * Handle credit card payment with 3DS authentication
+ * Handle credit card payment with Payment Sessions (Correct Flow)
+ *
+ * Flow:
+ * 1. Backend creates payment session → returns payment_session_id
+ * 2. Frontend uses payment_session_id with card_session.js to collect card data
+ * 3. card_session.js automatically creates payment request → returns payment_request_id + action_url
+ * 4. Frontend redirects user to action_url for 3DS authentication
+ * 5. After 3DS, bank redirects to success/failure URL
+ * 6. Backend receives webhook (payment.capture) for final confirmation
+ *
+ * Note: Backend does NOT handle card tokens or details anymore!
+ * Card saving is handled via webhook after successful payment.
  */
 async function handleCreditCardPayment(
   tx: any,
@@ -49,106 +61,80 @@ async function handleCreditCardPayment(
     return null
   }
 
-  // Get user details for billing
+  // Get user details for customer object (required by Xendit)
   const userDetails = await tx.user.findUnique({
     where: { id: userId },
     select: { name: true, email: true, phone: true },
   })
 
+  if (!userDetails) {
+    throw new BadRequestException('User not found')
+  }
+
   try {
-    // Determine whether to use saved card or new card
-    let cardTokenId: string | null = null
-    let cardCvv: string | null = null
-    let cardDetails: {
-      cardNumber: string
-      cvv: string
-      expiryMonth: number
-      expiryYear: number
-      cardholderFirstName?: string
-      cardholderLastName?: string
-      cardholderEmail?: string
-      cardholderPhoneNumber?: string
-    } | null = null
-
+    // TODO: Handle saved card flow via payment_token_id
+    // For now, savedCardId is not supported - will be implemented after webhook integration
     if (cardPaymentData?.savedCardId) {
-      // Use existing saved card
-      const savedCard = await tx.userCreditCard.findUnique({
-        where: { id: cardPaymentData.savedCardId },
-      })
-
-      if (!savedCard || savedCard.userId !== userId) {
-        throw new BadRequestException('Invalid credit card selected')
-      }
-
-      cardTokenId = savedCard.xenditTokenId
-      cardCvv = cardPaymentData.cvv // CVV still required for security
-    } else if (cardPaymentData?.cardNumber) {
-      const fullName = String(cardPaymentData.cardholderName || '').trim()
-      const nameParts = fullName.split(/\s+/).filter(Boolean)
-      const cardholderFirstName = nameParts[0] || undefined
-      const cardholderLastName =
-        nameParts.length > 1 ? nameParts.slice(1).join(' ') : undefined
-
-      cardDetails = {
-        cardNumber: cardPaymentData.cardNumber,
-        cvv: cardPaymentData.newCardCvv,
-        expiryMonth: cardPaymentData.expiryMonth,
-        expiryYear: cardPaymentData.expiryYear,
-        cardholderFirstName,
-        cardholderLastName,
-        cardholderEmail: userDetails?.email || undefined,
-        cardholderPhoneNumber: userDetails?.phone || undefined,
-      }
-
-      if (cardPaymentData.saveCard) {
-        throw new BadRequestException(
-          'Saving cards is temporarily unavailable. Please proceed without saving the card.',
-        )
-      }
-    } else {
       throw new BadRequestException(
-        'Credit card or saved card ID is required for this payment method',
+        'Saved card flow is not yet implemented. Please use a new card for now.',
       )
     }
 
-    if (!cardDetails) {
-      throw new BadRequestException(
-        'Saved card payments are temporarily unavailable. Please use a new card.',
-      )
+    // Determine session type based on saveCard flag
+    const shouldSaveCard = Boolean(cardPaymentData?.saveCard)
+    const sessionType: 'PAY' | 'PAY_AND_SAVE' = shouldSaveCard
+      ? 'PAY_AND_SAVE'
+      : 'PAY'
+
+    // Parse customer name
+    const fullName = String(userDetails.name || 'Customer').trim()
+    const nameParts = fullName.split(/\s+/).filter(Boolean)
+    const givenNames = nameParts[0] || 'Customer'
+    const surname =
+      nameParts.length > 1 ? nameParts.slice(1).join(' ') : undefined
+
+    // Generate unique customer reference ID (to handle multiple transactions by same user)
+    const customerReferenceId = `${userId}-${Date.now()}`
+
+    // Create payment session (Xendit will handle card collection via card_session.js)
+    const paymentSession = await xenditService.createPaymentSession({
+      sessionType,
+      mode: 'CARDS_SESSION_JS',
+      referenceId: invoiceNumber,
+      amount: finalTotal,
+      currency: 'IDR',
+      country: 'ID',
+      description: `Payment for booking ${bookingId}`,
+      metadata: {
+        bookingId,
+        userId,
+        invoiceNumber,
+        paymentType: 'cards_3ds',
+      },
+      customer: {
+        reference_id: customerReferenceId,
+        type: 'INDIVIDUAL',
+        individual_detail: {
+          given_names: givenNames,
+          ...(surname && { surname }),
+        },
+        email: userDetails.email || undefined,
+        mobileNumber: userDetails.phone || undefined,
+      },
+      cardsSessionJs: {
+        successReturnUrl: `${env.frontEndUrl}/invoice/${invoiceNumber}`,
+        failureReturnUrl: `${env.frontEndUrl}/payment/failed?invoice_id=${invoiceNumber}`,
+      },
+    })
+
+    if (!paymentSession) {
+      throw new BadRequestException('Unable to create payment session')
     }
 
-    // Create payment request with credit card and 3DS
-    const xenditPaymentRequest =
-      await xenditService.createPaymentRequestWithCard({
-        referenceId: invoiceNumber,
-        requestAmount: finalTotal,
-        country: 'ID',
-        currency: 'IDR',
-        captureMethod: 'AUTOMATIC',
-        channelCode: 'CARDS',
-        cardDetails,
-        channelProperties: {
-          success_return_url: `${env.frontEndUrl}/payment/success?booking_id=${bookingId}`,
-          failure_return_url: `${env.frontEndUrl}/payment/failed?booking_id=${bookingId}`,
-        },
-        billingDetails: {
-          billingName: userDetails?.name,
-          billingEmail: userDetails?.email,
-          billingPhone: userDetails?.phone,
-        },
-        description: `Payment for booking ${bookingId}`,
-        metadata: {
-          bookingId,
-          userId,
-          invoiceNumber,
-          paymentType: 'cards_3ds',
-          savedCardTokenId: cardTokenId,
-        },
-      })
-
-    return xenditPaymentRequest
+    // Return payment session - frontend will use payment_session_id with card_session.js
+    return paymentSession
   } catch (error) {
-    console.error('Credit card payment error:', error)
+    console.error('Credit card payment session error:', error)
     throw error
   }
 }
@@ -718,20 +704,38 @@ export const checkoutHandler = factory.createHandlers(
             fees: paymentMethod.fees,
             status: PaymentStatus.PENDING,
             dueDate: dayjs().add(15, 'minutes').toDate(),
-            externalRef: xenditInvoiceResponse?.id || null,
-            // Store as JSON object to Prisma Json column (not string)
+            externalRef:
+              xenditInvoiceResponse?.id ||
+              xenditInvoiceResponse?.payment_session_id ||
+              null,
+            // Store payment session or payment request metadata
             meta: xenditInvoiceResponse
-              ? {
-                  payment_request_id: xenditInvoiceResponse.payment_request_id,
-                  reference_id: xenditInvoiceResponse.reference_id,
-                  status: xenditInvoiceResponse.status,
-                  channel_code: xenditInvoiceResponse.channel_code,
-                  channel_properties: xenditInvoiceResponse.channel_properties,
-                  actions: xenditInvoiceResponse.actions,
-                  request_amount: xenditInvoiceResponse.request_amount,
-                  currency: xenditInvoiceResponse.currency,
-                  created: xenditInvoiceResponse.created,
-                }
+              ? // For CARDS: Store payment session metadata
+                xenditInvoiceResponse.payment_session_id
+                ? {
+                    payment_session_id:
+                      xenditInvoiceResponse.payment_session_id,
+                    reference_id: xenditInvoiceResponse.reference_id,
+                    session_type: xenditInvoiceResponse.session_type,
+                    status: xenditInvoiceResponse.status,
+                    amount: xenditInvoiceResponse.amount,
+                    currency: xenditInvoiceResponse.currency,
+                    created: xenditInvoiceResponse.created,
+                  }
+                : // For other channels: Store payment request metadata
+                  {
+                    payment_request_id:
+                      xenditInvoiceResponse.payment_request_id,
+                    reference_id: xenditInvoiceResponse.reference_id,
+                    status: xenditInvoiceResponse.status,
+                    channel_code: xenditInvoiceResponse.channel_code,
+                    channel_properties:
+                      xenditInvoiceResponse.channel_properties,
+                    actions: xenditInvoiceResponse.actions,
+                    request_amount: xenditInvoiceResponse.request_amount,
+                    currency: xenditInvoiceResponse.currency,
+                    created: xenditInvoiceResponse.created,
+                  }
               : undefined,
           },
         })
@@ -772,11 +776,17 @@ export const checkoutHandler = factory.createHandlers(
         }
       })
 
-      // Extract payment actions for frontend
+      // Extract payment session or payment actions for frontend
+      let paymentSessionId: string | null = null
       let paymentActions: any = null
       let redirectUrl: string | null = null
 
-      if (
+      // For credit cards: return payment_session_id to use with card_session.js
+      if (result.xenditPaymentRequest?.payment_session_id) {
+        paymentSessionId = result.xenditPaymentRequest.payment_session_id
+      }
+      // For other payment methods: return payment actions (VA, QRIS, etc.)
+      else if (
         result.xenditPaymentRequest?.actions &&
         result.xenditPaymentRequest.actions.length > 0
       ) {
@@ -806,7 +816,10 @@ export const checkoutHandler = factory.createHandlers(
             total: result.invoice.total,
             status: result.booking.status,
             paymentStatus: result.xenditPaymentRequest?.status || 'PENDING',
-            paymentActions,
+            // For credit cards: payment_session_id to use with card_session.js
+            ...(paymentSessionId && { paymentSessionId }),
+            // For other channels: payment actions (VA, QRIS, etc.)
+            ...(paymentActions && { paymentActions }),
             // Legacy support
             paymentUrl: redirectUrl,
           },
@@ -815,6 +828,79 @@ export const checkoutHandler = factory.createHandlers(
       )
     } catch (err) {
       c.var.logger.fatal(`Error during checkout: ${err}`)
+      throw err
+    }
+  },
+)
+
+// Validation schema for cancel payment session
+const cancelPaymentSessionSchema = z.object({
+  sessionId: z.string().min(1, 'Payment session ID is required'),
+})
+
+/**
+ * Cancel Payment Session Handler
+ *
+ * Cancels an active payment session via Xendit's POST /sessions/{id}/cancel endpoint.
+ * This is useful when:
+ * - User abandons the payment
+ * - User wants to change payment method
+ * - Booking needs to be cancelled before payment completion
+ *
+ * Flow:
+ * 1. Client sends payment_session_id
+ * 2. Backend calls Xendit cancel API
+ * 3. Session status becomes CANCELED
+ * 4. No payment requests can be created from this session anymore
+ */
+export const cancelPaymentSessionHandler = factory.createHandlers(
+  requireAuth,
+  zValidator('json', cancelPaymentSessionSchema, validateHook),
+  async (c) => {
+    const user = c.get('user')
+    if (!user || !user.id) {
+      return c.json(
+        err('Unauthorized', status.UNAUTHORIZED),
+        status.UNAUTHORIZED,
+      )
+    }
+
+    const { sessionId } = c.req.valid('json')
+
+    try {
+      c.var.logger.info(
+        `User ${user.id} is cancelling payment session: ${sessionId}`,
+      )
+
+      // Call Xendit API to cancel the payment session
+      const cancelledSession =
+        await xenditService.cancelPaymentSession(sessionId)
+
+      if (!cancelledSession) {
+        throw new NotFoundException(
+          'Payment session not found or cannot be cancelled',
+        )
+      }
+
+      c.var.logger.info(
+        `Payment session cancelled successfully: ${sessionId}, Status: ${cancelledSession.status}`,
+      )
+
+      return c.json(
+        ok(
+          {
+            sessionId: cancelledSession.payment_session_id,
+            status: cancelledSession.status,
+            message: 'Payment session cancelled successfully',
+          },
+          'Payment session cancelled',
+        ),
+        status.OK,
+      )
+    } catch (err) {
+      c.var.logger.error(
+        `Error cancelling payment session ${sessionId}: ${err}`,
+      )
       throw err
     }
   },

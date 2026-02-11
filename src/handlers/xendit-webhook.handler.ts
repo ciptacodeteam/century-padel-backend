@@ -93,10 +93,18 @@ async function handlePaymentWebhookV3(c: any, webhook: XenditPaymentWebhook) {
     return c.json({ error: 'Missing reference_id' }, 400)
   }
 
+  // For cards payment sessions, reference_id has suffix (e.g., INV-XXX_timestamp-uniqueId)
+  // The actual invoice number is in metadata.invoiceNumber
+  const invoiceIdentifier = data.metadata?.invoiceNumber || data.reference_id
+
+  c.var.logger.info(
+    `Looking up invoice with identifier: ${invoiceIdentifier} (from ${data.metadata?.invoiceNumber ? 'metadata.invoiceNumber' : 'reference_id'})`,
+  )
+
   // Find invoice by id or by number (supports either mapping)
   const invoice = await db.invoice.findFirst({
     where: {
-      OR: [{ id: data.reference_id }, { number: data.reference_id }],
+      OR: [{ id: invoiceIdentifier }, { number: invoiceIdentifier }],
     },
     include: {
       booking: true,
@@ -108,7 +116,7 @@ async function handlePaymentWebhookV3(c: any, webhook: XenditPaymentWebhook) {
   })
 
   if (!invoice) {
-    c.var.logger.error(`Invoice not found: ${data.reference_id}`)
+    c.var.logger.error(`Invoice not found: ${invoiceIdentifier}`)
     return c.json({ error: 'Invoice not found' }, 404)
   }
 
@@ -146,6 +154,8 @@ async function handlePaymentWebhookV3(c: any, webhook: XenditPaymentWebhook) {
           channel_code: data.channel_code,
           captures: data.captures,
           payment_details: data.payment_details,
+          payment_method_id: data.payment_method_id,
+          payment_method: data.payment_method,
           failure_code: data.failure_code,
           status: data.status,
           request_amount: data.request_amount,
@@ -155,6 +165,48 @@ async function handlePaymentWebhookV3(c: any, webhook: XenditPaymentWebhook) {
         },
       },
     })
+  }
+
+  // Save card details if this is a PAY_AND_SAVE flow with payment_method
+  if (
+    event === 'payment.capture' &&
+    data.payment_method_id &&
+    data.payment_method?.card &&
+    invoice.userId
+  ) {
+    const card = data.payment_method.card
+    const last4 = card.masked_card_number?.slice(-4) || '****'
+
+    try {
+      // Check if card already exists
+      const existingCard = await db.userCreditCard.findUnique({
+        where: { cardToken: data.payment_method_id },
+      })
+
+      if (!existingCard) {
+        await db.userCreditCard.create({
+          data: {
+            userId: invoice.userId,
+            cardToken: data.payment_method_id,
+            cardBrand: card.card_brand || 'UNKNOWN',
+            last4: last4,
+            expMonth: card.exp_month,
+            expYear: card.exp_year,
+            isDefault: false,
+          },
+        })
+        c.var.logger.info(
+          `Saved card ${card.card_brand} ending in ${last4} for user ${invoice.userId}`,
+        )
+      } else {
+        c.var.logger.info(
+          `Card ${data.payment_method_id} already exists for user ${invoice.userId}`,
+        )
+      }
+    } catch (cardErr) {
+      c.var.logger.error(`Failed to save card details: ${cardErr}`)
+      // Don't fail the webhook if card save fails
+    }
   }
 
   // Update booking status
@@ -173,7 +225,7 @@ async function handlePaymentWebhookV3(c: any, webhook: XenditPaymentWebhook) {
       const bookingInventories = await db.bookingInventory.findMany({
         where: { bookingId: invoice.bookingId },
       })
-      
+
       for (const bookingInv of bookingInventories) {
         await db.inventory.update({
           where: { id: bookingInv.inventoryId },
@@ -392,7 +444,7 @@ async function handleInvoiceWebhookV2(c: any, payload: XenditWebhookPayload) {
       const bookingInventories = await db.bookingInventory.findMany({
         where: { bookingId: invoice.bookingId },
       })
-      
+
       for (const bookingInv of bookingInventories) {
         await db.inventory.update({
           where: { id: bookingInv.inventoryId },
@@ -803,7 +855,7 @@ export const xenditPaymentRequestWebhookHandler = factory.createHandlers(
           const bookingInventories = await db.bookingInventory.findMany({
             where: { bookingId: invoice.bookingId },
           })
-          
+
           for (const bookingInv of bookingInventories) {
             await db.inventory.update({
               where: { id: bookingInv.inventoryId },

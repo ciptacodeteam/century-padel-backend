@@ -59,16 +59,46 @@ interface XenditVirtualAccountResponse {
   currency: string
 }
 
-export interface CreatePaymentRequestV3 {
-  referenceId: string
-  requestAmount: number
-  country?: string // e.g., "ID"
+// Payment Session Interfaces (Correct Flow for Cards Session JS)
+export interface CreatePaymentSessionRequest {
+  sessionType: 'PAY' | 'PAY_AND_SAVE' // Type of session
+  mode: 'CARDS_SESSION_JS' // Always CARDS_SESSION_JS for card payments
+  referenceId: string // Your unique reference ID
+  amount: number // Amount in smallest currency unit (e.g., cents for IDR)
   currency?: string // e.g., "IDR"
-  captureMethod?: string // e.g., "AUTOMATIC"
-  channelCode: string
-  channelProperties: Record<string, any>
+  country?: string // e.g., "ID"
   description?: string
   metadata?: Record<string, any>
+  customer: {
+    reference_id?: string // Your customer ID
+    type: 'INDIVIDUAL' | 'BUSINESS'
+    email?: string // Customer email
+    mobileNumber?: string // Customer phone number
+    individual_detail?: {
+      given_names: string
+      surname?: string
+    }
+  }
+  cardsSessionJs: {
+    successReturnUrl: string // URL to redirect after successful 3DS
+    failureReturnUrl: string // URL to redirect after failed 3DS
+  }
+}
+
+export interface PaymentSessionResponse {
+  payment_session_id: string // Use this in frontend card_session.js
+  reference_id: string
+  session_type: 'PAY' | 'PAY_AND_SAVE'
+  mode: 'CARDS_SESSION_JS'
+  amount: number
+  currency: string
+  country: string
+  status: 'ACTIVE' | 'EXPIRED' | 'COMPLETED' | 'CANCELED'
+  created: string
+  updated?: string
+  metadata?: Record<string, any>
+  payment_token_id?: string
+  payment_request_id?: string
 }
 
 export interface PaymentAction {
@@ -77,12 +107,26 @@ export interface PaymentAction {
   descriptor?: 'WEB_URL' | 'MOBILE_URL' | 'QR_CODE' | 'ACCOUNT_NUMBER'
 }
 
+// Legacy Payment Request V3 (for VA, QRIS, etc - NOT for cards)
+export interface CreatePaymentRequestV3 {
+  referenceId: string
+  requestAmount: number
+  country?: string
+  currency?: string
+  captureMethod?: string
+  channelCode?: string // Required for VA, QRIS, etc
+  channelProperties?: Record<string, any>
+  description?: string
+  metadata?: Record<string, any>
+}
+
 export interface XenditPaymentRequestV3Response {
   id: string
   business_id?: string
   reference_id: string
   payment_request_id?: string
-  type: 'PAY'
+  payment_method_id?: string
+  type: 'PAY' | 'PAY_AND_SAVE'
   status: 'REQUIRES_ACTION' | 'SUCCEEDED' | 'FAILED' | 'CANCELED' | 'EXPIRED'
   country: string
   currency: string
@@ -151,13 +195,13 @@ export interface XenditPaymentWebhookData {
   business_id: string
   reference_id: string
   payment_request_id: string
-  type: 'PAY'
+  type: 'PAY' | 'PAY_AND_SAVE'
   country: string
   currency: string
   request_amount: number
   capture_method: string
   channel_code: string
-  channel_properties: Record<string, any>
+  channel_properties?: Record<string, any>
   captures?: Array<{
     capture_id: string
     capture_amount: number
@@ -169,6 +213,23 @@ export interface XenditPaymentWebhookData {
   failure_code?: string
   created: string
   updated: string
+  // Card payment fields (for PAY_AND_SAVE)
+  payment_method_id?: string // pm-xxx token for saved cards
+  payment_method?: {
+    id: string
+    type: string
+    card?: {
+      masked_card_number: string
+      card_brand: string
+      country: string
+      exp_month: number
+      exp_year: number
+      fingerprint: string
+    }
+    reusability: string
+    status: string
+  }
+  customer_id?: string
 }
 
 export interface XenditPaymentWebhook {
@@ -314,25 +375,48 @@ class XenditService {
     }
   }
 
+  /**
+   * Create Payment Request V3 for non-card payment methods (VA, QRIS, E-Wallet, etc.)
+   *
+   * ⚠️  DO NOT USE THIS FOR CREDIT CARDS!
+   *
+   * For credit cards, use createPaymentSession() instead.
+   *
+   * This method is for:
+   * - Virtual Accounts (BCA, BNI, BRI, Mandiri, etc.)
+   * - QRIS
+   * - E-Wallets (OVO, Dana, LinkAja, ShopeePay, etc.)
+   * - Other non-card payment channels
+   */
   async createPaymentRequestV3(
     data: CreatePaymentRequestV3,
   ): Promise<XenditPaymentRequestV3Response> {
     try {
+      if (data.channelCode === 'CARDS') {
+        throw new Error(
+          'DO NOT use createPaymentRequestV3 for CARDS! Use createPaymentSession() instead.',
+        )
+      }
+
       log.info(
         `Creating Xendit v3 payment request for referenceId: ${data.referenceId}, channel: ${data.channelCode}`,
       )
 
-      const requestBody = {
+      const requestBody: any = {
         reference_id: data.referenceId,
         type: 'PAY',
         country: data.country || 'ID',
         currency: data.currency || 'IDR',
         request_amount: data.requestAmount,
         capture_method: data.captureMethod || 'AUTOMATIC',
-        channel_code: data.channelCode,
-        channel_properties: data.channelProperties,
         description: data.description,
         metadata: data.metadata,
+        channel_code: data.channelCode,
+        channel_properties: data.channelProperties || {},
+      }
+
+      if (!data.channelCode) {
+        throw new Error('channelCode is required for non-card payment methods')
       }
 
       log.debug(`Xendit request body: ${JSON.stringify(requestBody, null, 2)}`)
@@ -444,6 +528,45 @@ class XenditService {
   }
 
   /**
+   * Cancel a payment session that is in ACTIVE status
+   */
+  async cancelPaymentSession(
+    sessionId: string,
+  ): Promise<PaymentSessionResponse | null> {
+    try {
+      log.info(`Canceling Xendit payment session: ${sessionId}`)
+      const response = await fetch(
+        `${this.baseUrl}/sessions/${sessionId}/cancel`,
+        {
+          method: 'POST',
+          headers: this.getHeaders(),
+        },
+      )
+
+      const rawResult = (await response.json()) as any
+
+      if (!response.ok) {
+        const errorMessage =
+          rawResult?.message || rawResult?.error_code || 'Unknown error'
+        log.error(
+          `Xendit payment session cancel error: ${response.status} - ${JSON.stringify(rawResult)}`,
+        )
+        throw new Error(`Xendit payment session cancel error: ${errorMessage}`)
+      }
+
+      const result = (rawResult?.data ?? rawResult) as PaymentSessionResponse
+
+      log.info(
+        `Payment session ${sessionId} canceled successfully, status: ${result.status}`,
+      )
+      return result
+    } catch (error) {
+      log.error(`Error canceling Xendit payment session: ${error}`)
+      return null
+    }
+  }
+
+  /**
    * Cancel a payment request that is in REQUIRES_ACTION status
    */
   async cancelPaymentRequestV3(id: string): Promise<boolean> {
@@ -512,12 +635,26 @@ class XenditService {
   }
 
   /**
-   * Tokenize a credit card for storage and reuse
-   * Xendit's tokenization securely stores card data server-side
+   * @deprecated This method uses legacy v2 tokenization API which is INCORRECT for card payments.
+   *
+   * ❌ DO NOT USE THIS METHOD
+   *
+   * For card payments, use Payment Sessions flow instead:
+   * 1. Backend: createPaymentSession() → returns payment_session_id
+   * 2. Frontend: card_session.js with payment_session_id → automatically creates payment request
+   * 3. Frontend: Redirect to 3DS → Bank redirects to success/failure URL
+   * 4. Backend: Receive webhook (payment.capture)
+   *
+   * See CARDS_PAYMENT_CORRECT_FLOW.md for complete implementation guide.
    */
   async tokenizeCreditCard(
     data: TokenizeCreditCardRequest,
   ): Promise<TokenizeCreditCardResponse | null> {
+    log.warn(
+      '⚠️  tokenizeCreditCard() is deprecated! Use Payment Sessions flow instead.',
+    )
+    log.warn('See CARDS_PAYMENT_CORRECT_FLOW.md for correct implementation.')
+
     try {
       log.info(
         `Tokenizing credit card for ${data.cardholderName || 'customer'}`,
@@ -584,70 +721,55 @@ class XenditService {
   }
 
   /**
-   * Create a payment request with a tokenized credit card
-   * Automatically handles 3DS authentication if required
+   * Create Payment Session for Cards Session JS
+   *
+   * This is the CORRECT flow for credit card payments:
+   * 1. Backend calls this method to create a payment session
+   * 2. Frontend uses payment_session_id with card_session.js to collect card data
+   * 3. card_session.js automatically creates payment request and returns payment_request_id + action_url
+   * 4. Frontend redirects user to action_url for 3DS authentication
+   * 5. After 3DS, user is redirected to success/failure URL
+   * 6. Backend receives webhook (payment.capture) for confirmation
+   *
+   * DO NOT call /v3/payment_requests manually when using this flow!
    */
-  async createPaymentRequestWithCard(
-    data: CreatePaymentRequestV3 & {
-      cardDetails: {
-        cardNumber: string
-        cvv: string
-        expiryMonth: number
-        expiryYear: number
-        cardholderFirstName?: string
-        cardholderLastName?: string
-        cardholderEmail?: string
-        cardholderPhoneNumber?: string
-      }
-      billingDetails?: {
-        billingName?: string
-        billingEmail?: string
-        billingPhone?: string
-      }
-    },
-  ): Promise<XenditPaymentRequestV3Response | null> {
+  async createPaymentSession(
+    data: CreatePaymentSessionRequest,
+  ): Promise<PaymentSessionResponse | null> {
     try {
-      const sanitizedCardNumber = data.cardDetails.cardNumber.replace(/\D/g, '')
       log.info(
-        `Creating payment request with card details: ****${sanitizedCardNumber.slice(-4)}`,
+        `Creating payment session for reference: ${data.referenceId}, amount: ${data.amount}`,
       )
 
       const requestBody = {
+        session_type: data.sessionType,
+        mode: data.mode,
         reference_id: data.referenceId,
-        type: 'PAY',
-        country: data.country || 'ID',
+        amount: data.amount,
         currency: data.currency || 'IDR',
-        request_amount: data.requestAmount,
-        capture_method: data.captureMethod || 'AUTOMATIC',
-        channel_code: data.channelCode,
-        channel_properties: {
-          ...data.channelProperties,
-          card_details: {
-            card_number: sanitizedCardNumber,
-            cvn: data.cardDetails.cvv,
-            expiry_month: String(data.cardDetails.expiryMonth).padStart(2, '0'),
-            expiry_year: String(data.cardDetails.expiryYear),
-            ...(data.cardDetails.cardholderFirstName && {
-              cardholder_first_name: data.cardDetails.cardholderFirstName,
-            }),
-            ...(data.cardDetails.cardholderLastName && {
-              cardholder_last_name: data.cardDetails.cardholderLastName,
-            }),
-            ...(data.cardDetails.cardholderEmail && {
-              cardholder_email: data.cardDetails.cardholderEmail,
-            }),
-            ...(data.cardDetails.cardholderPhoneNumber && {
-              cardholder_phone_number: data.cardDetails.cardholderPhoneNumber,
-            }),
-          },
-          ...(data.billingDetails && { billing_details: data.billingDetails }),
-          skip_three_ds: false,
-        },
+        country: data.country || 'ID',
         description: data.description,
         metadata: data.metadata,
+        customer: {
+          reference_id: data.customer.reference_id,
+          type: data.customer.type,
+          individual_detail: data.customer.individual_detail,
+          ...(data.customer.email && { email: data.customer.email }),
+          ...(data.customer.mobileNumber && {
+            mobile_number: data.customer.mobileNumber,
+          }),
+        },
+        cards_session_js: {
+          success_return_url: data.cardsSessionJs.successReturnUrl,
+          failure_return_url: data.cardsSessionJs.failureReturnUrl,
+        },
       }
 
-      const response = await fetch(`${this.baseUrl}/v3/payment_requests`, {
+      log.debug(
+        `Payment Session Request: ${JSON.stringify(requestBody, null, 2)}`,
+      )
+
+      const response = await fetch(`${this.baseUrl}/sessions`, {
         method: 'POST',
         headers: this.getHeaders(),
         body: JSON.stringify(requestBody),
@@ -659,22 +781,43 @@ class XenditService {
         const errorMessage =
           rawResult?.message || rawResult?.error_code || 'Unknown error'
         log.error(
-          `Xendit card payment error: ${response.status} - ${JSON.stringify(rawResult)}`,
+          `Xendit payment session error: ${response.status} - ${JSON.stringify(rawResult)}`,
         )
-        throw new Error(`Xendit card payment error: ${errorMessage}`)
+        throw new Error(`Xendit payment session error: ${errorMessage}`)
       }
 
-      const result = (rawResult?.data ??
-        rawResult) as XenditPaymentRequestV3Response
+      const result = (rawResult?.data ?? rawResult) as PaymentSessionResponse
 
       log.info(
-        `Payment request with card created: ${result.id}, status: ${result.status}`,
+        `Payment session created: ${result.payment_session_id}, status: ${result.status}`,
       )
       return result
     } catch (error) {
-      log.error(`Error creating payment request with card: ${error}`)
+      log.error(`Error creating payment session: ${error}`)
       return null
     }
+  }
+
+  /**
+   * @deprecated This method uses INCORRECT flow for card payments!
+   *
+   * ❌ DO NOT USE THIS METHOD
+   *
+   * For card payments, use Payment Sessions flow instead:
+   * 1. Backend: createPaymentSession() → returns payment_session_id
+   * 2. Frontend: card_session.js with payment_session_id → automatically creates payment request
+   * 3. Frontend: Redirect to 3DS → Bank redirects to success/failure URL
+   * 4. Backend: Receive webhook (payment.capture)
+   *
+   * See CARDS_PAYMENT_CORRECT_FLOW.md for complete implementation guide.
+   */
+  async createPaymentRequestWithCard(
+    _data: any,
+  ): Promise<XenditPaymentRequestV3Response | null> {
+    throw new Error(
+      '⚠️  createPaymentRequestWithCard() is DEPRECATED and uses INCORRECT flow! ' +
+        'Use createPaymentSession() instead. See CARDS_PAYMENT_CORRECT_FLOW.md for details.',
+    )
   }
 
   /**
