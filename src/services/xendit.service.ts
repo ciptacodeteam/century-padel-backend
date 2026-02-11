@@ -237,6 +237,43 @@ export interface XenditPaymentWebhook {
   business_id: string
   created: string
   data: XenditPaymentWebhookData
+  api_version?: string
+}
+
+// Payment Session Webhook Interfaces
+export interface PaymentSessionWebhookData {
+  payment_session_id: string
+  reference_id: string
+  session_type: 'PAY' | 'PAY_AND_SAVE'
+  mode: 'CARDS_SESSION_JS'
+  amount: number
+  currency: string
+  country: string
+  status: 'COMPLETED' | 'EXPIRED' | 'CANCELED'
+  created: string
+  updated: string
+  expires_at?: string
+  metadata?: Record<string, any>
+  // Present when completed
+  payment_id?: string
+  payment_request_id?: string
+  customer_id?: string
+  business_id?: string
+  description?: string
+  locale?: string
+  capture_method?: string
+  cards_session_js?: {
+    success_return_url: string
+    failure_return_url: string
+  }
+}
+
+export interface PaymentSessionWebhook {
+  event: 'payment_session.completed' | 'payment_session.expired'
+  business_id: string
+  created: string
+  data: PaymentSessionWebhookData
+  api_version: string
 }
 
 class XenditService {

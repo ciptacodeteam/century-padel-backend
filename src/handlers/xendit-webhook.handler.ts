@@ -1,7 +1,11 @@
 import { factory } from '@/lib/create-app'
 import { db } from '@/lib/prisma'
 import { ok } from '@/lib/response'
-import { XenditPaymentWebhook, xenditService } from '@/services/xendit.service'
+import {
+  XenditPaymentWebhook,
+  PaymentSessionWebhook,
+  xenditService,
+} from '@/services/xendit.service'
 import {
   BookingStatus,
   PaymentStatus,
@@ -62,17 +66,28 @@ export const xenditWebhookHandler = factory.createHandlers(async (c) => {
       `Xendit webhook received: ${JSON.stringify(payload, null, 2)}`,
     )
 
-    // Check if this is a v3 payment webhook (has 'event' field)
-    if (
-      payload.event &&
-      (payload.event === 'payment.capture' ||
-        payload.event === 'payment.failure')
-    ) {
-      return await handlePaymentWebhookV3(c, payload as XenditPaymentWebhook)
-    } else {
-      // Legacy v2 invoice webhook
-      return await handleInvoiceWebhookV2(c, payload as XenditWebhookPayload)
+    // Check webhook event type
+    if (payload.event) {
+      // V3 Payment Request webhooks
+      if (
+        payload.event === 'payment.capture' ||
+        payload.event === 'payment.failure'
+      ) {
+        return await handlePaymentWebhookV3(c, payload as XenditPaymentWebhook)
+      }
+      // Payment Session webhooks
+      else if (
+        payload.event === 'payment_session.completed' ||
+        payload.event === 'payment_session.expired'
+      ) {
+        return await handlePaymentSessionWebhook(
+          c,
+          payload as PaymentSessionWebhook,
+        )
+      }
     }
+    // Legacy v2 invoice webhook
+    return await handleInvoiceWebhookV2(c, payload as XenditWebhookPayload)
   } catch (error) {
     c.var.logger.fatal(`Error processing Xendit webhook: ${error}`)
     return c.json({ error: 'Webhook processing failed' }, 500)
@@ -364,6 +379,265 @@ async function handlePaymentWebhookV3(c: any, webhook: XenditPaymentWebhook) {
   }
 
   return c.json(ok(null, 'Webhook processed successfully'))
+}
+
+// Handle Payment Session webhooks (payment_session.completed, payment_session.expired)
+async function handlePaymentSessionWebhook(
+  c: any,
+  webhook: PaymentSessionWebhook,
+) {
+  const { event, data } = webhook
+
+  c.var.logger.info(
+    `Processing payment session webhook: ${event} for session: ${data.payment_session_id}, reference: ${data.reference_id}`,
+  )
+
+  // Get invoice number from metadata or reference_id
+  const invoiceNumber = data.metadata?.invoiceNumber || data.reference_id
+
+  if (!invoiceNumber) {
+    c.var.logger.error('Missing invoice identifier in payment session webhook')
+    return c.json({ error: 'Missing invoice identifier' }, 400)
+  }
+
+  // Find invoice
+  const invoice = await db.invoice.findFirst({
+    where: {
+      OR: [{ id: invoiceNumber }, { number: invoiceNumber }],
+    },
+    include: {
+      booking: {
+        include: {
+          details: { include: { slot: true } },
+          coaches: { include: { slot: true } },
+          ballboys: { include: { slot: true } },
+          inventories: { include: { inventory: true } },
+        },
+      },
+      classBooking: true,
+      membershipUser: true,
+      payment: true,
+      user: true,
+    },
+  })
+
+  if (!invoice) {
+    c.var.logger.error(`Invoice not found: ${invoiceNumber}`)
+    return c.json({ error: 'Invoice not found' }, 404)
+  }
+
+  // Handle payment_session.completed
+  if (event === 'payment_session.completed') {
+    c.var.logger.info(
+      `Payment session completed for invoice ${invoiceNumber}. Payment ID: ${data.payment_id}`,
+    )
+
+    // Update payment metadata with session info
+    if (invoice.payment) {
+      await db.payment.update({
+        where: { id: invoice.payment.id },
+        data: {
+          meta: {
+            ...(typeof invoice.payment.meta === 'object'
+              ? invoice.payment.meta
+              : {}),
+            payment_session_id: data.payment_session_id,
+            payment_session_status: data.status,
+            payment_session_completed_at: data.updated,
+          },
+        },
+      })
+    }
+
+    c.var.logger.info(
+      `Payment session ${data.payment_session_id} marked as completed`,
+    )
+
+    return c.json(
+      ok(null, 'Payment session completed event processed successfully'),
+    )
+  }
+
+  // Handle payment_session.expired
+  if (event === 'payment_session.expired') {
+    c.var.logger.warn(
+      `Payment session expired for invoice ${invoiceNumber}. Session ID: ${data.payment_session_id}`,
+    )
+
+    // Check if payment was already made (prevent duplicate cancellation)
+    if (
+      invoice.status === PaymentStatus.PAID ||
+      invoice.payment?.status === PaymentStatus.PAID
+    ) {
+      c.var.logger.info(
+        `Invoice ${invoiceNumber} is already paid. Ignoring session expiration.`,
+      )
+      return c.json(
+        ok(null, 'Payment already completed, session expiration ignored'),
+      )
+    }
+
+    // Check if already cancelled
+    if (
+      invoice.status === PaymentStatus.CANCELLED ||
+      invoice.status === PaymentStatus.EXPIRED
+    ) {
+      c.var.logger.info(
+        `Invoice ${invoiceNumber} is already cancelled/expired. Ignoring session expiration.`,
+      )
+      return c.json(ok(null, 'Invoice already cancelled/expired'))
+    }
+
+    await db.$transaction(async (tx) => {
+      // Update invoice status to EXPIRED
+      await tx.invoice.update({
+        where: { id: invoice.id },
+        data: {
+          status: PaymentStatus.EXPIRED,
+        },
+      })
+
+      // Update payment status to EXPIRED if exists
+      if (invoice.payment) {
+        await tx.payment.update({
+          where: { id: invoice.payment.id },
+          data: {
+            status: PaymentStatus.EXPIRED,
+            meta: {
+              ...(typeof invoice.payment.meta === 'object'
+                ? invoice.payment.meta
+                : {}),
+              payment_session_id: data.payment_session_id,
+              payment_session_status: 'EXPIRED',
+              payment_session_expired_at: data.updated,
+            },
+          },
+        })
+      }
+
+      // Handle booking cancellation
+      if (invoice.booking) {
+        const booking = invoice.booking
+
+        // Release all court slots
+        const courtSlotIds = booking.details.map((d) => d.slotId)
+        if (courtSlotIds.length > 0) {
+          await tx.slot.updateMany({
+            where: { id: { in: courtSlotIds } },
+            data: { isAvailable: true },
+          })
+        }
+
+        // Release all coach slots
+        const coachSlotIds = booking.coaches.map((c) => c.slotId)
+        if (coachSlotIds.length > 0) {
+          await tx.slot.updateMany({
+            where: { id: { in: coachSlotIds } },
+            data: { isAvailable: true },
+          })
+        }
+
+        // Release all ballboy slots
+        const ballboySlotIds = booking.ballboys.map((b) => b.slotId)
+        if (ballboySlotIds.length > 0) {
+          await tx.slot.updateMany({
+            where: { id: { in: ballboySlotIds } },
+            data: { isAvailable: true },
+          })
+        }
+
+        // Restore inventory quantities
+        for (const bookingInv of booking.inventories) {
+          await tx.inventory.update({
+            where: { id: bookingInv.inventoryId },
+            data: {
+              quantity: { increment: bookingInv.quantity },
+            },
+          })
+        }
+
+        // Cancel booking
+        await tx.booking.update({
+          where: { id: booking.id },
+          data: {
+            status: BookingStatus.CANCELLED,
+            cancellationReason: 'Payment session expired - no payment made',
+            cancelledAt: new Date(),
+          },
+        })
+
+        c.var.logger.info(
+          `Booking ${booking.id} cancelled due to payment session expiration. Resources restored.`,
+        )
+      }
+
+      // Handle class booking cancellation
+      if (invoice.classBooking) {
+        await tx.classBooking.update({
+          where: { id: invoice.classBooking.id },
+          data: {
+            status: BookingStatus.CANCELLED,
+            cancellationReason: 'Payment session expired - no payment made',
+            cancelledAt: new Date(),
+          },
+        })
+
+        // Restore class capacity
+        await tx.class.update({
+          where: { id: invoice.classBooking.classId },
+          data: {
+            remaining: { increment: 1 },
+          },
+        })
+
+        c.var.logger.info(
+          `Class booking ${invoice.classBooking.id} cancelled and capacity restored`,
+        )
+      }
+
+      // Handle membership cancellation
+      if (invoice.membershipUser) {
+        await tx.membershipUser.delete({
+          where: { id: invoice.membershipUser.id },
+        })
+
+        c.var.logger.info(
+          `Membership ${invoice.membershipUser.id} deleted due to payment session expiration`,
+        )
+      }
+    })
+
+    // Send notification to user
+    try {
+      await notificationService.create({
+        userId: invoice.userId,
+        audience: NotificationAudience.USER,
+        type: NotificationType.PAYMENT_FAILED,
+        title: 'Payment Session Expired',
+        message:
+          'Your payment session has expired. Your booking has been cancelled.',
+        data: {
+          invoiceId: invoice.id,
+          invoiceNumber: invoice.number,
+          reason: 'Payment session expired',
+        },
+      })
+    } catch (notifyErr) {
+      c.var.logger.error(
+        `Failed to send session expiration notification: ${notifyErr}`,
+      )
+    }
+
+    c.var.logger.info(
+      `Payment session ${data.payment_session_id} expiration processed successfully`,
+    )
+
+    return c.json(
+      ok(null, 'Payment session expired event processed successfully'),
+    )
+  }
+
+  return c.json(ok(null, 'Payment session webhook processed'))
 }
 
 // Handle legacy v2 invoice webhooks
