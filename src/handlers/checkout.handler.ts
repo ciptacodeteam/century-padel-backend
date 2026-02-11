@@ -45,7 +45,7 @@ async function handleCreditCardPayment(
     where: { id: paymentMethodId },
   })
 
-  if (!paymentMethod || paymentMethod.channel !== 'CREDIT_CARD') {
+  if (!paymentMethod || paymentMethod.channel !== 'CARDS') {
     return null
   }
 
@@ -59,6 +59,16 @@ async function handleCreditCardPayment(
     // Determine whether to use saved card or new card
     let cardTokenId: string | null = null
     let cardCvv: string | null = null
+    let cardDetails: {
+      cardNumber: string
+      cvv: string
+      expiryMonth: number
+      expiryYear: number
+      cardholderFirstName?: string
+      cardholderLastName?: string
+      cardholderEmail?: string
+      cardholderPhoneNumber?: string
+    } | null = null
 
     if (cardPaymentData?.savedCardId) {
       // Use existing saved card
@@ -73,42 +83,37 @@ async function handleCreditCardPayment(
       cardTokenId = savedCard.xenditTokenId
       cardCvv = cardPaymentData.cvv // CVV still required for security
     } else if (cardPaymentData?.cardNumber) {
-      // Tokenize new card
-      const tokenResponse = await xenditService.tokenizeCreditCard({
+      const fullName = String(cardPaymentData.cardholderName || '').trim()
+      const nameParts = fullName.split(/\s+/).filter(Boolean)
+      const cardholderFirstName = nameParts[0] || undefined
+      const cardholderLastName =
+        nameParts.length > 1 ? nameParts.slice(1).join(' ') : undefined
+
+      cardDetails = {
         cardNumber: cardPaymentData.cardNumber,
-        cardholderName: cardPaymentData.cardholderName,
+        cvv: cardPaymentData.newCardCvv,
         expiryMonth: cardPaymentData.expiryMonth,
         expiryYear: cardPaymentData.expiryYear,
-        cvv: cardPaymentData.newCardCvv,
-      })
-
-      if (!tokenResponse?.id) {
-        throw new BadRequestException(
-          'Failed to tokenize card. Please check your details.',
-        )
+        cardholderFirstName,
+        cardholderLastName,
+        cardholderEmail: userDetails?.email || undefined,
+        cardholderPhoneNumber: userDetails?.phone || undefined,
       }
 
-      cardTokenId = tokenResponse.id
-      cardCvv = cardPaymentData.newCardCvv
-
-      // Optionally save card for future use
       if (cardPaymentData.saveCard) {
-        await tx.userCreditCard.create({
-          data: {
-            userId,
-            cardToken: tokenResponse.id,
-            xenditTokenId: tokenResponse.id,
-            cardBrand: tokenResponse.card_brand || 'UNKNOWN',
-            last4: tokenResponse.card_number_last_four,
-            expMonth: tokenResponse.expiry_month,
-            expYear: tokenResponse.expiry_year,
-            isDefault: false,
-          },
-        })
+        throw new BadRequestException(
+          'Saving cards is temporarily unavailable. Please proceed without saving the card.',
+        )
       }
     } else {
       throw new BadRequestException(
         'Credit card or saved card ID is required for this payment method',
+      )
+    }
+
+    if (!cardDetails) {
+      throw new BadRequestException(
+        'Saved card payments are temporarily unavailable. Please use a new card.',
       )
     }
 
@@ -120,11 +125,11 @@ async function handleCreditCardPayment(
         country: 'ID',
         currency: 'IDR',
         captureMethod: 'AUTOMATIC',
-        channelCode: 'CREDIT_CARD',
-        cardTokenId: cardTokenId!,
-        cardCvv: cardCvv || undefined,
+        channelCode: 'CARDS',
+        cardDetails,
         channelProperties: {
-          three_d_secure_enabled: true,
+          success_return_url: `${env.frontEndUrl}/payment/success?booking_id=${bookingId}`,
+          failure_return_url: `${env.frontEndUrl}/payment/failed?booking_id=${bookingId}`,
         },
         billingDetails: {
           billingName: userDetails?.name,
@@ -136,7 +141,8 @@ async function handleCreditCardPayment(
           bookingId,
           userId,
           invoiceNumber,
-          paymentType: 'credit_card_3ds',
+          paymentType: 'cards_3ds',
+          savedCardTokenId: cardTokenId,
         },
       })
 
@@ -599,7 +605,7 @@ export const checkoutHandler = factory.createHandlers(
             })
 
             // Handle credit card payment with 3DS
-            if (channelCode === 'CREDIT_CARD') {
+            if (channelCode === 'CARDS') {
               xenditInvoiceResponse = await handleCreditCardPayment(
                 tx,
                 paymentMethodId,
@@ -639,7 +645,7 @@ export const checkoutHandler = factory.createHandlers(
             }
 
             // Skip payment request creation for credit card (already handled above)
-            if (channelCode !== 'CREDIT_CARD') {
+            if (channelCode !== 'CARDS') {
               c.var.logger.info(
                 `Creating Xendit payment request channel=${channelCode} amount=${finalTotal}`,
               )

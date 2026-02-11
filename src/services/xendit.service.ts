@@ -120,6 +120,11 @@ export interface TokenizeCreditCardResponse {
   expiry_month: number
   expiry_year: number
   cardholder_name: string
+  // Additional fields returned by Xendit (kept for compatibility)
+  card_exp_month?: number
+  card_exp_year?: number
+  card_holder_name?: string
+  card_number_last_4?: string
 }
 
 // 3DS Challenge Interfaces
@@ -518,12 +523,17 @@ class XenditService {
         `Tokenizing credit card for ${data.cardholderName || 'customer'}`,
       )
 
+      const sanitizedCardNumber = data.cardNumber.replace(/\D/g, '')
+      const last4 = sanitizedCardNumber.slice(-4)
+
       const requestBody = {
-        card_number: data.cardNumber,
-        cardholder_name: data.cardholderName,
-        expiry_month: data.expiryMonth,
-        expiry_year: data.expiryYear,
-        cvv: data.cvv,
+        card_number: sanitizedCardNumber,
+        card_holder_name: data.cardholderName,
+        card_exp_month: data.expiryMonth,
+        card_exp_year: data.expiryYear,
+        card_cvn: data.cvv,
+        is_single_use: false,
+        should_authenticate: false,
         currency: data.currency || 'IDR',
       }
 
@@ -542,8 +552,31 @@ class XenditService {
         return null
       }
 
-      log.info(`Credit card tokenized: ${result.id}`)
-      return result
+      const normalized: TokenizeCreditCardResponse = {
+        id: result.id,
+        status: result.status || 'ACTIVE',
+        card_number_last_four:
+          result.card_number_last_four || result.card_number_last_4 || last4,
+        card_brand: result.card_brand || result.card_type || 'UNKNOWN',
+        card_fingerprint: result.card_fingerprint,
+        created: result.created,
+        updated: result.updated,
+        expiry_month:
+          result.expiry_month || result.card_exp_month || data.expiryMonth,
+        expiry_year:
+          result.expiry_year || result.card_exp_year || data.expiryYear,
+        cardholder_name:
+          result.cardholder_name ||
+          result.card_holder_name ||
+          data.cardholderName,
+        card_exp_month: result.card_exp_month,
+        card_exp_year: result.card_exp_year,
+        card_holder_name: result.card_holder_name,
+        card_number_last_4: result.card_number_last_4,
+      }
+
+      log.info(`Credit card tokenized: ${normalized.id}`)
+      return normalized
     } catch (error) {
       log.error(`Error tokenizing credit card: ${error}`)
       return null
@@ -556,8 +589,16 @@ class XenditService {
    */
   async createPaymentRequestWithCard(
     data: CreatePaymentRequestV3 & {
-      cardTokenId: string
-      cardCvv?: string
+      cardDetails: {
+        cardNumber: string
+        cvv: string
+        expiryMonth: number
+        expiryYear: number
+        cardholderFirstName?: string
+        cardholderLastName?: string
+        cardholderEmail?: string
+        cardholderPhoneNumber?: string
+      }
       billingDetails?: {
         billingName?: string
         billingEmail?: string
@@ -566,7 +607,10 @@ class XenditService {
     },
   ): Promise<XenditPaymentRequestV3Response | null> {
     try {
-      log.info(`Creating payment request with card token: ${data.cardTokenId}`)
+      const sanitizedCardNumber = data.cardDetails.cardNumber.replace(/\D/g, '')
+      log.info(
+        `Creating payment request with card details: ****${sanitizedCardNumber.slice(-4)}`,
+      )
 
       const requestBody = {
         reference_id: data.referenceId,
@@ -579,14 +623,25 @@ class XenditService {
         channel_properties: {
           ...data.channelProperties,
           card_details: {
-            card_token_id: data.cardTokenId,
-            ...(data.cardCvv && { card_cvv: data.cardCvv }),
+            card_number: sanitizedCardNumber,
+            cvn: data.cardDetails.cvv,
+            expiry_month: String(data.cardDetails.expiryMonth).padStart(2, '0'),
+            expiry_year: String(data.cardDetails.expiryYear),
+            ...(data.cardDetails.cardholderFirstName && {
+              cardholder_first_name: data.cardDetails.cardholderFirstName,
+            }),
+            ...(data.cardDetails.cardholderLastName && {
+              cardholder_last_name: data.cardDetails.cardholderLastName,
+            }),
+            ...(data.cardDetails.cardholderEmail && {
+              cardholder_email: data.cardDetails.cardholderEmail,
+            }),
+            ...(data.cardDetails.cardholderPhoneNumber && {
+              cardholder_phone_number: data.cardDetails.cardholderPhoneNumber,
+            }),
           },
-          card_token_id: data.cardTokenId,
-          ...(data.cardCvv && { card_cvv: data.cardCvv }),
           ...(data.billingDetails && { billing_details: data.billingDetails }),
-          // Enable 3DS for additional security
-          three_d_secure_enabled: true,
+          skip_three_ds: false,
         },
         description: data.description,
         metadata: data.metadata,

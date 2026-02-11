@@ -713,7 +713,8 @@ export const requestEmailChangeHandler = factory.createHandlers(
       }
 
       // Generate OTP code
-      const code = await generateOtp(6)
+      const code =
+        env.nodeEnv === 'production' ? await generateOtp(6) : '888888'
       const requestId = crypto.randomUUID()
       const expiresAt = dayjs().add(10, 'minutes').toDate()
 
