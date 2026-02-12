@@ -37,7 +37,18 @@ export const getUserInvoicesHandler = factory.createHandlers(
           ...queryOptions.where,
           userId: user.id,
         },
-        include: {
+        select: {
+          id: true,
+          number: true,
+          status: true,
+          subtotal: true,
+          processingFee: true,
+          // promoCodeText: true,
+          promoDiscountAmount: true,
+          total: true,
+          issuedAt: true,
+          dueDate: true,
+          paidAt: true,
           booking: {
             select: {
               id: true,
@@ -267,6 +278,8 @@ export const getInvoiceDetailHandler = factory.createHandlers(
         status: invoice.status,
         subtotal: invoice.subtotal,
         processingFee: invoice.processingFee,
+        // promoCodeText: invoice.promoCodeText,
+        promoDiscountAmount: invoice.promoDiscountAmount,
         total: invoice.total,
         issuedAt: invoice.issuedAt,
         dueDate: invoice.dueDate,

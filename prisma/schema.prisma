@@ -72,6 +72,11 @@ enum ClubVisibility {
   PUBLIC
 }
 
+enum PromoCodeStatus {
+  ACTIVE
+  INACTIVE
+}
+
 // ------------------------------
 // Notifications
 // ------------------------------
@@ -261,6 +266,27 @@ model Inventory {
   @@map("inventories")
 }
 
+model PromoCode {
+  id              String          @id @default(cuid())
+  name            String
+  code            String          @unique
+  discountAmount  Int?            @db.Integer
+  discountPercent Int?
+  startAt         DateTime
+  endAt           DateTime
+  status          PromoCodeStatus @default(ACTIVE)
+  maxUsage        Int
+  usedCount       Int             @default(0)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @default(now()) @updatedAt
+
+  bookings Booking[]
+  invoices Invoice[]
+
+  @@index([status, startAt, endAt])
+  @@map("promo_codes")
+}
+
 // ------------------------------
 // Scheduling (Unified Slot model)
 // ------------------------------
@@ -368,6 +394,10 @@ model Invoice {
   classBookingId   String? @unique
   membershipUserId String? @unique
 
+  promoCodeId         String?
+  promoCodeText       String?
+  promoDiscountAmount Int     @default(0) @db.Integer
+
   number        String        @unique // human-readable invoice no
   userId        String
   paymentId     String?       @unique
@@ -386,8 +416,10 @@ model Invoice {
   booking        Booking?        @relation(fields: [bookingId], references: [id])
   classBooking   ClassBooking?   @relation(fields: [classBookingId], references: [id])
   membershipUser MembershipUser? @relation(fields: [membershipUserId], references: [id])
+  promoCode      PromoCode?      @relation(fields: [promoCodeId], references: [id])
 
   @@index([status, dueDate])
+  @@index([promoCodeId])
   @@map("invoices")
 }
 
@@ -395,23 +427,27 @@ model Invoice {
 // Booking (Courts + optional add-ons)
 // ------------------------------
 model Booking {
-  id                 String        @id @default(cuid())
-  userId             String
-  status             BookingStatus @default(HOLD)
-  totalPrice         Int           @default(0) @db.Integer
-  processingFee      Int           @default(0) @db.Integer
-  courtNormalPrice   Int           @default(0) @db.Integer
-  courtDiscountPrice Int           @default(0) @db.Integer
-  createdAt          DateTime      @default(now())
-  updatedAt          DateTime      @default(now()) @updatedAt
-  holdExpiresAt      DateTime? // for HOLD; auto-release slots when passed
-  cancelledAt        DateTime?
-  cancellationReason String?
+  id                  String        @id @default(cuid())
+  userId              String
+  status              BookingStatus @default(HOLD)
+  totalPrice          Int           @default(0) @db.Integer
+  processingFee       Int           @default(0) @db.Integer
+  courtNormalPrice    Int           @default(0) @db.Integer
+  courtDiscountPrice  Int           @default(0) @db.Integer
+  promoCodeId         String?
+  promoCodeText       String?
+  promoDiscountAmount Int           @default(0) @db.Integer
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @default(now()) @updatedAt
+  holdExpiresAt       DateTime? // for HOLD; auto-release slots when passed
+  cancelledAt         DateTime?
+  cancellationReason  String?
 
   cashierId String? // cashier who handled the payment
 
   user        User               @relation(fields: [userId], references: [id])
   cashier     Staff?             @relation(fields: [cashierId], references: [id])
+  promoCode   PromoCode?         @relation(fields: [promoCodeId], references: [id])
   details     BookingDetail[]
   inventories BookingInventory[]
   ballboys    BookingBallboy[]
@@ -419,6 +455,7 @@ model Booking {
   invoice     Invoice?
 
   @@index([userId, status, createdAt])
+  @@index([promoCodeId])
   @@map("bookings")
 }
 

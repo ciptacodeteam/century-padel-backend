@@ -528,6 +528,88 @@ export type UpdatePaymentMethodSchema = z.infer<
   typeof updatePaymentMethodSchema
 >
 
+const promoCodeRegex = /^[A-Za-z0-9]+$/
+
+export const createPromoCodeSchema = z
+  .object({
+    name: z.string().min(3).max(100),
+    code: z.string().min(3).max(50).regex(promoCodeRegex, {
+      message: 'Promo code must be alphanumeric without spaces',
+    }),
+    discountAmount: z.coerce.number().int().optional(),
+    discountPercent: z.coerce.number().int().max(100).optional(),
+    startAt: z.string().refine((val) => dayjs(val).isValid(), {
+      message: 'Invalid datetime format for startAt',
+    }),
+    endAt: z.string().refine((val) => dayjs(val).isValid(), {
+      message: 'Invalid datetime format for endAt',
+    }),
+    status: z.enum(['ACTIVE', 'INACTIVE']).optional().default('ACTIVE'),
+    maxUsage: z.coerce.number().int().min(1),
+  })
+  .refine(
+    (data) =>
+      (data.discountAmount && !data.discountPercent) ||
+      (!data.discountAmount && data.discountPercent),
+    {
+      message: 'Provide either discountAmount or discountPercent',
+      path: ['discountAmount'],
+    },
+  )
+  .refine((data) => !dayjs(data.startAt).isAfter(dayjs(data.endAt)), {
+    message: 'startAt must be before or equal to endAt',
+    path: ['startAt'],
+  })
+
+export type CreatePromoCodeSchema = z.infer<typeof createPromoCodeSchema>
+
+export const updatePromoCodeSchema = z
+  .object({
+    name: z.string().min(3).max(100).optional(),
+    code: z
+      .string()
+      .min(3)
+      .max(50)
+      .regex(promoCodeRegex, {
+        message: 'Promo code must be alphanumeric without spaces',
+      })
+      .optional(),
+    discountAmount: z.coerce.number().int().min(1).optional(),
+    discountPercent: z.coerce.number().int().min(1).max(100).optional(),
+    startAt: z
+      .string()
+      .refine((val) => dayjs(val).isValid(), {
+        message: 'Invalid datetime format for startAt',
+      })
+      .optional(),
+    endAt: z
+      .string()
+      .refine((val) => dayjs(val).isValid(), {
+        message: 'Invalid datetime format for endAt',
+      })
+      .optional(),
+    status: z.enum(['ACTIVE', 'INACTIVE']).optional(),
+    maxUsage: z.coerce.number().int().min(1).optional(),
+  })
+  .refine((data) => !(data.discountAmount && data.discountPercent), {
+    message: 'Provide either discountAmount or discountPercent',
+    path: ['discountAmount'],
+  })
+  .refine(
+    (data) => {
+      if (data.startAt && data.endAt) {
+        return !dayjs(data.startAt).isAfter(dayjs(data.endAt))
+      }
+      return true
+    },
+    {
+      message: 'startAt must be before or equal to endAt',
+      path: ['startAt'],
+    },
+  )
+
+export type UpdatePromoCodeSchema = z.infer<typeof updatePromoCodeSchema>
+
 // Checkout schema
 export const checkoutSchema = z.object({
   bookingId: z.string().optional(), // Optional: for updating existing DRAFT booking
@@ -542,6 +624,14 @@ export const checkoutSchema = z.object({
         quantity: z.number().min(1),
       }),
     )
+    .optional(),
+  promoCode: z
+    .string()
+    .min(3)
+    .max(50)
+    .regex(promoCodeRegex, {
+      message: 'Promo code must be alphanumeric without spaces',
+    })
     .optional(),
 })
 
@@ -758,8 +848,35 @@ export const extendedCheckoutSchema = z.object({
       }),
     )
     .optional(),
+  promoCode: z
+    .string()
+    .min(3)
+    .max(50)
+    .regex(promoCodeRegex, {
+      message: 'Promo code must be alphanumeric without spaces',
+    })
+    .optional(),
   // Credit card specific fields
   cardPayment: creditCardPaymentSchema.optional(),
 })
 
 export type ExtendedCheckoutSchema = z.infer<typeof extendedCheckoutSchema>
+
+export const applyPromoCodeSchema = z.object({
+  promoCode: z.string().min(3).max(50).regex(promoCodeRegex, {
+    message: 'Promo code must be alphanumeric without spaces',
+  }),
+  courtSlots: z.array(z.string()).optional(),
+  coachSlots: z.array(z.string()).optional(),
+  ballboySlots: z.array(z.string()).optional(),
+  inventories: z
+    .array(
+      z.object({
+        inventoryId: z.string(),
+        quantity: z.number().min(1),
+      }),
+    )
+    .optional(),
+})
+
+export type ApplyPromoCodeSchema = z.infer<typeof applyPromoCodeSchema>

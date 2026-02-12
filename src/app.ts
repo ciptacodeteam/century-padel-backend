@@ -62,6 +62,7 @@ import adminClubRoute from './routes/admin/club.route'
 import notificationRoute from './routes/notification.route'
 import adminNotificationRoute from './routes/admin/notification.route'
 import creditCardRoute from './routes/credit-card.route'
+import adminPromoCodeRoute from './routes/admin/promo-code.route'
 
 dayjs.locale('id')
 dayjs.extend(utc)
@@ -134,6 +135,7 @@ const adminRoutes = [
   adminCheckoutRoute,
   adminInvoiceRoute,
   adminNotificationRoute,
+  adminPromoCodeRoute,
 ]
 
 routes.forEach((route) => {

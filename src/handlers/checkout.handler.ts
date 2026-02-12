@@ -5,7 +5,11 @@ import { factory } from '@/lib/create-app'
 import { db } from '@/lib/prisma'
 import { err, ok } from '@/lib/response'
 import { generateInvoiceNumber } from '@/lib/utils'
-import { extendedCheckoutSchema } from '@/lib/validation'
+import {
+  applyPromoCodeSchema,
+  ApplyPromoCodeSchema,
+  extendedCheckoutSchema,
+} from '@/lib/validation'
 import { requireAuth } from '@/middlewares/auth'
 import { notificationService } from '@/services/notification.service'
 import { xenditService } from '@/services/xendit.service'
@@ -27,6 +31,29 @@ function cleanSlotIds(slotIds: string[] | undefined): string[] | undefined {
   }
   // Remove time suffix patterns like "-06:00" or "-06:00:00" from slot IDs
   return slotIds.map((id) => id.replace(/-\d{2}:\d{2}(:\d{2})?$/, ''))
+}
+
+function normalizePromoCode(code?: string): string | undefined {
+  if (!code) {
+    return undefined
+  }
+  return code.trim().toUpperCase()
+}
+
+function calculatePromoDiscount(
+  subtotal: number,
+  promo: { discountAmount: number | null; discountPercent: number | null },
+): number {
+  let discount = 0
+  if (promo.discountAmount && promo.discountAmount > 0) {
+    discount = promo.discountAmount
+  } else if (promo.discountPercent && promo.discountPercent > 0) {
+    discount = Math.ceil(subtotal * (promo.discountPercent / 100))
+  }
+  if (discount > subtotal) {
+    return subtotal
+  }
+  return discount
 }
 
 /**
@@ -139,6 +166,268 @@ async function handleCreditCardPayment(
   }
 }
 
+export const applyPromoCodeHandler = factory.createHandlers(
+  requireAuth,
+  zValidator('json', applyPromoCodeSchema, validateHook),
+  async (c) => {
+    try {
+      const user = c.get('user')
+      if (!user || !user.id) {
+        return c.json(
+          err('Unauthorized', status.UNAUTHORIZED),
+          status.UNAUTHORIZED,
+        )
+      }
+
+      const validated = c.req.valid('json') as ApplyPromoCodeSchema
+      const {
+        promoCode: rawPromoCode,
+        courtSlots: rawCourtSlots,
+        coachSlots: rawCoachSlots,
+        ballboySlots: rawBallboySlots,
+        inventories,
+      } = validated
+
+      const promoCode = normalizePromoCode(rawPromoCode)
+      const courtSlots = cleanSlotIds(rawCourtSlots)
+      const coachSlots = cleanSlotIds(rawCoachSlots)
+      const ballboySlots = cleanSlotIds(rawBallboySlots)
+
+      const hasItems =
+        (courtSlots && courtSlots.length > 0) ||
+        (coachSlots && coachSlots.length > 0) ||
+        (ballboySlots && ballboySlots.length > 0) ||
+        (inventories && inventories.length > 0)
+
+      if (!hasItems) {
+        return c.json(
+          err('At least one item must be provided', status.BAD_REQUEST),
+          status.BAD_REQUEST,
+        )
+      }
+
+      if (!promoCode) {
+        return c.json(
+          ok({ isValid: false, discountAmount: 0 }, 'Promo code is required'),
+          status.OK,
+        )
+      }
+
+      const subtotal = await db.$transaction(async (tx) => {
+        let totalPrice = 0
+
+        if (courtSlots && courtSlots.length > 0) {
+          const courtSlotData = await tx.slot.findMany({
+            where: {
+              id: { in: courtSlots },
+              type: SlotType.COURT,
+              isAvailable: true,
+            },
+            include: {
+              bookingDetails: {
+                where: {
+                  booking: {
+                    status: {
+                      not: BookingStatus.CANCELLED,
+                    },
+                  },
+                },
+                select: { id: true },
+                take: 1,
+              },
+            },
+          })
+
+          if (courtSlotData.length !== courtSlots.length) {
+            throw new BadRequestException(
+              'One or more court slots not found or unavailable',
+            )
+          }
+
+          for (const slot of courtSlotData) {
+            if (slot.bookingDetails.length > 0) {
+              throw new BadRequestException(
+                'One or more court slots are already booked',
+              )
+            }
+            const discountedPrice =
+              slot.discountPrice && slot.discountPrice > 0
+                ? slot.discountPrice
+                : slot.price
+            totalPrice += discountedPrice
+          }
+        }
+
+        if (coachSlots && coachSlots.length > 0) {
+          const coachSlotData = await tx.slot.findMany({
+            where: {
+              id: { in: coachSlots },
+              type: SlotType.COACH,
+              isAvailable: true,
+            },
+            include: {
+              bookingCoaches: {
+                where: {
+                  booking: {
+                    status: {
+                      not: BookingStatus.CANCELLED,
+                    },
+                  },
+                },
+                select: { id: true },
+                take: 1,
+              },
+            },
+          })
+
+          if (coachSlotData.length !== coachSlots.length) {
+            throw new BadRequestException(
+              'One or more coach slots not found or unavailable',
+            )
+          }
+
+          for (const slot of coachSlotData) {
+            if (slot.bookingCoaches.length > 0) {
+              throw new BadRequestException(
+                'One or more coach slots are already booked',
+              )
+            }
+            totalPrice += slot.price
+          }
+        }
+
+        if (ballboySlots && ballboySlots.length > 0) {
+          const ballboySlotData = await tx.slot.findMany({
+            where: {
+              id: { in: ballboySlots },
+              type: SlotType.BALLBOY,
+              isAvailable: true,
+            },
+            include: {
+              bookingBallboys: {
+                where: {
+                  booking: {
+                    status: {
+                      not: BookingStatus.CANCELLED,
+                    },
+                  },
+                },
+                select: { id: true },
+                take: 1,
+              },
+            },
+          })
+
+          if (ballboySlotData.length !== ballboySlots.length) {
+            throw new BadRequestException(
+              'One or more ballboy slots not found or unavailable',
+            )
+          }
+
+          for (const slot of ballboySlotData) {
+            if (slot.bookingBallboys.length > 0) {
+              throw new BadRequestException(
+                'One or more ballboy slots are already booked',
+              )
+            }
+            totalPrice += slot.price
+          }
+        }
+
+        if (inventories && inventories.length > 0) {
+          for (const inv of inventories) {
+            const inventory = await tx.inventory.findUnique({
+              where: { id: inv.inventoryId },
+            })
+            if (!inventory) {
+              throw new NotFoundException(
+                `Inventory ${inv.inventoryId} not found`,
+              )
+            }
+            if (!inventory.isActive) {
+              throw new BadRequestException(
+                `Inventory ${inventory.name} is not active`,
+              )
+            }
+            if (inventory.quantity < inv.quantity) {
+              throw new BadRequestException(
+                `Insufficient quantity for ${inventory.name}`,
+              )
+            }
+            totalPrice += inventory.price * inv.quantity
+          }
+        }
+
+        return totalPrice
+      })
+
+      const promo = await db.promoCode.findUnique({
+        where: { code: promoCode },
+      })
+
+      if (!promo) {
+        return c.json(
+          ok(
+            { isValid: false, discountAmount: 0 },
+            'Promo code not found',
+          ),
+          status.OK,
+        )
+      }
+
+      const now = dayjs()
+      if (promo.status !== 'ACTIVE') {
+        return c.json(
+          ok(
+            { isValid: false, discountAmount: 0 },
+            'Promo code is not active',
+          ),
+          status.OK,
+        )
+      }
+
+      if (now.isBefore(promo.startAt) || now.isAfter(promo.endAt)) {
+        return c.json(
+          ok(
+            { isValid: false, discountAmount: 0 },
+            'Promo code is not valid at this time',
+          ),
+          status.OK,
+        )
+      }
+
+      if (promo.usedCount >= promo.maxUsage) {
+        return c.json(
+          ok(
+            { isValid: false, discountAmount: 0 },
+            'Promo code has reached maximum usage',
+          ),
+          status.OK,
+        )
+      }
+
+      const discountAmount = calculatePromoDiscount(subtotal, promo)
+      if (discountAmount <= 0) {
+        return c.json(
+          ok(
+            { isValid: false, discountAmount: 0 },
+            'Promo code is not applicable',
+          ),
+          status.OK,
+        )
+      }
+
+      return c.json(
+        ok({ isValid: true, discountAmount }, 'Promo code applied'),
+        status.OK,
+      )
+    } catch (err) {
+      c.var.logger.fatal(`Error during apply promo: ${err}`)
+      throw err
+    }
+  },
+)
+
 export const checkoutHandler = factory.createHandlers(
   requireAuth,
   zValidator('json', extendedCheckoutSchema, validateHook),
@@ -160,12 +449,14 @@ export const checkoutHandler = factory.createHandlers(
         coachSlots: rawCoachSlots,
         ballboySlots: rawBallboySlots,
         inventories,
+        promoCode: rawPromoCode,
       } = validated
 
       // Clean slot IDs to remove any accidentally appended time suffixes
       const courtSlots = cleanSlotIds(rawCourtSlots)
       const coachSlots = cleanSlotIds(rawCoachSlots)
       const ballboySlots = cleanSlotIds(rawBallboySlots)
+      const promoCode = normalizePromoCode(rawPromoCode)
 
       // Validate at least one slot is provided
       const hasSlots =
@@ -196,6 +487,8 @@ export const checkoutHandler = factory.createHandlers(
       const result = await db.$transaction(async (tx) => {
         // Find or create booking
         let booking
+        let previousPromoCodeId: string | null = null
+        let previousPromoDiscountAmount = 0
         if (bookingId) {
           booking = await tx.booking.findUnique({
             where: { id: bookingId },
@@ -216,6 +509,9 @@ export const checkoutHandler = factory.createHandlers(
             throw new BadRequestException('Booking is not in HOLD status')
           }
 
+          previousPromoCodeId = booking.promoCodeId
+          previousPromoDiscountAmount = booking.promoDiscountAmount
+
           // Clear existing details
           await tx.bookingDetail.deleteMany({
             where: { bookingId: booking.id },
@@ -229,6 +525,18 @@ export const checkoutHandler = factory.createHandlers(
           await tx.bookingInventory.deleteMany({
             where: { bookingId: booking.id },
           })
+
+          if (previousPromoCodeId && previousPromoDiscountAmount > 0) {
+            await tx.promoCode.updateMany({
+              where: {
+                id: previousPromoCodeId,
+                usedCount: { gt: 0 },
+              },
+              data: {
+                usedCount: { decrement: 1 },
+              },
+            })
+          }
         } else {
           booking = await tx.booking.create({
             data: {
@@ -243,6 +551,9 @@ export const checkoutHandler = factory.createHandlers(
         let totalPrice = 0
         let courtNormalPrice = 0
         let courtDiscountPrice = 0
+        let promoDiscountAmount = 0
+        let appliedPromoCodeId: string | null = null
+        let appliedPromoCodeText: string | null = null
         const xenditItems: Array<{
           name: string
           quantity: number
@@ -497,6 +808,55 @@ export const checkoutHandler = factory.createHandlers(
           }
         }
 
+        if (promoCode) {
+          const promo = await tx.promoCode.findUnique({
+            where: { code: promoCode },
+          })
+          if (!promo) {
+            throw new BadRequestException('Promo code not found')
+          }
+
+          const now = dayjs()
+          if (promo.status !== 'ACTIVE') {
+            throw new BadRequestException('Promo code is not active')
+          }
+          if (now.isBefore(promo.startAt) || now.isAfter(promo.endAt)) {
+            throw new BadRequestException(
+              'Promo code is not valid at this time',
+            )
+          }
+          if (promo.usedCount >= promo.maxUsage) {
+            throw new BadRequestException(
+              'Promo code has reached maximum usage',
+            )
+          }
+
+          promoDiscountAmount = calculatePromoDiscount(totalPrice, promo)
+          if (promoDiscountAmount <= 0) {
+            throw new BadRequestException('Promo code is not applicable')
+          }
+
+          totalPrice -= promoDiscountAmount
+
+          const updatePromoUsage = await tx.promoCode.updateMany({
+            where: {
+              id: promo.id,
+              usedCount: { lt: promo.maxUsage },
+            },
+            data: {
+              usedCount: { increment: 1 },
+            },
+          })
+          if (updatePromoUsage.count === 0) {
+            throw new BadRequestException(
+              'Promo code has reached maximum usage',
+            )
+          }
+
+          appliedPromoCodeId = promo.id
+          appliedPromoCodeText = promo.code
+        }
+
         // Calculate processing fee (fixed fee + percentage fee + 11% VAT)
         const percentageFee = Math.round(
           totalPrice * (Number(paymentMethod.percentage) / 100),
@@ -522,6 +882,9 @@ export const checkoutHandler = factory.createHandlers(
             processingFee,
             courtNormalPrice,
             courtDiscountPrice,
+            promoCodeId: appliedPromoCodeId,
+            promoCodeText: appliedPromoCodeText,
+            promoDiscountAmount,
           },
         })
 
@@ -539,6 +902,9 @@ export const checkoutHandler = factory.createHandlers(
             subtotal: totalPrice,
             processingFee,
             total: finalTotal,
+            promoCodeId: appliedPromoCodeId,
+            promoCodeText: appliedPromoCodeText,
+            promoDiscountAmount,
             status: PaymentStatus.PENDING,
             dueDate: dayjs().add(15, 'minutes').toDate(), // Payment due in 15 minutes for booking hold
             issuedAt: new Date(),
@@ -814,6 +1180,7 @@ export const checkoutHandler = factory.createHandlers(
             totalPrice: result.booking.totalPrice,
             processingFee: result.booking.processingFee,
             total: result.invoice.total,
+            promoDiscountAmount: result.invoice.promoDiscountAmount,
             status: result.booking.status,
             paymentStatus: result.xenditPaymentRequest?.status || 'PENDING',
             // For credit cards: payment_session_id to use with card_session.js
