@@ -52,7 +52,40 @@ HTTP automatically redirects to HTTPS ✅
 
 ## 🔄 Certificate Renewal
 
-Automatic! Checks every 12 hours and renews when needed (30 days before expiry).
+Automatic! Certbot runs every 12 hours with **webroot** mode: it writes challenge files to the shared volume and nginx serves them, so renewal works while nginx is running.
+
+After a successful renewal, reload nginx to use the new certificate:
+
+```bash
+docker exec quantum-sport-nginx-prod nginx -s reload
+```
+
+(Optional: run this via a cron job after certbot, or use certbot’s `--deploy-hook` with Docker socket access to run the reload automatically.)
+
+## 🆘 Certificate Expired (ERR_CERT_DATE_INVALID)
+
+If the browser shows **ERR_CERT_DATE_INVALID** or “Your connection is not private”, the certificate is expired or invalid. Do this once:
+
+1. **Redeploy** so certbot uses webroot for renewal (if you haven’t already):
+   ```bash
+   docker-compose -f docker-compose.prod.yml up -d
+   ```
+
+2. **Renew the certificate** (webroot; nginx keeps serving):
+   ```bash
+   docker-compose -f docker-compose.prod.yml run --rm certbot renew --webroot --webroot-path=/var/www/certbot --force-renewal
+   ```
+   If you get “no certificate found”, obtain one first:
+   ```bash
+   docker-compose -f docker-compose.prod.yml run --rm certbot certonly --webroot --webroot-path=/var/www/certbot -d api.quantumsocialclub.id --email your@email.com --agree-tos --no-eff-email
+   ```
+
+3. **Reload nginx** to load the new cert:
+   ```bash
+   docker exec quantum-sport-nginx-prod nginx -s reload
+   ```
+
+4. Test: open `https://api.quantumsocialclub.id/health` in a browser.
 
 ## 🆘 If Setup Fails
 

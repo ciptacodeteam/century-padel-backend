@@ -242,12 +242,12 @@ services:
       test:
         [
           'CMD-SHELL',
-          'wget --no-verbose --tries=1 --spider http://localhost || exit 1',
+          'wget --no-verbose --tries=1 --spider http://localhost/health || nc -z localhost 80 || exit 1',
         ]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 10s
+      retries: 5
+      start_period: 60s
     logging:
       driver: 'json-file'
       options:
@@ -257,13 +257,14 @@ services:
       - no-new-privileges:true
 
   # Certbot for SSL certificate management
+  # Renewal uses webroot so challenge files are written to certbot_www and nginx serves them.
   certbot:
     image: certbot/certbot:latest
     container_name: quantum-sport-certbot
     volumes:
       - certbot_certs:/etc/letsencrypt
       - certbot_www:/var/www/certbot
-    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew --webroot --webroot-path=/var/www/certbot; sleep 12h & wait $$!; done;'"
     networks:
       - quantum-sport-network
     healthcheck:
