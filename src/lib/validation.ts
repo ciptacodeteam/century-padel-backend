@@ -96,6 +96,7 @@ export const createInventorySchema = z.object({
   description: z.string().max(500).optional(),
   quantity: z.number().min(0),
   price: z.number().min(0),
+  isActive: z.coerce.boolean().optional().default(true),
 })
 
 export type CreateInventorySchema = z.infer<typeof createInventorySchema>
