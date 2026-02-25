@@ -45,9 +45,7 @@ export const getInventoryAvailabilityHandler = factory.createHandlers(
 
       return c.json(ok(availability), status.OK)
     } catch (error) {
-      c.var.logger.fatal(
-        `Error in getInventoryAvailabilityHandler: ${error}`,
-      )
+      c.var.logger.fatal(`Error in getInventoryAvailabilityHandler: ${error}`)
       throw error
     }
   },
@@ -123,6 +121,7 @@ export const createInventoryHandler = factory.createHandlers(
           description,
           quantity,
           price,
+          isActive: true,
         },
       })
 
