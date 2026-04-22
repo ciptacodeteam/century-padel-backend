@@ -223,6 +223,13 @@ export type OverrideSingleCourtCostSchema = z.infer<
   typeof overrideSingleCourtCostSchema
 >
 
+export const updateSlotPricingSchema = z.object({
+  price: z.number().min(0),
+  discountPrice: z.number().min(0).optional(),
+})
+
+export type UpdateSlotPricingSchema = z.infer<typeof updateSlotPricingSchema>
+
 export const createCourtSchema = z.object({
   name: z.string().min(3).max(100),
   description: z.string().max(500).optional(),

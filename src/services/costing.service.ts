@@ -484,6 +484,77 @@ export async function overrideSingleCourtHourPrice({
   }
 }
 
+type UpdateSlotPricingPayload = {
+  slotId: string
+  price: number
+  discountPrice?: number
+}
+
+export async function updateSlotPricing({
+  slotId,
+  price,
+  discountPrice = 0,
+}: UpdateSlotPricingPayload) {
+  try {
+    const slot = await db.slot.findUnique({
+      where: { id: slotId },
+      include: {
+        bookingDetails: {
+          where: {
+            booking: {
+              status: {
+                not: BookingStatus.CANCELLED,
+              },
+            },
+          },
+          select: { id: true },
+          take: 1,
+        },
+      },
+    })
+
+    if (!slot) {
+      log.warn(`Slot not found: ${slotId}`)
+      return false
+    }
+
+    // Prevent updating prices for slots with active bookings
+    if (slot.bookingDetails.length > 0) {
+      log.warn(`Cannot update pricing for slot ${slotId} with active bookings`)
+      return false
+    }
+
+    await db.$transaction(async (tx) => {
+      // Update the slot
+      await tx.slot.update({
+        where: { id: slotId },
+        data: { price, discountPrice },
+      })
+
+      // Also update CourtCostSchedule if it exists
+      if (slot.type === SlotType.COURT) {
+        const ccs = await tx.courtCostSchedule.findFirst({
+          where: { courtId: slot.courtId, startAt: slot.startAt },
+        })
+        if (ccs) {
+          await tx.courtCostSchedule.update({
+            where: { id: ccs.id },
+            data: { price, discountPrice },
+          })
+        }
+      }
+    })
+
+    log.info(
+      `Updated slot ${slotId} pricing - price: ${price}, discountPrice: ${discountPrice}`,
+    )
+    return true
+  } catch (error) {
+    log.fatal(`Error updating slot pricing: ${error}`)
+    throw error
+  }
+}
+
 type SetStaffPricingRangePayload = {
   staffId: string
   type: Extract<SlotType, 'COACH' | 'BALLBOY'>

@@ -19,8 +19,11 @@ import {
   updateCourtSchema,
   UpdateCourtSlotAvailabilitySchema,
   updateCourtSlotAvailabilitySchema,
+  UpdateSlotPricingSchema,
+  updateSlotPricingSchema,
 } from '@/lib/validation'
 import { deleteFile, getFileUrl, uploadFile } from '@/services/upload.service'
+import { updateSlotPricing } from '@/services/costing.service'
 import { zValidator } from '@hono/zod-validator'
 import status from 'http-status'
 import { BookingStatus, SlotType } from '@prisma/client'
@@ -435,6 +438,67 @@ export const updateCourtSlotAvailabilityHandler = factory.createHandlers(
       c.var.logger.fatal(
         `Error in updateCourtSlotAvailabilityHandler: ${error}`,
       )
+      throw error
+    }
+  },
+)
+
+export const updateSlotPricingHandler = factory.createHandlers(
+  zValidator('param', idSchema, validateHook),
+  zValidator('json', updateSlotPricingSchema, validateHook),
+  async (c) => {
+    try {
+      const { id } = c.req.valid('param') as IdSchema
+      const { price, discountPrice = 0 } = c.req.valid(
+        'json',
+      ) as UpdateSlotPricingSchema
+
+      // Verify slot exists
+      const slot = await db.slot.findUnique({
+        where: { id },
+      })
+
+      if (!slot) {
+        throw new NotFoundException('Slot not found')
+      }
+
+      if (slot.type !== SlotType.COURT) {
+        throw new BadRequestException('Slot is not a court slot')
+      }
+
+      const updated = await updateSlotPricing({
+        slotId: id,
+        price,
+        discountPrice,
+      })
+
+      if (!updated) {
+        throw new BadRequestException(
+          'Failed to update slot pricing (slot may have active bookings)',
+        )
+      }
+
+      const updatedSlot = await db.slot.findUnique({
+        where: { id },
+        include: {
+          court: true,
+        },
+      })
+
+      const formattedSlot = {
+        ...updatedSlot,
+        startAt: dayjs(updatedSlot?.startAt).format(DATETIME_FORMAT),
+        endAt: dayjs(updatedSlot?.endAt).format(DATETIME_FORMAT),
+        createdAt: dayjs(updatedSlot?.createdAt).format(DATETIME_FORMAT),
+        updatedAt: dayjs(updatedSlot?.updatedAt).format(DATETIME_FORMAT),
+      }
+
+      return c.json(
+        ok(formattedSlot, 'Slot pricing updated successfully'),
+        status.OK,
+      )
+    } catch (error) {
+      c.var.logger.fatal(`Error in updateSlotPricingHandler: ${error}`)
       throw error
     }
   },
