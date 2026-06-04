@@ -9,8 +9,10 @@ import { toWebp } from '@/lib/image'
 import { log } from '@/lib/logger'
 import { del, put } from '@vercel/blob'
 import { extension as extFromMime } from 'mime-types'
+import fs from 'node:fs/promises'
 import path from 'node:path'
 import { buildFilename } from '../lib/filename'
+import { ensureDir, safeJoin } from '../lib/fs'
 
 export type UploadOptions = {
   subdir?: string // e.g. "images", "avatars/2025/10"
@@ -44,7 +46,7 @@ export async function uploadFile(
     .replace(/\.\./g, '')
   const allowNonImages = opts.allowNonImages ?? false
   const forceWebpForImages = opts.forceWebpForImages ?? true
-  // const replaceExisting = opts.replaceExisting ?? true
+  const replaceExisting = opts.replaceExisting ?? true
 
   // Read into memory (consider streaming for huge files)
   if (file.size > MAX_FILE_SIZE_BYTES) {
@@ -94,7 +96,26 @@ export async function uploadFile(
       ? 'image/webp'
       : sniffMime || 'application/octet-stream'
 
-  // Upload to Vercel Blob Storage
+  if (env.storageStrategy === 'local') {
+    const dir = safeJoin(subdir)
+    const absolutePath = path.join(dir, filename)
+    const writeFlag = replaceExisting ? 'w' : 'wx'
+
+    await ensureDir(dir)
+    await fs.writeFile(absolutePath, outBuf, { flag: writeFlag })
+
+    return {
+      originalName: file.name,
+      mime: finalMime,
+      size: outBuf.length,
+      isImage,
+      relativePath,
+      absolutePath,
+      width,
+      height,
+    }
+  }
+
   if (!env.blobToken) {
     throw new Error('BLOB_READ_WRITE_TOKEN is required for file uploads')
   }
@@ -131,15 +152,19 @@ export async function uploadFile(
   }
 }
 
-export async function deleteFile(fileUrl: string): Promise<boolean> {
-  if (!fileUrl) {
+export async function deleteFile(filePath: string): Promise<boolean> {
+  if (!filePath) {
     return false
   }
 
-  // Only delete if it's a Vercel Blob URL
-  if (!fileUrl.startsWith('https://') && !fileUrl.startsWith('http://')) {
-    log.warn(`Cannot delete non-URL file reference: ${fileUrl}`)
-    return false
+  if (env.storageStrategy === 'local') {
+    try {
+      await fs.unlink(safeJoin(filePath))
+      return true
+    } catch (err) {
+      log.error(`Failed to delete local file: ${err}`)
+      return false
+    }
   }
 
   if (!env.blobToken) {
@@ -148,10 +173,10 @@ export async function deleteFile(fileUrl: string): Promise<boolean> {
   }
 
   try {
-    await del(fileUrl, {
+    await del(await getFileUrl(filePath), {
       token: env.blobToken,
     })
-    log.info(`Successfully deleted file: ${fileUrl}`)
+    log.info(`Successfully deleted file: ${filePath}`)
     return true
   } catch (err) {
     log.error(`Failed to delete file from Vercel Blob: ${err}`)
@@ -176,16 +201,20 @@ export async function getFileUrl(relativePath: string | null): Promise<string> {
     ? relativePath
     : `/${relativePath}`
 
-  // If no cached URL yet, try to get it from env variable
-  const envBlobUrl = env.blobToken
-  if (envBlobUrl) {
-    const token = envBlobUrl.split('_')[3]
-    const baseUrl = `${token}.public.blob.vercel-storage.com⁠`
-    return `https://${baseUrl.toLowerCase()}${cleanPath}`
+  if (env.storageStrategy === 'local') {
+    return `${env.baseUrl}/storage/uploads${cleanPath}`
   }
 
-  // Fallback: return the path as-is
-  // This will happen on the first request before any upload
-  log.warn(`No blob base URL available yet for path: ${relativePath}`)
-  return `${env.baseUrl}/storage${cleanPath}`
+  if (blobBaseUrl) {
+    return `${blobBaseUrl}${cleanPath}`
+  }
+
+  if (env.blobToken) {
+    const storeId = env.blobToken.split('_')[3]
+    if (storeId) {
+      return `https://${storeId.toLowerCase()}.public.blob.vercel-storage.com${cleanPath}`
+    }
+  }
+
+  throw new Error('BLOB_READ_WRITE_TOKEN is required to resolve file URLs')
 }
