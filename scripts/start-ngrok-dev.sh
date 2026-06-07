@@ -13,7 +13,7 @@ CYAN='\033[0;36m'
 NC='\033[0m'
 
 echo -e "${BLUE}"
-echo "🚇 Quantum Sport Backend - Ngrok Development Setup"
+echo "🚇 Century Padel Backend - Ngrok Development Setup"
 echo "==============================================="
 echo -e "${NC}"
 

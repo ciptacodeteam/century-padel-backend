@@ -1,84 +1,54 @@
-# Docker Makefile for common operations
+# Docker shortcuts — for full deploy/update use scripts/ instead.
 
-.PHONY: help build up down restart logs shell db-migrate db-backup clean
+.PHONY: help dev-up dev-down dev-logs prod-status prod-logs prod-shell db-migrate db-backup clean
 
-# Default target
 help:
-	@echo "Available commands:"
-	@echo "  make prod-build    - Build production images"
-	@echo "  make prod-up       - Start production services"
-	@echo "  make prod-up-build - Start production services with build"
-	@echo "  make prod-down     - Stop production services"
-	@echo "  make prod-restart  - Restart production services"
-	@echo "  make prod-logs     - View production logs"
-	@echo "  make dev-up        - Start development services"
-	@echo "  make dev-up-build  - Start development services with build"
-	@echo "  make dev-down      - Stop development services"
-	@echo "  make logs          - View development logs"
-	@echo "  make shell         - Access app container shell"
-	@echo "  make db-migrate    - Run database migrations"
-	@echo "  make db-backup     - Backup database"
-	@echo "  make clean         - Clean up containers and volumes"
-	@echo "  make clean-all     - Clean up all containers, images, and volumes"
+	@echo "Development:"
+	@echo "  make dev-up        Start dev stack"
+	@echo "  make dev-down      Stop dev stack"
+	@echo "  make dev-logs      Tail dev logs"
+	@echo ""
+	@echo "Production (shortcuts):"
+	@echo "  make prod-status   Show container status"
+	@echo "  make prod-logs     Tail production logs"
+	@echo "  make prod-shell    Shell into app container"
+	@echo ""
+	@echo "Deploy scripts (preferred):"
+	@echo "  ./scripts/install-vps.sh    Fresh VPS setup (once)"
+	@echo "  ./scripts/deploy-fresh.sh   First production deploy"
+	@echo "  ./scripts/update.sh         Routine code updates"
+	@echo ""
+	@echo "Database:"
+	@echo "  make db-migrate    Run migrations in prod app"
+	@echo "  make db-backup     Backup production database"
 
-# Production commands
-prod-build:
-	docker-compose -f docker-compose.prod.yml build --no-cache
-
-prod-up:
-	docker-compose -f docker-compose.prod.yml up -d
-
-prod-up-build:
-	docker-compose -f docker-compose.prod.yml up -d --build
-
-prod-down:
-	docker-compose -f docker-compose.prod.yml down
-
-prod-restart:
-	docker-compose -f docker-compose.prod.yml restart
-
-prod-logs:
-	docker-compose -f docker-compose.prod.yml logs -f
-
-prod-shell:
-	docker-compose -f docker-compose.prod.yml exec app sh
-
-# Development commands
 dev-up:
-	docker-compose up -d
-
-dev-up-build:
-	docker-compose up -d --build
+	docker compose up -d
 
 dev-down:
-	docker-compose down
+	docker compose down
 
 dev-logs:
-	docker-compose logs -f
+	docker compose logs -f
 
-dev-shell:
-	docker-compose exec app sh
+prod-status:
+	docker compose -f docker-compose.prod.yml ps
 
-dev-migrate:
-	docker-compose exec app bunx prisma db push
+prod-logs:
+	docker compose -f docker-compose.prod.yml logs -f app
 
-# Database commands
+prod-shell:
+	docker compose -f docker-compose.prod.yml exec app sh
+
 db-migrate:
-	docker-compose -f docker-compose.prod.yml exec app bunx prisma migrate deploy
+	docker compose -f docker-compose.prod.yml exec app bunx prisma migrate deploy
 
 db-backup:
-	docker-compose -f docker-compose.prod.yml exec db pg_dump -U postgres quantum_sport > backup_$$(date +%Y%m%d_%H%M%S).sql
+	docker compose -f docker-compose.prod.yml exec db pg_dump -U postgres -Fc century_padel > backup_$$(date +%Y%m%d).dump
 
-db-restore:
-	@echo "Usage: make db-restore FILE=backup.sql"
-	docker-compose -f docker-compose.prod.yml exec -T db psql -U postgres quantum_sport < $(FILE)
-
-# Cleanup commands
 clean:
-	docker-compose -f docker-compose.prod.yml down -v
-	docker system prune -f
+	docker compose down -v
 
 clean-all:
-	docker-compose down -v
-	docker-compose -f docker-compose.prod.yml down -v
-	docker system prune -af --volumes
+	docker compose -f docker-compose.prod.yml down -v
+	docker system prune -af

@@ -1,6 +1,6 @@
 # BullMQ Setup & Integration Guide
 
-This document provides a comprehensive overview of how BullMQ is integrated into the Quantum Sport backend for async email queue processing with password reset functionality.
+This document provides a comprehensive overview of how BullMQ is integrated into the Century Padel backend for async email queue processing with password reset functionality.
 
 ## Overview
 
@@ -235,7 +235,7 @@ SMTP_HOST=smtp.mailtrap.io
 SMTP_PORT=2525
 SMTP_USER=your_username
 SMTP_PASS=your_password
-SMTP_FROM=noreply@quantumsport.com
+SMTP_FROM=noreply@centurypadel.id
 
 # Base URLs
 BASE_URL=http://localhost:3000
@@ -249,7 +249,7 @@ JWT_SECRET=your_jwt_secret
 JWT_EXPIRE=7d
 
 # Database
-DATABASE_URL=postgresql://user:pass@localhost:5433/quantum_sport
+DATABASE_URL=postgresql://user:pass@localhost:5433/century_padel
 ```
 
 ### SMTP Providers

@@ -65,7 +65,7 @@ export const emailTemplates = {
         </p>
         <hr style="margin-top: 30px; border: none; border-top: 1px solid #ddd;" />
         <p style="color: #999; font-size: 11px; text-align: center;">
-          Quantum Sport © 2024. All rights reserved.
+          Century Padel © 2024. All rights reserved.
         </p>
       </div>
     `,
@@ -79,23 +79,23 @@ export const emailTemplates = {
         <p>Hi ${variables.name},</p>
         <p>Your password has been reset successfully.</p>
         <p>You can now login to your account using your new password.</p>
-        <p>Thank you for using Quantum Sport.</p>
+        <p>Thank you for using Century Padel.</p>
       </div>
         <hr style="margin-top: 30px; border: none; border-top: 1px solid #ddd;" />
         <p style="color: #999; font-size: 11px; text-align: center;">
-          Quantum Sport © 2024. All rights reserved.
+          Century Padel © 2024. All rights reserved.
         </p>
       </div>
     `,
   }),
 
   welcome: (variables: Record<string, any>) => ({
-    subject: 'Welcome to Quantum Sport!',
+    subject: 'Welcome to Century Padel!',
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2>Welcome to Quantum Sport!</h2>
+        <h2>Welcome to Century Padel!</h2>
         <p>Hi ${variables.name},</p>
-        <p>Thank you for joining Quantum Sport. We're excited to have you on board.</p>
+        <p>Thank you for joining Century Padel. We're excited to have you on board.</p>
         <p>You can now:</p>
         <ul>
           <li>Book courts and sessions</li>
@@ -109,7 +109,7 @@ export const emailTemplates = {
         </p>
         <hr style="margin-top: 30px; border: none; border-top: 1px solid #ddd;" />
         <p style="color: #999; font-size: 11px; text-align: center;">
-          Quantum Sport © 2024. All rights reserved.
+          Century Padel © 2024. All rights reserved.
         </p>
       </div>
     `,
@@ -142,7 +142,7 @@ export const emailTemplates = {
         </p>
         <p style="font-size:12px; color:#666;">If you have questions reply to this email.</p>
         <hr style="margin-top:30px; border:none; border-top:1px solid #ddd;" />
-        <p style="color:#999; font-size:11px; text-align:center;">Quantum Sport © 2025. All rights reserved.</p>
+        <p style="color:#999; font-size:11px; text-align:center;">Century Padel © 2025. All rights reserved.</p>
       </div>
     `,
   }),
@@ -165,7 +165,7 @@ export const emailTemplates = {
         </p>
         <hr style="margin-top: 30px; border: none; border-top: 1px solid #ddd;" />
         <p style="color: #999; font-size: 11px; text-align: center;">
-          Quantum Sport © 2025. All rights reserved.
+          Century Padel © 2025. All rights reserved.
         </p>
       </div>
     `,
@@ -189,7 +189,7 @@ export const emailTemplates = {
         </p>
         <hr style="margin-top: 30px; border: none; border-top: 1px solid #ddd;" />
         <p style="color: #999; font-size: 11px; text-align: center;">
-          Quantum Sport © 2025. All rights reserved.
+          Century Padel © 2025. All rights reserved.
         </p>
       </div>
     `,
@@ -202,10 +202,10 @@ export const emailTemplates = {
         <h2>${variables.title}</h2>
         <p>Hi ${variables.name},</p>
         <p>Your email address has been successfully ${variables.action} to <strong>${variables.email}</strong>.</p>
-        <p>You can now use this email address to receive notifications and updates from Quantum Sport.</p>
+        <p>You can now use this email address to receive notifications and updates from Century Padel.</p>
         <hr style="margin-top: 30px; border: none; border-top: 1px solid #ddd;" />
         <p style="color: #999; font-size: 11px; text-align: center;">
-          Quantum Sport © 2025. All rights reserved.
+          Century Padel © 2025. All rights reserved.
         </p>
       </div>
     `,
@@ -224,7 +224,7 @@ export const sendEmail = async (
   try {
     const transporter = createTransporter()
     const emailFrom =
-      from || process.env.SMTP_FROM || 'noreply@quantumsport.com'
+      from || process.env.SMTP_FROM || 'noreply@centurypadel.id'
 
     const result = await transporter.sendMail({
       from: emailFrom,

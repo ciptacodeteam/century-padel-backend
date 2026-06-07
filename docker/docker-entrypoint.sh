@@ -85,7 +85,7 @@ else
       echo "📝 Manual intervention required:"
       echo "   1. Check database connection and permissions"
       echo "   2. Connect to the container:"
-      echo "      docker exec -it quantum-sport-app-prod sh"
+      echo "      docker exec -it century-padel-app-prod sh"
       echo "   3. Check migration status:"
       echo "      bunx prisma migrate status"
       echo "   4. Manually resolve if needed"

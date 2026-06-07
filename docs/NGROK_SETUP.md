@@ -414,7 +414,7 @@ npm run ngrok:stop
 ---
 
 **Last Updated**: November 15, 2025
-**Author**: Quantum Sport Backend Team
+**Author**: Century Padel Backend Team
 **Status**: Production Ready for Development Use
 
 ## Quick Reference

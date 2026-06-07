@@ -27,7 +27,9 @@ jobs:
           ssh -p ${{ secrets.DO_SSH_PORT }} ${{ secrets.DO_USERNAME }}@${{ secrets.DO_HOST }} << 'EOF'
           cd ${{ secrets.DO_PROJECT_PATH }}
           git pull origin main
-          bash deploy.sh
+          cd century-padel-backend 2>/dev/null || true
+          chmod +x scripts/*.sh scripts/lib/*.sh deploy.sh docker/*.sh 2>/dev/null || true
+          AUTO_DEPLOY=true bash scripts/update.sh
           EOF
       
       - name: Deployment Status

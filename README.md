@@ -1,332 +1,134 @@
-# Quantum Sport Backend
+# Century Padel Backend
 
-This project is a backend API built with [Hono](https://hono.dev/) for Quantum Sport. You can set up and run the API using either **npm**, **bun**, or **Docker**.
+Padel court booking API — Hono, Bun, Prisma, PostgreSQL, Redis, Xendit payments.
 
-## Table of Contents
+## Quick links
 
-- [Prerequisites](#prerequisites)
-- [Getting Started](#getting-started)
-  - [Local Development](#local-development)
-  - [Docker Development](#docker-development)
-- [Production Deployment](#production-deployment)
-- [Development Guide](./develop-guide.md)
-- [Docker Production Guide](./DOCKER_PRODUCTION.md)
-- [Scripts](#scripts)
-- [Learn More](#learn-more)
+| Task | Command |
+|------|---------|
+| Local dev | `bun install && bun run dev` |
+| Docker dev | `docker compose up -d` |
+| Fresh VPS setup | `./scripts/install-vps.sh` |
+| First production deploy | `./scripts/deploy-fresh.sh` |
+| Routine code update | `./scripts/update.sh` |
 
 ## Prerequisites
 
-### Local Development
-- [Node.js](https://nodejs.org/) (v18+ recommended) or [Bun](https://bun.sh/)
-- [PostgreSQL](https://www.postgresql.org/) 16+
-- [Redis](https://redis.io/) 7+
-- [Git](https://git-scm.com/)
+**Local:** Bun 1.3+, PostgreSQL 16+, Redis 7+
 
-### Docker Development/Production
-- [Docker](https://www.docker.com/) 20.10+
-- [Docker Compose](https://docs.docker.com/compose/) 2.0+
-- [Git](https://git-scm.com/)
+**Production (Docker):** Ubuntu/Debian VPS, Docker 24+, 4 GB RAM recommended
 
-## Getting Started
-
-### Local Development
-
-#### 1. Clone the Repository
-
-```bash
-git clone https://github.com/ciptacodeteam/quantum-sport-backend.git
-cd quantum-sport-backend
-```
-
-#### 2. Install Dependencies
-
-Using npm:
-```bash
-npm install
-```
-
-Using Bun:
-```bash
-bun install
-```
-
-#### 3. Configure Environment Variables
+## Local development
 
 ```bash
 cp .env.example .env
-# Edit .env with your configuration
-```
-
-#### 4. Setup Database
-
-```bash
-# Push schema to database
+bun install
 bun run db:push
-
-# Or run migrations
-bun run prisma:migrate
+bun run dev
 ```
 
-#### 5. Run the Development Server
+API: `http://localhost:8000`
+
+### Docker development
 
 ```bash
-bun dev
+cp .env.example .env.local   # or .env — at least one is required
+docker compose up -d
 ```
 
-The API will be available at `http://localhost:3000`.
+| Service | URL |
+|---------|-----|
+| API | http://localhost:8000 |
+| Prisma Studio | http://localhost:5555 |
+| PostgreSQL | localhost:5433 |
+| Redis | localhost:6379 |
 
----
+## Production deployment (fully containerized)
 
-### Docker Development
-
-#### 1. Clone and Configure
+### 1. Install VPS (once)
 
 ```bash
-git clone https://github.com/ciptacodeteam/quantum-sport-backend.git
-cd quantum-sport-backend
-cp .env.example .env.local
-# Edit .env.local with your configuration
+./scripts/install-vps.sh
+# Re-login after install for docker group permissions
 ```
 
-#### 2. Start Services
+Disables system nginx, installs Docker, configures UFW (SSH + 80 + 443), optional 1 GB swap on 4 GB RAM.
+
+### 2. Configure environment
 
 ```bash
-# Start all services (app, database, redis, prisma studio)
-docker-compose up -d
-
-# View logs
-docker-compose logs -f
-
-# Or use Make commands
-make dev-up
-make dev-logs
+cp docker/env.production.template .env.production
+nano .env.production
 ```
 
-Services will be available at:
-- **API**: http://localhost:8000
-- **Prisma Studio**: http://localhost:5555
-- **PostgreSQL**: localhost:5433
-- **Redis**: localhost:6379
+Required: `DB_PASSWORD`, `JWT_SECRET`, `JWT_REFRESH_SECRET`, `SSL_DOMAIN`, `BASE_URL`, `FRONT_END_URL`
 
-#### 3. Run Database Migrations
+### 3. First deploy
 
 ```bash
-docker-compose exec app bunx prisma migrate dev
+chmod +x scripts/*.sh scripts/lib/*.sh deploy.sh docker/*.sh
+./scripts/deploy-fresh.sh
 ```
 
-#### 4. Stop Services
+Starts: PostgreSQL, Redis, app, nginx (SSL via Let's Encrypt), email worker, scheduler worker, certbot auto-renewal.
+
+### 4. Updates (routine)
 
 ```bash
-docker-compose down
-
-# Or use Make
-make dev-down
+./scripts/update.sh
 ```
 
----
+Pulls code, rebuilds app image with cache (~1–3 min), restarts app + workers only.
 
-## Production Deployment
-
-### 🌐 Domain & SSL Setup
-Your API domain: **api.quantumsocialclub.id**
-
-- **[SSL_QUICK_SETUP.md](./SSL_QUICK_SETUP.md)** - ⚡ **Quick SSL setup** (2 minutes!)
-- **[DOMAIN_AND_SSL_SETUP.md](./DOMAIN_AND_SSL_SETUP.md)** - 🔐 Complete domain & SSL guide
-
-### 📚 Deployment Guides
-- **[DEPLOY_4GB_SERVER.md](./DEPLOY_4GB_SERVER.md)** - 🌟 **Recommended: 4GB RAM** (Optimal for production!)
-- **[UPGRADE_TO_4GB_CHECKLIST.md](./UPGRADE_TO_4GB_CHECKLIST.md)** - Upgrading from 2GB? Follow this!
-- **[QUICK_START_2GB.md](./QUICK_START_2GB.md)** - ⚠️ 2GB RAM minimum (add swap required)
-- **[DOCKER_DEPLOYMENT_GUIDE.md](./DOCKER_DEPLOYMENT_GUIDE.md)** - Complete deployment guide
-- **[DOCKER_QUICK_REFERENCE.md](./DOCKER_QUICK_REFERENCE.md)** - Quick commands
-- **[docker/GETTING_STARTED.md](./docker/GETTING_STARTED.md)** - 5-minute quick start
-
-### Quick Production Setup
-
-1. **Configure Environment**
-   ```bash
-   cp docker/env.production.template .env.production
-   # Edit .env.production with your production values
-   # REQUIRED: DB_PASSWORD, JWT_SECRET, JWT_REFRESH_SECRET
-   ```
-
-2. **Deploy (Automated - Recommended)**
-   ```bash
-   chmod +x deploy.sh
-   ./deploy.sh
-   ```
-   
-   The script automatically:
-   - ✅ Validates environment variables
-   - ✅ Pulls latest code
-   - ✅ Builds optimized Docker images
-   - ✅ Runs database migrations
-   - ✅ Starts all services
-   - ✅ Verifies deployment health
-
-3. **Setup SSL (For api.quantumsocialclub.id)**
-   ```bash
-   chmod +x docker/setup-ssl.sh
-   ./docker/setup-ssl.sh
-   ```
-   
-   Configures HTTPS with Let's Encrypt:
-   - ✅ Free SSL certificate
-   - ✅ Auto-renewal every 12 hours
-   - ✅ HTTP → HTTPS redirect
-   - ✅ Security headers enabled
-
-**Alternative: Manual Deployment**
 ```bash
-# Manual build and deploy
-DOCKER_BUILDKIT=1 docker-compose -f docker-compose.prod.yml build
-docker-compose -f docker-compose.prod.yml up -d
-
-# Or use Make commands
-make prod-build
-make prod-up
+REBUILD_ALL=true ./scripts/update.sh   # Dockerfile or compose changed
+CLEAN_BUILD=true ./scripts/update.sh   # corrupted build cache
 ```
 
-### Production Features
+### SSL troubleshooting
 
-- ✅ Multi-stage Docker builds (optimized size)
-- ✅ Non-root container security
-- ✅ Health checks and monitoring
-- ✅ Nginx reverse proxy with SSL
-- ✅ Redis persistence
-- ✅ Database connection pooling
-- ✅ Resource limits (CPU/Memory)
-- ✅ Log rotation
-- ✅ Email worker queue
-- ✅ Automated deployment with GitHub Actions
+```bash
+./docker/ssl-init.sh
+docker compose -f docker-compose.prod.yml logs nginx certbot
+```
 
----
-
-## Scripts
-
-### Development
-- `dev`: Start the development server with hot reload
-- `build`: Build TypeScript to production
-- `start`: Start the production server
-- `lint`: Run ESLint
-- `format`: Format code with Prettier
-- `test`: Run tests
-- `typecheck`: Run TypeScript type checking
-
-### Database
-- `db:push`: Push schema changes to database
-- `db:pull`: Pull schema from database
-- `db:fresh`: Reset and seed database
-- `db:seed`: Seed database with test data
-- `db:truncate`: Clear all database tables
-- `db:studio`: Open Prisma Studio
-
-### Prisma
-- `prisma:generate`: Generate Prisma Client
-- `prisma:migrate`: Run database migrations
-- `prisma:studio`: Open Prisma Studio
-
-### Workers
-- `worker:email`: Start email worker process
-
-### Docker (via Makefile)
-- `make dev-up`: Start development environment
-- `make dev-down`: Stop development environment
-- `make prod-build`: Build production images
-- `make prod-up`: Start production services
-- `make prod-down`: Stop production services
-- `make prod-logs`: View production logs
-- `make db-migrate`: Run database migrations
-- `make db-backup`: Backup database
-
----
-
-## Project Structure
+## Project structure
 
 ```
-quantum-sport-backend/
+century-padel-backend/
 ├── src/
-│   ├── app.ts              # Main application setup
-│   ├── handlers/           # Request handlers
-│   ├── routes/             # API routes
-│   ├── services/           # Business logic
-│   ├── middlewares/        # Custom middlewares
-│   ├── lib/                # Utilities and helpers
-│   └── workers/            # Background job workers
-├── prisma/
-│   ├── schema.prisma       # Database schema
-│   ├── migrations/         # Database migrations
-│   └── seed.ts             # Database seeding
-├── docker/
-│   ├── nginx/              # Nginx configuration
-│   ├── init-db.sh          # Database initialization
-│   └── redis.conf          # Redis configuration
-├── Dockerfile              # Production Dockerfile
-├── Dockerfile.dev          # Development Dockerfile
-├── docker-compose.yml      # Development compose
-├── docker-compose.prod.yml # Production compose
-├── deploy.sh               # Production deployment script
-└── Makefile                # Common Docker operations
+│   ├── routes/          # API routes
+│   ├── handlers/        # Request handlers
+│   ├── services/        # Business logic
+│   ├── workers/         # Email + scheduler workers
+│   └── middlewares/
+├── prisma/schema.prisma
+├── docker/              # nginx, SSL, redis, entrypoints
+├── scripts/             # install-vps, deploy-fresh, update
+├── docs/                # API & feature documentation
+├── docker-compose.yml       # Development
+├── docker-compose.prod.yml  # Production
+├── Dockerfile
+└── deploy.sh            # → scripts/deploy-fresh.sh
 ```
 
----
+## npm scripts
 
-## Environment Variables
+| Script | Description |
+|--------|-------------|
+| `bun run dev` | Dev server with hot reload |
+| `bun run build` | Compile TypeScript |
+| `bun run start` | Production server |
+| `bun run worker:email` | Email queue worker |
+| `bun run worker:scheduler` | Booking/payment expiry worker |
+| `bun run db:push` | Push Prisma schema |
+| `bun run db:seed` | Seed database |
+| `bun run test` | Run Vitest |
 
-See `.env.example` for development and `.env.production.example` for production.
+## Documentation
 
-Key variables:
-- `NODE_ENV`: Environment (development/production)
-- `PORT`: Server port
-- `DATABASE_URL`: PostgreSQL connection string
-- `REDIS_URL`: Redis connection string
-- `JWT_SECRET`: JWT signing secret
-- `XENDIT_API_KEY`: Xendit payment gateway key
-- `SMTP_*`: Email configuration
+See [docs/README.md](./docs/README.md) for API references, Xendit guides, and feature docs.
 
----
+## VPS sizing
 
-## API Documentation
-
-API documentation is available at `/api/docs` when running in development mode.
-
----
-
-## Learn More
-
-- [Hono Documentation](https://hono.dev/)
-- [Bun Documentation](https://bun.sh/docs)
-- [Prisma Documentation](https://www.prisma.io/docs)
-- [Docker Documentation](https://docs.docker.com/)
-- [PostgreSQL Documentation](https://www.postgresql.org/docs/)
-- [Redis Documentation](https://redis.io/docs/)
-
----
-
-## Contributing
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
----
-
-## License
-
-This project is proprietary software. All rights reserved.
-
----
-
-## Support
-
-For issues or questions:
-- Open an issue on GitHub
-- Contact the development team
-- Check the [Development Guide](./develop-guide.md)
-- Review [Docker Production Guide](./DOCKER_PRODUCTION.md)
-
----
-
-**Built with ❤️ by the Quantum Sport Team**
+A **4 GB RAM / 3 vCPU** VPS is sufficient for this stack (~100–200 concurrent users). The compose file sets memory limits tuned for 4 GB.

@@ -16,9 +16,9 @@ Follow these steps to add a new API route to the project.
 3. **Define handler functions** for your route (e.g., `createProduct`, `getProducts`).
 4. **Export the handler functions** for use in your route file.
 
-## 3. Register the Route in `app.ts`
+## 3. Register the Route in `src/app.ts`
 
-1. **Open `app.ts`** in the project root.
+1. **Open `src/app.ts`**.
 2. **Import your new route file** at the top:
    ```typescript
    import productRoutes from './routes/product.route'

@@ -18,8 +18,8 @@ export const env = {
   jwt: {
     secret: req('JWT_SECRET'),
     refreshSecret: req('JWT_REFRESH_SECRET'),
-    issuer: req('JWT_ISSUER', 'quantum-sport-backend'),
-    audience: req('JWT_AUDIENCE', 'quantum-sport-frontend'),
+    issuer: req('JWT_ISSUER', 'century-padel-backend'),
+    audience: req('JWT_AUDIENCE', 'century-padel-frontend'),
     expires: req('JWT_EXPIRES', '1'), // in minutes
     refreshExpires: req('JWT_REFRESH_EXPIRES', '30'), // in days
   },
@@ -39,7 +39,7 @@ export const env = {
     port: parseInt(process.env.SMTP_PORT ?? '2525'),
     user: process.env.SMTP_USER ?? '',
     pass: process.env.SMTP_PASS ?? '',
-    from: process.env.SMTP_FROM ?? 'noreply@quantumsport.com',
+    from: process.env.SMTP_FROM ?? 'noreply@centurypadel.id',
   },
   storageStrategy: process.env.STORAGE_STRATEGY || 'local', // 'local' or 'blob'
 }

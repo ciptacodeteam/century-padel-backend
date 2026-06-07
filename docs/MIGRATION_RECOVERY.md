@@ -50,7 +50,7 @@ Connect to your production database and check the migration status:
 
 ```bash
 # Connect to the database container
-docker-compose -f docker-compose.prod.yml exec db psql -U postgres -d quantum_sport
+docker-compose -f docker-compose.prod.yml exec db psql -U postgres -d century_padel
 
 # Check migration status
 SELECT * FROM "_prisma_migrations" WHERE migration_name = '20251114161611_add_club_join_request';
@@ -160,7 +160,7 @@ If `prisma migrate deploy` still fails, you can manually execute the fixed migra
 
 ```bash
 # Connect to database
-docker-compose -f docker-compose.prod.yml exec db psql -U postgres -d quantum_sport
+docker-compose -f docker-compose.prod.yml exec db psql -U postgres -d century_padel
 
 # Copy and paste the fixed migration SQL
 # (from prisma/migrations/20251114161611_add_club_join_request/migration.sql)

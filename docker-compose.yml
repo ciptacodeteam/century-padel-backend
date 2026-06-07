@@ -4,10 +4,12 @@ services:
     image: postgres:16-alpine
     container_name: db
     env_file:
-      - .env
-      - .env.local
+      - path: .env
+        required: false
+      - path: .env.local
+        required: false
     environment:
-      POSTGRES_DB: ${DB_NAME:-quantum_sport}
+      POSTGRES_DB: ${DB_NAME:-century_padel}
       POSTGRES_USER: ${DB_USER:-postgres}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
     ports:
@@ -20,7 +22,7 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - quantum-sport-network
+      - century-padel-network
 
   # Redis Cache & Queue
   redis:
@@ -36,8 +38,35 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - quantum-sport-network
+      - century-padel-network
     command: redis-server --appendonly yes
+
+  # Apply schema once before app/workers start (fresh DB has no tables)
+  db-init:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: db-init
+    env_file:
+      - path: .env
+        required: false
+      - path: .env.local
+        required: false
+    environment:
+      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-century_padel}
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - .:/app
+      - /app/node_modules
+    networks:
+      - century-padel-network
+    entrypoint:
+      - /bin/sh
+      - -c
+      - tr -d '\r' < /app/docker/dev-entrypoint.sh > /tmp/dev-entry.sh && exec sh /tmp/dev-entry.sh true
+    restart: 'no'
 
   # Prisma Studio (Database GUI)
   prisma-studio:
@@ -45,10 +74,12 @@ services:
     container_name: prisma-studio
     working_dir: /app
     env_file:
-      - .env
-      - .env.local
+      - path: .env
+        required: false
+      - path: .env.local
+        required: false
     environment:
-      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-quantum_sport}
+      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-century_padel}
     ports:
       - '5555:5555'
     volumes:
@@ -57,8 +88,10 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
     networks:
-      - quantum-sport-network
+      - century-padel-network
     command: >
       sh -c "bun install && bunx prisma studio"
 
@@ -69,12 +102,14 @@ services:
       dockerfile: Dockerfile.dev
     container_name: app
     env_file:
-      - .env
-      - .env.local
+      - path: .env
+        required: false
+      - path: .env.local
+        required: false
     environment:
       NODE_ENV: development
       PORT: 8000
-      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-quantum_sport}
+      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-century_padel}
       REDIS_URL: redis://redis:6379
     ports:
       - '8000:8000'
@@ -83,11 +118,13 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
     volumes:
       - .:/app
       - /app/node_modules
     networks:
-      - quantum-sport-network
+      - century-padel-network
     command: bun run dev
 
   # Email Queue Worker
@@ -97,22 +134,26 @@ services:
       dockerfile: Dockerfile.dev
     container_name: email-worker
     env_file:
-      - .env
-      - .env.local
+      - path: .env
+        required: false
+      - path: .env.local
+        required: false
     environment:
       NODE_ENV: development
-      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-quantum_sport}
+      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-century_padel}
       REDIS_URL: redis://redis:6379
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
     volumes:
       - .:/app
       - /app/node_modules
     networks:
-      - quantum-sport-network
+      - century-padel-network
     command: bun run worker:email
     restart: unless-stopped
     logging:
@@ -128,22 +169,26 @@ services:
       dockerfile: Dockerfile.dev
     container_name: scheduler-worker
     env_file:
-      - .env
-      - .env.local
+      - path: .env
+        required: false
+      - path: .env.local
+        required: false
     environment:
       NODE_ENV: development
-      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-quantum_sport}
+      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-century_padel}
       REDIS_URL: redis://redis:6379
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
     volumes:
       - .:/app
       - /app/node_modules
     networks:
-      - quantum-sport-network
+      - century-padel-network
     command: bun run worker:scheduler
     restart: unless-stopped
     logging:
@@ -157,22 +202,51 @@ services:
     image: ngrok/ngrok:3-alpine
     container_name: ngrok
     env_file:
-      - .env
-      - .env.local
+      - path: .env
+        required: false
+      - path: .env.local
+        required: false
     environment:
       NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:-replace}
       NGROK_DOMAIN: ${NGROK_DOMAIN:-}
     ports:
       - '4040:4040' # ngrok web interface
-    volumes:
-      - ./docker/ngrok-entrypoint.sh:/docker-entrypoint.sh
     depends_on:
       app:
         condition: service_started
     networks:
-      - quantum-sport-network
+      - century-padel-network
     restart: unless-stopped
-    entrypoint: ['/bin/sh', '/docker-entrypoint.sh']
+    entrypoint: ['/bin/sh', '-c']
+    command:
+      - |
+        if [ -z "$$NGROK_AUTHTOKEN" ] || [ "$$NGROK_AUTHTOKEN" = "replace" ]; then
+          echo "NGROK_AUTHTOKEN not set — idling (add token to .env to enable)"
+          exec sleep infinity
+        fi
+        if [ -n "$$NGROK_DOMAIN" ] && [ "$$NGROK_DOMAIN" != "replace" ]; then
+          cat > /tmp/ngrok.yml <<EOF
+        version: "2"
+        authtoken: $$NGROK_AUTHTOKEN
+        web_addr: 0.0.0.0:4040
+        tunnels:
+          webhook:
+            proto: http
+            addr: app:8000
+            hostname: $$NGROK_DOMAIN
+        EOF
+        else
+          cat > /tmp/ngrok.yml <<EOF
+        version: "2"
+        authtoken: $$NGROK_AUTHTOKEN
+        web_addr: 0.0.0.0:4040
+        tunnels:
+          webhook:
+            proto: http
+            addr: app:8000
+        EOF
+        fi
+        exec ngrok start webhook --config /tmp/ngrok.yml --log stdout
     healthcheck:
       test:
         [
@@ -193,5 +267,5 @@ volumes:
   redis_data:
 
 networks:
-  quantum-sport-network:
+  century-padel-network:
     driver: bridge

@@ -80,7 +80,7 @@ async function seedStaff() {
   const staff = [
     {
       name: 'Admin User',
-      email: 'admin@quantum.com',
+      email: 'admin@centurypadel.id',
       phone: '+6281100000001',
       password: hashedPassword,
       role: 'ADMIN' as const,
@@ -89,7 +89,7 @@ async function seedStaff() {
     },
     {
       name: 'Viewer Admin',
-      email: 'viewer@quantum.com',
+      email: 'viewer@centurypadel.id',
       phone: '+6281100000008',
       password: hashedPassword,
       role: 'ADMIN_VIEWER' as const,
@@ -98,7 +98,7 @@ async function seedStaff() {
     },
     {
       name: 'Cashier One',
-      email: 'cashier1@quantum.com',
+      email: 'cashier1@centurypadel.id',
       phone: '+6281100000002',
       password: hashedPassword,
       role: 'CASHIER' as const,
@@ -107,7 +107,7 @@ async function seedStaff() {
     },
     {
       name: 'Cashier Two',
-      email: 'cashier2@quantum.com',
+      email: 'cashier2@centurypadel.id',
       phone: '+6281100000003',
       password: hashedPassword,
       role: 'CASHIER' as const,
@@ -116,7 +116,7 @@ async function seedStaff() {
     },
     {
       name: 'Coach Andy Murray',
-      email: 'andy.murray@quantum.com',
+      email: 'andy.murray@centurypadel.id',
       phone: '+6281100000004',
       password: hashedPassword,
       role: 'COACH' as const,
@@ -126,7 +126,7 @@ async function seedStaff() {
     },
     {
       name: 'Coach Maria Sharapova',
-      email: 'maria.sharapova@quantum.com',
+      email: 'maria.sharapova@centurypadel.id',
       phone: '+6281100000005',
       password: hashedPassword,
       role: 'COACH' as const,
@@ -136,7 +136,7 @@ async function seedStaff() {
     },
     {
       name: 'Ballboy James',
-      email: 'james.ballboy@quantum.com',
+      email: 'james.ballboy@centurypadel.id',
       phone: '+6281100000006',
       password: hashedPassword,
       role: 'BALLBOY' as const,
@@ -145,7 +145,7 @@ async function seedStaff() {
     },
     {
       name: 'Ballboy Tim (Inactive)',
-      email: 'tim.ballboy@quantum.com',
+      email: 'tim.ballboy@centurypadel.id',
       phone: '+6281100000007',
       password: hashedPassword,
       role: 'BALLBOY' as const,
@@ -1080,7 +1080,7 @@ async function seedClasses(users: any[], paymentMethods: any[]) {
       name: 'Beginner Tennis Bootcamp',
       description: 'Learn the fundamentals of tennis',
       content: 'Comprehensive beginner course covering basics',
-      organizerName: 'Quantum Sports Academy',
+      organizerName: 'Century Padel Academy',
       speakerName: 'Coach Andy Murray',
       startDate: dayjs().add(5, 'days').toDate(),
       endDate: dayjs().add(19, 'days').toDate(),
@@ -1099,7 +1099,7 @@ async function seedClasses(users: any[], paymentMethods: any[]) {
       name: 'Advanced Women Training',
       description: 'Professional training for women',
       content: 'Advanced techniques and strategies',
-      organizerName: 'Quantum Sports',
+      organizerName: 'Century Padel',
       speakerName: 'Coach Maria Sharapova',
       startDate: dayjs().add(7, 'days').toDate(),
       endDate: dayjs().add(28, 'days').toDate(),
@@ -1118,7 +1118,7 @@ async function seedClasses(users: any[], paymentMethods: any[]) {
       name: 'Men Elite Training',
       description: 'Competitive training for men',
       content: 'High-intensity professional training',
-      organizerName: 'Quantum Pro',
+      organizerName: 'Century Padel Pro',
       speakerName: 'Coach Andy Murray',
       startDate: dayjs().add(10, 'days').toDate(),
       endDate: dayjs().add(31, 'days').toDate(),
@@ -1137,7 +1137,7 @@ async function seedClasses(users: any[], paymentMethods: any[]) {
       name: 'Kids Tennis Fun',
       description: 'Fun tennis for kids',
       content: 'Playful introduction to tennis',
-      organizerName: 'Quantum Kids',
+      organizerName: 'Century Padel Kids',
       speakerName: 'Coach Andy Murray',
       startDate: dayjs().add(3, 'days').toDate(),
       endDate: dayjs().add(17, 'days').toDate(),
@@ -1328,7 +1328,7 @@ async function seedTournaments() {
 
   const tournaments = [
     {
-      name: 'Quantum Open 2025',
+      name: 'Century Padel Open 2025',
       description: 'Annual championship tournament',
       rules: {
         format: 'Single elimination',
@@ -1341,7 +1341,7 @@ async function seedTournaments() {
       maxTeams: 32,
       teamSize: 2,
       entryFee: 500000,
-      location: 'Quantum Sports Center',
+      location: 'Century Padel Center',
       isActive: true,
     },
     {
@@ -1431,7 +1431,7 @@ async function seedNotifications(users: any[]) {
       audience: 'ALL' as const,
       type: 'ADMIN_PUSH' as const,
       title: 'New Tournament Announced',
-      message: 'Quantum Open 2025 registration is now open!',
+      message: 'Century Padel Open 2025 registration is now open!',
       isRead: false,
     },
     {
@@ -1507,9 +1507,9 @@ async function main() {
   console.info('   🔔 5 Notifications')
   console.info('\n🔑 Login Credentials:')
   console.info('   Users: john.smith@example.com | Password123!')
-  console.info('   Admin: admin@quantum.com | Staff123!')
-  console.info('   Cashier: cashier1@quantum.com | Staff123!')
-  console.info('   Coach: andy.murray@quantum.com | Staff123!')
+  console.info('   Admin: admin@centurypadel.id | Staff123!')
+  console.info('   Cashier: cashier1@centurypadel.id | Staff123!')
+  console.info('   Coach: andy.murray@centurypadel.id | Staff123!')
 }
 
 main()
