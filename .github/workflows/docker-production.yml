@@ -29,18 +29,18 @@ jobs:
           if ! ssh-keygen -y -f ~/.ssh/deploy_key >/dev/null 2>&1; then
             echo "❌ Invalid SSH private key in GitHub secret."
             echo "   Fix DO_SSH_PRIVATE_KEY or set DO_SSH_PRIVATE_KEY_B64 (recommended on Windows)."
-            echo "   PowerShell: [Convert]::ToBase64String([IO.File]::ReadAllBytes(\"\$env:USERPROFILE\\.ssh\\century-padel-github-deploy\"))"
             exit 1
           fi
-          eval "$(ssh-agent -s)"
-          ssh-add ~/.ssh/deploy_key
+          echo "Deploy key fingerprint (must match VPS authorized_keys):"
+          ssh-keygen -lf ~/.ssh/deploy_key
 
       - name: Add Known Hosts
         run: ssh-keyscan -H ${{ secrets.DO_HOST }} >> ~/.ssh/known_hosts
 
       - name: Deploy to DigitalOcean Droplet
         run: |
-          ssh -o StrictHostKeyChecking=yes -p ${{ secrets.DO_SSH_PORT }} ${{ secrets.DO_USERNAME }}@${{ secrets.DO_HOST }} << 'EOF'
+          SSH_OPTS="-i $HOME/.ssh/deploy_key -o IdentitiesOnly=yes -o PreferredAuthentications=publickey -o StrictHostKeyChecking=yes"
+          ssh $SSH_OPTS -p ${{ secrets.DO_SSH_PORT }} ${{ secrets.DO_USERNAME }}@${{ secrets.DO_HOST }} << 'EOF'
           set -e
           cd ${{ secrets.DO_PROJECT_PATH }}
           git pull origin main
