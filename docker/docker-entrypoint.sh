@@ -48,15 +48,34 @@ fi
 
 echo "✅ Database is ready!"
 
-# Run Prisma migrations
-echo "🔄 Running database migrations..."
-set +e  # Don't exit on migration error, handle it gracefully
-bunx prisma migrate deploy
-MIGRATION_EXIT=$?
-set -e
+# Sync database schema (migrate deploy when migrations exist, else db push)
+MIGRATIONS_DIR="prisma/migrations"
+HAS_MIGRATIONS=false
+if [ -d "$MIGRATIONS_DIR" ] && [ -n "$(ls -A "$MIGRATIONS_DIR" 2>/dev/null)" ]; then
+  HAS_MIGRATIONS=true
+fi
+
+if [ "$HAS_MIGRATIONS" = "true" ]; then
+  echo "🔄 Running database migrations..."
+  set +e
+  bunx prisma migrate deploy
+  MIGRATION_EXIT=$?
+  set -e
+else
+  echo "🔄 No prisma/migrations — syncing schema with prisma db push..."
+  set +e
+  bunx prisma db push --skip-generate
+  MIGRATION_EXIT=$?
+  set -e
+  if [ $MIGRATION_EXIT -eq 0 ]; then
+    echo "✅ Schema synced successfully"
+  fi
+fi
 
 if [ $MIGRATION_EXIT -eq 0 ]; then
-  echo "✅ Migrations completed successfully"
+  if [ "$HAS_MIGRATIONS" = "true" ]; then
+    echo "✅ Migrations completed successfully"
+  fi
 else
   echo "⚠️  Migration encountered an issue (exit code: $MIGRATION_EXIT)"
   echo ""
