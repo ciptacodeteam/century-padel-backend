@@ -16,38 +16,43 @@ resend_validate_credentials() {
   return 0
 }
 
-# Send backup failure alert via Resend REST API (no Node/Bun required on host).
+# Send backup failure alert via Resend REST API (curl — avoids Cloudflare blocks on python urllib).
 # Arguments: error_message [optional_host]
 resend_send_backup_failure_alert() {
   local error_message="$1"
   local host_name="${2:-$(hostname -f 2>/dev/null || hostname)}"
   local database_name="${DB_NAME:-century_padel}"
-  local timestamp_utc
+  local timestamp_utc log_hint payload response http_code body
+
   timestamp_utc="$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+  log_hint="${BACKUP_CRON_LOG:-${PROJECT_ROOT:-.}/logs/backup.log}"
 
   if ! resend_validate_credentials; then
     print_warning "Skipping backup failure email — Resend not configured"
     return 1
   fi
 
-  if ! command -v python3 >/dev/null 2>&1; then
-    print_warning "python3 not found — cannot send backup failure email"
+  if ! command -v curl >/dev/null 2>&1; then
+    print_warning "curl not found — cannot send backup failure email"
     return 1
   fi
 
-  local http_code
-  if ! http_code="$(RESEND_API_KEY="$RESEND_API_KEY" \
-    RESEND_FROM="$RESEND_FROM" \
+  if ! command -v python3 >/dev/null 2>&1; then
+    print_warning "python3 not found — cannot build Resend payload"
+    return 1
+  fi
+
+  payload="$(RESEND_FROM="$RESEND_FROM" \
     BACKUP_ALERT_EMAIL="$BACKUP_ALERT_EMAIL" \
+    LOG_HINT="$log_hint" \
     python3 - "$error_message" "$host_name" "$database_name" "$timestamp_utc" <<'PY'
 import html
 import json
 import os
 import sys
-import urllib.error
-import urllib.request
 
 error_message, host_name, database_name, timestamp_utc = sys.argv[1:5]
+log_hint = os.environ.get("LOG_HINT", "backup log on server")
 
 subject = f"[Century Padel] Database backup failed — {host_name}"
 body = f"""
@@ -64,45 +69,47 @@ body = f"""
     <tr><td style="padding:8px;border:1px solid #eee;">Error</td>
         <td style="padding:8px;border:1px solid #eee;font-weight:600;color:#dc2626;">{html.escape(error_message)}</td></tr>
   </table>
-  <p style="font-size:12px;color:#666;">Check backup logs: <code>/var/log/century-padel-backup.log</code></p>
+  <p style="font-size:12px;color:#666;">Check backup logs: <code>{html.escape(log_hint)}</code></p>
 </div>
 """
 
-payload = {
+print(json.dumps({
     "from": os.environ["RESEND_FROM"],
     "to": [os.environ["BACKUP_ALERT_EMAIL"]],
     "subject": subject,
     "html": body,
-}
-
-req = urllib.request.Request(
-    "https://api.resend.com/emails",
-    data=json.dumps(payload).encode("utf-8"),
-    headers={
-        "Authorization": f"Bearer {os.environ['RESEND_API_KEY']}",
-        "Content-Type": "application/json",
-    },
-    method="POST",
-)
-
-try:
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        print(resp.status)
-except urllib.error.HTTPError as e:
-    detail = e.read().decode("utf-8", errors="replace")
-    print(f"HTTP_{e.code}:{detail}", file=sys.stderr)
-    raise SystemExit(1)
+}))
 PY
-  )"; then
-    print_warning "Failed to send backup failure alert via Resend"
+)"
+
+  response="$(curl -sS -w $'\n%{http_code}' -X POST "$RESEND_API_URL" \
+    -H "Authorization: Bearer ${RESEND_API_KEY}" \
+    -H "Content-Type: application/json" \
+    -H "User-Agent: century-padel-backup/1.0" \
+    --data-binary "$payload" \
+    --max-time 30)" || {
+    print_warning "Failed to reach Resend API (network error)"
     return 1
-  fi
+  }
 
-  if [ "$http_code" = "200" ] || [ "$http_code" = "201" ] || [ "$http_code" = "202" ]; then
-    print_info "Backup failure alert sent to ${BACKUP_ALERT_EMAIL}"
-    return 0
-  fi
+  http_code="${response##*$'\n'}"
+  body="${response%$'\n'*}"
 
-  print_warning "Unexpected Resend response code: ${http_code}"
-  return 1
+  case "$http_code" in
+    200 | 201 | 202)
+      print_info "Backup failure alert sent to ${BACKUP_ALERT_EMAIL}"
+      return 0
+      ;;
+    403)
+      print_warning "Resend rejected the alert (HTTP 403)"
+      print_info "Common causes: invalid API key, unverified RESEND_FROM domain, or VPS IP blocked"
+      [ -n "$body" ] && print_info "Resend response: ${body}"
+      return 1
+      ;;
+    *)
+      print_warning "Resend returned HTTP ${http_code}"
+      [ -n "$body" ] && print_info "Resend response: ${body}"
+      return 1
+      ;;
+  esac
 }

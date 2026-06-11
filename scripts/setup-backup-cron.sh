@@ -21,7 +21,8 @@ if [ "${1:-}" = "--remove" ]; then
 fi
 
 CRON_SCHEDULE="${BACKUP_CRON_SCHEDULE:-30 2 * * *}"
-CRON_LOG="${BACKUP_CRON_LOG:-/var/log/century-padel-backup.log}"
+# Default under project dir — no sudo required (override with BACKUP_CRON_LOG if desired)
+CRON_LOG="${BACKUP_CRON_LOG:-${PROJECT_ROOT}/logs/backup.log}"
 CRON_MARKER="# century-padel-db-backup"
 BACKUP_SCRIPT="$PROJECT_ROOT/scripts/backup-db.sh"
 CRON_LINE="${CRON_SCHEDULE} cd ${PROJECT_ROOT} && ${BACKUP_SCRIPT} >> ${CRON_LOG} 2>&1 ${CRON_MARKER}"
@@ -64,11 +65,9 @@ if ! resend_validate_credentials; then
   print_warning "RESEND_API_KEY not set — backup will run but failure alerts won't be emailed"
 fi
 
-# --- Log file ---
-if [ ! -f "$CRON_LOG" ]; then
-  sudo touch "$CRON_LOG"
-  sudo chown "$(whoami):$(whoami)" "$CRON_LOG" 2>/dev/null || true
-fi
+# --- Log file (writable without root) ---
+mkdir -p "$(dirname "$CRON_LOG")"
+touch "$CRON_LOG"
 
 # --- Install cron ---
 print_header "Installing cron job"

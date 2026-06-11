@@ -104,6 +104,8 @@ Retention: 30 days (configurable via `BACKUP_RETENTION_DAYS`). Restore: `./scrip
 
 On backup failure only, an alert is emailed via Resend to `BACKUP_ALERT_EMAIL` (default: `ciptacodeteam@gmail.com`).
 
+Local dump staging: `project/.backups/` (no sudo). Cron logs: `project/logs/backup.log`.
+
 ### SSL troubleshooting
 
 ```bash

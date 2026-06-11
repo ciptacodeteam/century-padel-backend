@@ -25,14 +25,13 @@ print_header "Century Padel — Database Restore"
 require_project_root
 require_docker
 load_env
+resolve_local_backup_dir
 spaces_assert_safe_prefix
 spaces_validate_credentials
 spaces_ensure_aws_cli
 
 DB_NAME="${DB_NAME:-century_padel}"
 DB_USER="${DB_USER:-postgres}"
-LOCAL_BACKUP_DIR="${LOCAL_BACKUP_DIR:-/var/backups/century-padel}"
-mkdir -p "$LOCAL_BACKUP_DIR"
 
 if [ -z "$BACKUP_NAME" ]; then
   print_info "Available backups under s3://${SPACES_BUCKET}/${SPACES_PREFIX}/:"

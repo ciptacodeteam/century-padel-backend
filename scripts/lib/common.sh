@@ -76,6 +76,12 @@ load_env() {
   fi
 }
 
+# Writable staging dir for pg_dump before Spaces upload (override via LOCAL_BACKUP_DIR).
+resolve_local_backup_dir() {
+  LOCAL_BACKUP_DIR="${LOCAL_BACKUP_DIR:-${PROJECT_ROOT}/.backups}"
+  mkdir -p "$LOCAL_BACKUP_DIR"
+}
+
 generate_secret() {
   openssl rand -base64 48 | tr -d '/+=' | head -c 48
 }

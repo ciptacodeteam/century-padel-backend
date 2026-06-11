@@ -32,7 +32,6 @@ if [ "${1:-}" = "--dry-run" ]; then
   DRY_RUN=true
 fi
 
-LOCAL_BACKUP_DIR="${LOCAL_BACKUP_DIR:-/var/backups/century-padel}"
 LOG_TAG="[backup-db $(date '+%Y-%m-%d %H:%M:%S')]"
 
 log() { echo "$LOG_TAG $1"; }
@@ -70,6 +69,7 @@ run_backup() {
   require_project_root
   require_docker
   load_env
+  resolve_local_backup_dir
   spaces_assert_safe_prefix
   spaces_validate_credentials
   spaces_ensure_aws_cli
@@ -82,6 +82,7 @@ run_backup() {
   remote_prefix="s3://${SPACES_BUCKET}/${SPACES_PREFIX}/"
 
   log "Database: ${db_name}"
+  log "Local staging: ${LOCAL_BACKUP_DIR}"
   log "Spaces destination: ${remote_prefix}"
   log "Retention: ${BACKUP_RETENTION_DAYS} days"
 
@@ -96,8 +97,6 @@ run_backup() {
     print_info "Would prune backups older than ${BACKUP_RETENTION_DAYS} days under ${SPACES_PREFIX}/"
     return 0
   fi
-
-  mkdir -p "$LOCAL_BACKUP_DIR"
 
   print_header "Creating database dump"
   log "Dumping to ${local_path}"
