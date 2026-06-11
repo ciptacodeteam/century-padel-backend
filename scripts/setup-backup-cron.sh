@@ -2,7 +2,7 @@
 # =============================================================================
 # Install daily database backup cron job on the VPS
 # =============================================================================
-# Installs awscli (if missing) and schedules backup-db.sh at 02:30 daily.
+# Installs AWS CLI v2 (if missing) and schedules backup-db.sh at 02:30 daily.
 #
 # Usage:
 #   ./scripts/setup-backup-cron.sh
@@ -41,20 +41,10 @@ if [ "$REMOVE" = true ]; then
   exit 0
 fi
 
-# --- Install AWS CLI ---
-if ! command -v aws >/dev/null 2>&1; then
-  print_header "Installing AWS CLI"
-  if command -v apt-get >/dev/null 2>&1; then
-    sudo apt-get update -qq
-    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq awscli
-    print_success "AWS CLI installed"
-  else
-    print_error "apt-get not found — install awscli manually"
-    exit 1
-  fi
-else
-  print_success "AWS CLI already installed: $(aws --version 2>&1 | head -1)"
-fi
+# --- Install AWS CLI v2 (apt `awscli` is unavailable on Ubuntu 24.04+) ---
+# shellcheck source=lib/install-aws-cli.sh
+source "$SCRIPT_DIR/lib/install-aws-cli.sh"
+install_aws_cli_v2
 
 # --- Validate env ---
 if [ ! -f "$PROJECT_ROOT/$ENV_FILE" ]; then

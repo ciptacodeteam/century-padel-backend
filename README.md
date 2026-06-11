@@ -96,7 +96,7 @@ Backups go to `s3://kms-data/century-padel/db/` only — other bucket folders ar
 # 2. Test a backup
 ./scripts/backup-db.sh
 
-# 3. Schedule daily at 02:30 (installs awscli if needed)
+# 3. Schedule daily at 02:30 (installs AWS CLI v2 if needed)
 ./scripts/setup-backup-cron.sh
 ```
 

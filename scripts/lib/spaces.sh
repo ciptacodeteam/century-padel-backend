@@ -48,8 +48,8 @@ spaces_ensure_aws_cli() {
   fi
 
   print_error "AWS CLI is required for Spaces uploads."
-  print_info "Install on the VPS: sudo apt-get update && sudo apt-get install -y awscli"
-  print_info "Or run: ./scripts/setup-backup-cron.sh (installs awscli + cron)"
+  print_info "Run: ./scripts/setup-backup-cron.sh (installs AWS CLI v2 + cron)"
+  print_info "Or: source scripts/lib/install-aws-cli.sh && install_aws_cli_v2"
   exit 1
 }
 
