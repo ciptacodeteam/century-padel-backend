@@ -44,7 +44,6 @@ install_aws_cli_v2() {
   esac
 
   tmp_dir="$(mktemp -d)"
-  trap 'rm -rf "$tmp_dir"' RETURN
 
   print_info "Downloading AWS CLI v2 (${arch})..."
   curl -fsSL "$url" -o "${tmp_dir}/awscliv2.zip"
@@ -56,6 +55,8 @@ install_aws_cli_v2() {
   else
     sudo "${tmp_dir}/aws/install"
   fi
+
+  rm -rf "$tmp_dir"
 
   if ! command -v aws >/dev/null 2>&1; then
     print_error "AWS CLI install finished but 'aws' is not in PATH"
