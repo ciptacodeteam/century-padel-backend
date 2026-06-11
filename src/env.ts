@@ -34,12 +34,13 @@ export const env = {
   fazpassApiUrl: process.env.FAZPASS_API_URL ?? 'https://api.fazpass.com/v1',
   pwdPepper: process.env.PWD_PEPPER ?? undefined,
   blobToken: process.env.BLOB_READ_WRITE_TOKEN ?? undefined,
-  smtp: {
-    host: process.env.SMTP_HOST ?? 'smtp.mailtrap.io',
-    port: parseInt(process.env.SMTP_PORT ?? '2525'),
-    user: process.env.SMTP_USER ?? '',
-    pass: process.env.SMTP_PASS ?? '',
-    from: process.env.SMTP_FROM ?? 'noreply@centurypadel.id',
+  resend: {
+    apiKey: process.env.RESEND_API_KEY ?? '',
+    from:
+      process.env.RESEND_FROM ??
+      'Century Padel <onboarding@resend.dev>',
+    backupAlertEmail:
+      process.env.BACKUP_ALERT_EMAIL ?? 'ciptacodeteam@gmail.com',
   },
   storageStrategy: process.env.STORAGE_STRATEGY || 'local', // 'local' or 'blob'
 }

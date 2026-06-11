@@ -4,7 +4,10 @@ import {
   closeEmailQueue,
   type EmailJob,
 } from '@/services/email-queue.service'
-import { sendTemplatedEmail } from '@/services/email.service'
+import {
+  sendTemplatedEmail,
+  type EmailTemplate,
+} from '@/services/email.service'
 import { log } from '@/lib/logger'
 
 /**
@@ -26,11 +29,7 @@ const emailProcessor = async (
       await sendEmail(to, subject, html)
     } else {
       // Use templated email
-      await sendTemplatedEmail(
-        to,
-        template as Parameters<typeof sendTemplatedEmail>[1],
-        variables,
-      )
+      await sendTemplatedEmail(to, template as EmailTemplate, variables)
     }
 
     log.info({ jobId: job.id, to }, 'Email sent successfully')

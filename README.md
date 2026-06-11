@@ -11,6 +11,8 @@ Padel court booking API — Hono, Bun, Prisma, PostgreSQL, Redis, Xendit payment
 | Fresh VPS setup | `./scripts/install-vps.sh` |
 | First production deploy | `./scripts/deploy-fresh.sh` |
 | Routine code update | `./scripts/update.sh` |
+| Database backup | `./scripts/backup-db.sh` |
+| Schedule daily backup | `./scripts/setup-backup-cron.sh` |
 
 ## Prerequisites
 
@@ -84,6 +86,23 @@ Pulls code, rebuilds app image with cache (~1–3 min), restarts app + workers o
 REBUILD_ALL=true ./scripts/update.sh   # Dockerfile or compose changed
 CLEAN_BUILD=true ./scripts/update.sh   # corrupted build cache
 ```
+
+### Database backup (daily → DigitalOcean Spaces)
+
+Backups go to `s3://kms-data/century-padel/db/` only — other bucket folders are untouched.
+
+```bash
+# 1. Add Spaces + Resend keys to .env.production (see docker/env.production.template)
+# 2. Test a backup
+./scripts/backup-db.sh
+
+# 3. Schedule daily at 02:30 (installs awscli if needed)
+./scripts/setup-backup-cron.sh
+```
+
+Retention: 30 days (configurable via `BACKUP_RETENTION_DAYS`). Restore: `./scripts/restore-db.sh`
+
+On backup failure only, an alert is emailed via Resend to `BACKUP_ALERT_EMAIL` (default: `ciptacodeteam@gmail.com`).
 
 ### SSL troubleshooting
 

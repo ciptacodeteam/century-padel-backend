@@ -13,7 +13,7 @@ import {
   NotificationType,
 } from '@prisma/client'
 import { notificationService } from '@/services/notification.service'
-import { sendTemplatedEmail } from '@/services/email.service'
+import { queueSendTemplatedEmail } from '@/services/email.service'
 import { env } from '@/env'
 
 interface XenditWebhookPayload {
@@ -352,7 +352,7 @@ async function handlePaymentWebhookV3(c: any, webhook: XenditPaymentWebhook) {
       if (invoice.user?.email) {
         const invoiceUrl = `${env.frontEndUrl}/invoices/${invoice.id}`
         try {
-          await sendTemplatedEmail(invoice.user.email, 'paymentReceipt', {
+          await queueSendTemplatedEmail(invoice.user.email, 'paymentReceipt', {
             name: invoice.user.name || 'User',
             invoiceNumber: invoice.number,
             total: invoice.total,
@@ -842,7 +842,7 @@ async function handleInvoiceWebhookV2(c: any, payload: XenditWebhookPayload) {
       if (invoice.user?.email) {
         const invoiceUrl = `${env.frontEndUrl}/invoices/${invoice.id}`
         try {
-          await sendTemplatedEmail(invoice.user.email, 'paymentReceipt', {
+          await queueSendTemplatedEmail(invoice.user.email, 'paymentReceipt', {
             name: invoice.user.name || 'User',
             invoiceNumber: invoice.number,
             total: invoice.total,
@@ -1202,7 +1202,7 @@ export const xenditPaymentRequestWebhookHandler = factory.createHandlers(
           if (invoice.user?.email) {
             const invoiceUrl = `${env.frontEndUrl}/invoices/${invoice.id}`
             try {
-              await sendTemplatedEmail(invoice.user.email, 'paymentReceipt', {
+              await queueSendTemplatedEmail(invoice.user.email, 'paymentReceipt', {
                 name: invoice.user.name || 'User',
                 invoiceNumber: invoice.number,
                 total: invoice.total,

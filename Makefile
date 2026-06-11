@@ -1,6 +1,6 @@
 # Docker shortcuts — for full deploy/update use scripts/ instead.
 
-.PHONY: help dev-up dev-down dev-logs prod-status prod-logs prod-shell db-migrate db-backup clean
+.PHONY: help dev-up dev-down dev-logs prod-status prod-logs prod-shell db-migrate db-backup db-backup-setup clean
 
 help:
 	@echo "Development:"
@@ -19,8 +19,9 @@ help:
 	@echo "  ./scripts/update.sh         Routine code updates"
 	@echo ""
 	@echo "Database:"
-	@echo "  make db-migrate    Run migrations in prod app"
-	@echo "  make db-backup     Backup production database"
+	@echo "  make db-migrate       Run migrations in prod app"
+	@echo "  make db-backup        Backup DB to DigitalOcean Spaces"
+	@echo "  make db-backup-setup  Install daily backup cron (VPS)"
 
 dev-up:
 	docker compose up -d
@@ -44,7 +45,10 @@ db-migrate:
 	docker compose -f docker-compose.prod.yml exec app bunx prisma migrate deploy
 
 db-backup:
-	docker compose -f docker-compose.prod.yml exec db pg_dump -U postgres -Fc century_padel > backup_$$(date +%Y%m%d).dump
+	./scripts/backup-db.sh
+
+db-backup-setup:
+	./scripts/setup-backup-cron.sh
 
 clean:
 	docker compose down -v

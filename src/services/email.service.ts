@@ -1,46 +1,5 @@
-import nodemailer from 'nodemailer'
-import { env } from '@/env'
+import { getDefaultFromAddress, getResendClient } from '@/lib/resend'
 import { log } from '@/lib/logger'
-
-/**
- * SMTP transporter configuration
- */
-const createTransporter = () => {
-  const smtpHost = env.smtp.host
-  const smtpPort = env.smtp.port
-    ? parseInt(env.smtp.port as unknown as string)
-    : 2525
-  const smtpUser = env.smtp.user
-  const smtpPass = env.smtp.pass
-
-  if (!smtpHost || !smtpUser || !smtpPass) {
-    throw new Error(
-      'SMTP configuration is incomplete. Check SMTP_HOST, SMTP_USER, and SMTP_PASS env vars.',
-    )
-  }
-
-  return nodemailer.createTransport({
-    host: smtpHost,
-    port: smtpPort,
-    secure: smtpPort === 465, // TLS for port 465
-    auth: {
-      user: smtpUser,
-      pass: smtpPass,
-    },
-    connectionTimeout: 30000, // 30 seconds connection timeout (increased for network issues)
-    greetingTimeout: 30000, // 30 seconds greeting timeout
-    socketTimeout: 30000, // 30 seconds socket timeout
-    // For Mailgun and similar services, may need to set tls options
-    tls: {
-      rejectUnauthorized: false, // Allow self-signed certificates if needed
-      minVersion: 'TLSv1.2',
-    },
-    // Additional options for better connection handling
-    pool: true, // Use connection pooling
-    maxConnections: 5, // Maximum number of connections in pool
-    maxMessages: 100, // Maximum messages per connection
-  })
-}
 
 /**
  * Email templates
@@ -210,10 +169,43 @@ export const emailTemplates = {
       </div>
     `,
   }),
+
+  backupFailure: (variables: Record<string, any>) => ({
+    subject: `[Century Padel] Database backup failed — ${variables.host}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #dc2626;">Database Backup Failed</h2>
+        <p>The scheduled PostgreSQL backup did not complete successfully.</p>
+        <table style="width:100%; border-collapse:collapse; margin:20px 0;">
+          <tr>
+            <td style="padding:8px; border:1px solid #eee;">Server</td>
+            <td style="padding:8px; border:1px solid #eee; font-weight:600;">${variables.host}</td>
+          </tr>
+          <tr>
+            <td style="padding:8px; border:1px solid #eee;">Database</td>
+            <td style="padding:8px; border:1px solid #eee; font-weight:600;">${variables.database}</td>
+          </tr>
+          <tr>
+            <td style="padding:8px; border:1px solid #eee;">Time (UTC)</td>
+            <td style="padding:8px; border:1px solid #eee; font-weight:600;">${variables.timestamp}</td>
+          </tr>
+          <tr>
+            <td style="padding:8px; border:1px solid #eee;">Error</td>
+            <td style="padding:8px; border:1px solid #eee; font-weight:600; color:#dc2626;">${variables.error}</td>
+          </tr>
+        </table>
+        <p style="font-size:12px; color:#666;">Check backup logs on the VPS: <code>/var/log/century-padel-backup.log</code></p>
+        <hr style="margin-top:30px; border:none; border-top:1px solid #ddd;" />
+        <p style="color:#999; font-size:11px; text-align:center;">Century Padel automated backup alert</p>
+      </div>
+    `,
+  }),
 }
 
+export type EmailTemplate = keyof typeof emailTemplates
+
 /**
- * Send email using SMTP
+ * Send email via Resend
  */
 export const sendEmail = async (
   to: string,
@@ -221,32 +213,20 @@ export const sendEmail = async (
   html: string,
   from?: string,
 ) => {
-  try {
-    const transporter = createTransporter()
-    const emailFrom =
-      from || process.env.SMTP_FROM || 'noreply@centurypadel.id'
+  const { data, error } = await getResendClient().emails.send({
+    from: from ?? getDefaultFromAddress(),
+    to: [to],
+    subject,
+    html,
+  })
 
-    const result = await transporter.sendMail({
-      from: emailFrom,
-      to,
-      subject,
-      html,
-    })
-
-    log.info({ messageId: result.messageId, to }, 'Email sent successfully')
-    return result
-  } catch (error: any) {
-    const errorDetails = {
-      to,
-      error: error.message || error,
-      code: error.code,
-      command: error.command,
-      smtpHost: env.smtp.host,
-      smtpPort: env.smtp.port,
-    }
-    log.error(errorDetails, 'Failed to send email')
-    throw error
+  if (error) {
+    log.error({ to, error: error.message, name: error.name }, 'Failed to send email')
+    throw new Error(error.message)
   }
+
+  log.info({ messageId: data?.id, to }, 'Email sent successfully')
+  return data
 }
 
 /**
@@ -254,7 +234,7 @@ export const sendEmail = async (
  */
 export const sendTemplatedEmail = async (
   to: string,
-  template: keyof typeof emailTemplates,
+  template: EmailTemplate,
   variables: Record<string, any>,
   from?: string,
 ) => {
@@ -272,14 +252,14 @@ export const sendTemplatedEmail = async (
  */
 export const queueSendTemplatedEmail = async (
   to: string,
-  template: keyof typeof emailTemplates,
+  template: EmailTemplate,
   variables: Record<string, any>,
 ) => {
   const { queueEmail } = await import('@/services/email-queue.service')
 
   return queueEmail({
     to,
-    subject: '', // Will be generated from template
+    subject: '',
     template,
     variables,
   })
