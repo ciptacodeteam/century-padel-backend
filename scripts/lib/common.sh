@@ -36,10 +36,14 @@ export DOCKER_BUILDKIT=1
 export COMPOSE_DOCKER_CLI_BUILD=1
 
 compose() {
+  local args=()
+  if [ -f "$PROJECT_ROOT/$ENV_FILE" ]; then
+    args+=(--env-file "$PROJECT_ROOT/$ENV_FILE")
+  fi
   if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
-    docker compose "$@"
+    docker compose "${args[@]}" "$@"
   elif command -v docker-compose >/dev/null 2>&1; then
-    docker-compose "$@"
+    docker-compose "${args[@]}" "$@"
   else
     print_error "Docker Compose not found. Run: ./scripts/install-vps.sh"
     exit 1
@@ -134,6 +138,11 @@ validate_env() {
       missing+=("$var")
     fi
   done
+
+  if grep -q "^DATABASE_URL=" "$PROJECT_ROOT/$ENV_FILE" 2>/dev/null; then
+    print_warning "DATABASE_URL is set in $ENV_FILE but is ignored in production"
+    print_info "Remove it — docker-compose builds DATABASE_URL from DB_USER/DB_PASSWORD/DB_NAME"
+  fi
 
   if [ ${#missing[@]} -gt 0 ]; then
     print_error "Missing or placeholder values in $ENV_FILE:"

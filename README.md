@@ -13,6 +13,7 @@ Padel court booking API — Hono, Bun, Prisma, PostgreSQL, Redis, Xendit payment
 | Routine code update | `./scripts/update.sh` |
 | Database backup | `./scripts/backup-db.sh` |
 | Schedule daily backup | `./scripts/setup-backup-cron.sh` |
+| Sync DB password | `./scripts/sync-db-password.sh` |
 
 ## Prerequisites
 
@@ -105,6 +106,24 @@ Retention: 30 days (configurable via `BACKUP_RETENTION_DAYS`). Restore: `./scrip
 On backup failure only, an alert is emailed via Resend to `BACKUP_ALERT_EMAIL` (default: `ciptacodeteam@gmail.com`).
 
 Local dump staging: `project/.backups/` (no sudo). Cron logs: `project/logs/backup.log`.
+
+### PostgreSQL auth failures in logs
+
+If you see `password authentication failed for user "postgres"` but the app still works:
+
+1. **Block public DB access** — production binds Postgres to `127.0.0.1` only. Redeploy after pulling:
+   ```bash
+   ./scripts/update.sh
+   docker compose --env-file .env.production -f docker-compose.prod.yml up -d db
+   ```
+2. **Use SSH tunnel for pgAdmin** — `ssh -L 5433:127.0.0.1:5433 user@your-vps`, then connect to `localhost:5433`.
+3. **Do not set `DATABASE_URL` in `.env.production`** — compose builds it from `DB_USER` / `DB_PASSWORD` / `DB_NAME`.
+4. **If you changed `DB_PASSWORD` after first deploy**, sync the live database:
+   ```bash
+   ./scripts/sync-db-password.sh
+   ```
+
+Set `DB_HOST_PORT=5433` in `.env.production` (host-side tunnel port). Keep `DB_PORT=5432` for in-container connections.
 
 ### SSL troubleshooting
 
