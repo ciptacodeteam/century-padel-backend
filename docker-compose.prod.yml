@@ -82,7 +82,7 @@ services:
       dockerfile: Dockerfile
       args:
         BUILDKIT_INLINE_CACHE: 1
-    image: century-padel-backend:latest
+    image: ${APP_IMAGE:-century-padel-backend:latest}
     container_name: century-padel-app-prod
     restart: unless-stopped
     shm_size: '512mb'
@@ -135,7 +135,7 @@ services:
 
   # Email Queue Worker
   email-worker:
-    image: century-padel-backend:latest
+    image: ${APP_IMAGE:-century-padel-backend:latest}
     container_name: century-padel-email-worker-prod
     restart: unless-stopped
     env_file:
@@ -178,7 +178,7 @@ services:
 
   # Scheduler Worker (Transaction Expiry Checker)
   scheduler-worker:
-    image: century-padel-backend:latest
+    image: ${APP_IMAGE:-century-padel-backend:latest}
     container_name: century-padel-scheduler-worker-prod
     restart: unless-stopped
     env_file:

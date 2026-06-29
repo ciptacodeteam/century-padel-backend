@@ -76,6 +76,27 @@ Starts: PostgreSQL, Redis, app, nginx (SSL via Let's Encrypt), email worker, sch
 
 ### 4. Updates (routine)
 
+**Recommended: CI builds the image, the VPS only pulls it.** Pushing to `main`
+triggers `.github/workflows/docker-production.yml`, which builds the Docker
+image on a fresh GitHub Actions runner, pushes it to GHCR
+(`ghcr.io/<owner>/century-padel-backend`), then SSHes in and runs
+`scripts/deploy-registry.sh` to pull + restart app and workers. No build runs on
+the droplet, so deploys don't compete with live traffic for CPU/RAM.
+
+Required GitHub repo secrets: `DO_HOST`, `DO_USERNAME`, `DO_SSH_PORT`,
+`DO_PROJECT_PATH`, and `DO_SSH_PRIVATE_KEY` (or `DO_SSH_PRIVATE_KEY_B64`).
+Image push/pull uses the built-in `GITHUB_TOKEN` — no registry secret needed.
+
+Manual registry deploy (on the VPS):
+
+```bash
+APP_IMAGE=ghcr.io/<owner>/century-padel-backend:<tag> ./scripts/deploy-registry.sh
+```
+
+Rollback = redeploy a previous tag (each build is tagged with its commit SHA).
+
+**On-VPS build (fallback / no registry):**
+
 ```bash
 ./scripts/update.sh
 ```

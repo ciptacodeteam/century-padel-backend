@@ -76,6 +76,23 @@ load_env() {
   fi
 }
 
+# Persist APP_IMAGE in the Compose default env file (.env) so that subsequent
+# manual `docker compose -f docker-compose.prod.yml ...` commands resolve the
+# same prebuilt image that was last deployed from the registry.
+persist_app_image() {
+  local image="$1"
+  local env_default="$PROJECT_ROOT/.env"
+
+  [ -n "$image" ] || return 0
+  touch "$env_default"
+
+  if grep -q '^APP_IMAGE=' "$env_default" 2>/dev/null; then
+    sed -i "s|^APP_IMAGE=.*|APP_IMAGE=${image}|" "$env_default"
+  else
+    echo "APP_IMAGE=${image}" >> "$env_default"
+  fi
+}
+
 # Writable staging dir for pg_dump before Spaces upload (override via LOCAL_BACKUP_DIR).
 resolve_local_backup_dir() {
   LOCAL_BACKUP_DIR="${LOCAL_BACKUP_DIR:-${PROJECT_ROOT}/.backups}"
