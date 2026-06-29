@@ -100,7 +100,8 @@ jobs:
 
       - name: Deployment Status
         if: success()
-        run: echo "✅ Deployment completed successfully! Image: ${{ env.REGISTRY }}/${{ steps.img.outputs.name }}:${{ github.sha }}"
+        run: |
+          echo "✅ Deployment completed successfully! Image: ${{ env.REGISTRY }}/${{ steps.img.outputs.name }}:${{ github.sha }}"
 
       - name: Deployment Failed
         if: failure()
