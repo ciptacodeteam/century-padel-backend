@@ -5,6 +5,7 @@
 | Doc | Description |
 |-----|-------------|
 | [../README.md](../README.md) | Main setup guide |
+| [CI_CD_GUIDE.md](./CI_CD_GUIDE.md) | **CI/CD best practice** — full guide + source code appendix (PDF-ready) |
 | [../docker/env.production.template](../docker/env.production.template) | Production env variables |
 | [MIGRATION_RECOVERY.md](./MIGRATION_RECOVERY.md) | Fix failed Prisma migrations |
 | [NGROK_SETUP.md](./NGROK_SETUP.md) | Local webhook testing with ngrok |

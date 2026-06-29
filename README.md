@@ -88,6 +88,8 @@ Required GitHub repo secrets: `DO_HOST`, `DO_USERNAME`, `DO_SSH_PORT`,
 `DO_PROJECT_PATH`, and `DO_SSH_PRIVATE_KEY` (or `DO_SSH_PRIVATE_KEY_B64`).
 Image push/pull uses the built-in `GITHUB_TOKEN` — no registry secret needed.
 
+**Full CI/CD reference:** see [docs/CI_CD_GUIDE.md](./docs/CI_CD_GUIDE.md) for step-by-step setup, rollback, monitoring, and a reusable checklist for future projects.
+
 Manual registry deploy (on the VPS):
 
 ```bash
