@@ -3,6 +3,7 @@ import { env } from '@/env'
 import { UnauthorizedException } from '@/exceptions'
 import { validateHook } from '@/helpers/validate-hook'
 import { factory } from '@/lib/create-app'
+import { addDuration } from '@/lib/jwt-duration'
 import { hashPassword, verifyPassword } from '@/lib/password'
 import { db } from '@/lib/prisma'
 import { err, ok } from '@/lib/response'
@@ -127,9 +128,7 @@ export const loginHandler = factory.createHandlers(
           userId: existingUser.id,
           type: AuthTokenType.USER,
           refreshToken: refreshToken,
-          refreshExpiresAt: dayjs()
-            .add(Number(env.jwt.refreshExpires), 'days')
-            .toDate(),
+          refreshExpiresAt: addDuration(dayjs(), env.jwt.refreshExpiresIn).toDate(),
         },
       })
 
@@ -137,7 +136,7 @@ export const loginHandler = factory.createHandlers(
         httpOnly: true,
         secure: env.nodeEnv === 'production',
         sameSite: 'Lax',
-        expires: dayjs().add(Number(env.jwt.refreshExpires), 'days').toDate(),
+        expires: addDuration(dayjs(), env.jwt.refreshExpiresIn).toDate(),
       })
 
       return c.json(
@@ -222,9 +221,7 @@ export const registerHandler = factory.createHandlers(
             userId: user.id,
             type: AuthTokenType.USER,
             refreshToken: refreshToken,
-            refreshExpiresAt: dayjs()
-              .add(Number(env.jwt.refreshExpires), 'days')
-              .toDate(),
+            refreshExpiresAt: addDuration(dayjs(), env.jwt.refreshExpiresIn).toDate(),
           },
         })
 
@@ -238,7 +235,7 @@ export const registerHandler = factory.createHandlers(
         httpOnly: true,
         secure: env.nodeEnv === 'production',
         sameSite: 'Lax',
-        expires: dayjs().add(Number(env.jwt.refreshExpires), 'days').toDate(),
+        expires: addDuration(dayjs(), env.jwt.refreshExpiresIn).toDate(),
       })
 
       return c.json(
@@ -353,9 +350,7 @@ export const refreshTokenHandler = factory.createHandlers(async (c) => {
       data: {
         type: AuthTokenType.USER,
         refreshToken: newRefreshToken,
-        refreshExpiresAt: dayjs()
-          .add(Number(env.jwt.refreshExpires), 'days')
-          .toDate(),
+        refreshExpiresAt: addDuration(dayjs(), env.jwt.refreshExpiresIn).toDate(),
       },
     })
 
@@ -366,7 +361,7 @@ export const refreshTokenHandler = factory.createHandlers(async (c) => {
       httpOnly: true,
       secure: env.nodeEnv === 'production',
       sameSite: 'Lax',
-      expires: dayjs().add(Number(env.jwt.refreshExpires), 'days').toDate(),
+      expires: addDuration(dayjs(), env.jwt.refreshExpiresIn).toDate(),
     })
 
     return c.json(
@@ -567,9 +562,7 @@ export const loginWithEmailHandler = factory.createHandlers(
           userId: existingUser.id,
           type: AuthTokenType.USER,
           refreshToken: refreshToken,
-          refreshExpiresAt: dayjs()
-            .add(Number(env.jwt.refreshExpires), 'days')
-            .toDate(),
+          refreshExpiresAt: addDuration(dayjs(), env.jwt.refreshExpiresIn).toDate(),
         },
       })
 
@@ -577,7 +570,7 @@ export const loginWithEmailHandler = factory.createHandlers(
         httpOnly: true,
         secure: env.nodeEnv === 'production',
         sameSite: 'Lax',
-        expires: dayjs().add(Number(env.jwt.refreshExpires), 'days').toDate(),
+        expires: addDuration(dayjs(), env.jwt.refreshExpiresIn).toDate(),
       })
 
       return c.json(

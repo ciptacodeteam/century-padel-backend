@@ -1,5 +1,6 @@
 import { env } from '@/env'
 import dayjs from 'dayjs'
+import { addDuration } from './jwt-duration'
 import { log } from './logger'
 import { sign, verify } from 'hono/jwt'
 
@@ -11,7 +12,7 @@ export async function generateJwtToken(payloadData: Record<string, any>) {
       iss: env.jwt.issuer,
       aud: env.jwt.audience,
       iat: now.unix(),
-      exp: now.add(Number(env.jwt.expires), 'minutes').unix(),
+      exp: addDuration(now, env.jwt.expiresIn).unix(),
       data: payloadData,
     }
     log.debug(`Generating JWT token with payload: ${JSON.stringify(payload)}`)
@@ -32,7 +33,7 @@ export async function generateRefreshToken(payloadData: Record<string, any>) {
       iss: env.jwt.issuer,
       aud: env.jwt.audience,
       iat: now.unix(),
-      exp: now.add(Number(env.jwt.refreshExpires), 'days').unix(),
+      exp: addDuration(now, env.jwt.refreshExpiresIn).unix(),
       type: 'refresh',
       data: payloadData,
     }

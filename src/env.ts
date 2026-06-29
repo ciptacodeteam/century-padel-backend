@@ -1,4 +1,5 @@
 import 'dotenv/config'
+import { parseJwtDuration } from '@/lib/jwt-duration'
 
 function req(name: string, fallback?: string) {
   const v = process.env[name] ?? fallback
@@ -20,8 +21,18 @@ export const env = {
     refreshSecret: req('JWT_REFRESH_SECRET'),
     issuer: req('JWT_ISSUER', 'century-padel-backend'),
     audience: req('JWT_AUDIENCE', 'century-padel-frontend'),
-    expires: req('JWT_EXPIRES', '1'), // in minutes
-    refreshExpires: req('JWT_REFRESH_EXPIRES', '30'), // in days
+    expiresIn: parseJwtDuration(
+      process.env.JWT_EXPIRES_IN ??
+        process.env.JWT_EXPIRES ??
+        '1m',
+      'minute',
+    ),
+    refreshExpiresIn: parseJwtDuration(
+      process.env.JWT_REFRESH_EXPIRES_IN ??
+        process.env.JWT_REFRESH_EXPIRES ??
+        '30d',
+      'day',
+    ),
   },
   xendit: {
     apiKey: process.env.XENDIT_API_KEY ?? '',

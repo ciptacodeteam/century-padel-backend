@@ -1,6 +1,6 @@
 # Docker shortcuts — for full deploy/update use scripts/ instead.
 
-.PHONY: help dev-up dev-down dev-logs prod-status prod-logs prod-shell db-migrate db-backup db-backup-setup clean
+.PHONY: help dev-up dev-down dev-logs prod-status prod-logs prod-shell db-migrate db-backup db-backup-setup db-sync-password clean
 
 help:
 	@echo "Development:"
@@ -22,6 +22,7 @@ help:
 	@echo "  make db-migrate       Run migrations in prod app"
 	@echo "  make db-backup        Backup DB to DigitalOcean Spaces"
 	@echo "  make db-backup-setup  Install daily backup cron (VPS)"
+	@echo "  make db-sync-password Sync live Postgres password to .env.production"
 
 dev-up:
 	docker compose up -d
@@ -49,6 +50,9 @@ db-backup:
 
 db-backup-setup:
 	./scripts/setup-backup-cron.sh
+
+db-sync-password:
+	./scripts/sync-db-password.sh
 
 clean:
 	docker compose down -v
