@@ -94,7 +94,7 @@ Manual registry deploy (on the VPS):
 APP_IMAGE=ghcr.io/<owner>/century-padel-backend:<tag> ./scripts/deploy-registry.sh
 ```
 
-Rollback = redeploy a previous tag (each build is tagged with its commit SHA).
+Rollback = redeploy a previous tag (each build is tagged with its commit SHA). Failed deploys roll back automatically to the last healthy image (see `scripts/deploy-registry.sh`).
 
 **On-VPS build (fallback / no registry):**
 

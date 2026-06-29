@@ -97,6 +97,81 @@ persist_app_image() {
   fi
 }
 
+read_persisted_app_image() {
+  local env_default="$PROJECT_ROOT/.env"
+  if [ -f "$env_default" ]; then
+    grep -E '^APP_IMAGE=' "$env_default" 2>/dev/null | head -n1 | cut -d= -f2- | tr -d '\r'
+  fi
+}
+
+read_running_app_image() {
+  docker inspect century-padel-app-prod --format '{{.Config.Image}}' 2>/dev/null | tr -d '\r' || true
+}
+
+read_last_good_app_image() {
+  local marker="$PROJECT_ROOT/.deploy-last-good-image"
+  if [ -f "$marker" ]; then
+    head -n1 "$marker" | tr -d '\r'
+  fi
+}
+
+save_last_good_app_image() {
+  local image="$1"
+  local marker="$PROJECT_ROOT/.deploy-last-good-image"
+  [ -n "$image" ] && printf '%s\n' "$image" > "$marker"
+}
+
+resolve_app_port() {
+  load_env
+  echo "${PORT:-8000}"
+}
+
+# HTTP probe against the app binding on localhost (same check CI uses post-deploy).
+probe_app_http_health() {
+  local port="${1:-$(resolve_app_port)}"
+  local max_attempts="${2:-12}"
+  local i
+
+  for i in $(seq 1 "$max_attempts"); do
+    if curl -fsS --max-time 5 "http://127.0.0.1:${port}/health" 2>/dev/null \
+      | grep -qE '"success"[[:space:]]*:[[:space:]]*true|"up"[[:space:]]*:[[:space:]]*true'; then
+      return 0
+    fi
+    echo "  HTTP health attempt ${i}/${max_attempts} not ready; retrying in 5s..."
+    sleep 5
+  done
+  return 1
+}
+
+# Restore the last known-good image and restart app + workers.
+rollback_app_deployment() {
+  local rollback_image="$1"
+
+  if [ -z "$rollback_image" ]; then
+    print_error "No previous image to roll back to"
+    return 1
+  fi
+
+  print_header "Rolling back to previous image"
+  print_warning "Target: $rollback_image"
+
+  export APP_IMAGE="$rollback_image"
+  compose -f "$COMPOSE_FILE" pull app 2>/dev/null || true
+  compose -f "$COMPOSE_FILE" up -d --no-deps app
+
+  print_info "Waiting for rolled-back app to become healthy..."
+  if wait_for_healthy app 30 && probe_app_http_health "$(resolve_app_port)" 12; then
+    compose -f "$COMPOSE_FILE" up -d --no-deps email-worker scheduler-worker
+    persist_app_image "$rollback_image"
+    save_last_good_app_image "$rollback_image"
+    print_success "Rollback complete — previous version is serving again"
+    return 0
+  fi
+
+  print_error "Rollback failed — manual intervention required"
+  return 1
+}
+
 # Writable staging dir for pg_dump before Spaces upload (override via LOCAL_BACKUP_DIR).
 resolve_local_backup_dir() {
   LOCAL_BACKUP_DIR="${LOCAL_BACKUP_DIR:-${PROJECT_ROOT}/.backups}"

@@ -155,9 +155,8 @@ jobs:
           docker logout "$REGISTRY" || true
           EOF
 
-      # Smoke test the live app over the existing SSH connection. The app binds
-      # to 127.0.0.1:$PORT on the VPS, so we probe it locally with retries.
-      # A failure here fails the workflow (and surfaces a rollback signal).
+      # deploy-registry.sh already verifies /health and rolls back on failure.
+      # This step is a second check before we mark the workflow green.
       - name: Verify deployment health
         run: |
           SSH_OPTS="-i $HOME/.ssh/deploy_key -o IdentitiesOnly=yes -o PreferredAuthentications=publickey -o StrictHostKeyChecking=yes"
@@ -168,15 +167,21 @@ jobs:
           PORT="$(grep -E '^PORT=' .env.production 2>/dev/null | head -n1 | cut -d= -f2 | tr -d '\r' || true)"
           PORT="${PORT:-8000}"
           echo "Probing http://127.0.0.1:${PORT}/health ..."
-          for i in $(seq 1 12); do
-            if curl -fsS --max-time 5 "http://127.0.0.1:${PORT}/health" >/dev/null; then
+          for i in $(seq 1 6); do
+            if curl -fsS --max-time 5 "http://127.0.0.1:${PORT}/health" 2>/dev/null \
+              | grep -qE '"success"[[:space:]]*:[[:space:]]*true|"up"[[:space:]]*:[[:space:]]*true'; then
               echo "✅ Health check passed on attempt ${i}"
               exit 0
             fi
-            echo "  attempt ${i}/12 not ready; retrying in 5s..."
+            echo "  attempt ${i}/6 not ready; retrying in 5s..."
             sleep 5
           done
-          echo "❌ Health check failed after retries — app did not become healthy"
+          echo "❌ Health check failed after retries"
+          LAST_GOOD="$(cat .deploy-last-good-image 2>/dev/null || true)"
+          if [ -n "$LAST_GOOD" ]; then
+            echo "Last known-good image on disk: $LAST_GOOD"
+            echo "Manual rollback: APP_IMAGE=$LAST_GOOD ./scripts/deploy-registry.sh"
+          fi
           exit 1
           EOF
 

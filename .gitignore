@@ -21,4 +21,5 @@ test-results/
 
 storage/*
 .backups/
+.deploy-last-good-image
 logs/
