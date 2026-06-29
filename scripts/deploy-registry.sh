@@ -58,8 +58,15 @@ fi
 # We still pull so infra config (compose, nginx templates) stays in sync.
 if [ "${SKIP_PULL_CODE:-false}" != "true" ] && [ -d "$PROJECT_ROOT/.git" ]; then
   print_header "Syncing config from git"
+  BEFORE_HEAD="$(git -C "$PROJECT_ROOT" rev-parse HEAD 2>/dev/null || true)"
   if git -C "$PROJECT_ROOT" pull origin "${DEPLOY_BRANCH:-main}"; then
     print_success "Config up to date"
+    AFTER_HEAD="$(git -C "$PROJECT_ROOT" rev-parse HEAD 2>/dev/null || true)"
+    # Record what changed so the nginx-reload check below can fire. Don't
+    # clobber CHANGED_FILES if the caller (CI) already provided it.
+    if [ -z "${CHANGED_FILES:-}" ]; then
+      CHANGED_FILES="$(git -C "$PROJECT_ROOT" diff --name-only "$BEFORE_HEAD" "$AFTER_HEAD" 2>/dev/null || true)"
+    fi
   else
     print_warning "git pull failed — continuing with current config"
   fi

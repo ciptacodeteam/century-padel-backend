@@ -11,11 +11,59 @@ permissions:
   contents: read
   packages: write
 
+# Serialize production deploys so overlapping pushes don't race on the VPS.
+# Queue (don't cancel) in-flight runs so an older commit's deploy finishes
+# cleanly before the next one starts.
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
 env:
   REGISTRY: ghcr.io
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # CI gate: must pass before anything is built or deployed.
+  # ---------------------------------------------------------------------------
+  test:
+    name: Lint, typecheck & test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3'
+
+      - name: Cache Bun dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Test
+        run: bun run test
+
+  # ---------------------------------------------------------------------------
+  # Build the image on the runner and deploy to the VPS by pulling it.
+  # ---------------------------------------------------------------------------
   build-and-deploy:
+    name: Build image & deploy
+    needs: test
     runs-on: ubuntu-latest
 
     steps:
@@ -92,10 +140,40 @@ jobs:
           set -e
           cd "$PROJECT_PATH"
           echo "$GHCR_TOKEN" | docker login "$REGISTRY" -u "$GHCR_USER" --password-stdin
+          BEFORE_HEAD="$(git rev-parse HEAD 2>/dev/null || true)"
           git pull origin main
+          AFTER_HEAD="$(git rev-parse HEAD 2>/dev/null || true)"
+          # Tell deploy-registry.sh which files changed so it can reload nginx
+          # when its config templates change (the pull happens here, not in the script).
+          CHANGED_FILES="$(git diff --name-only "$BEFORE_HEAD" "$AFTER_HEAD" 2>/dev/null || true)"
           chmod +x scripts/*.sh scripts/lib/*.sh deploy.sh docker/*.sh 2>/dev/null || true
-          APP_IMAGE="$APP_IMAGE" AUTO_DEPLOY=true SKIP_PULL_CODE=true bash scripts/deploy-registry.sh
+          APP_IMAGE="$APP_IMAGE" CHANGED_FILES="$CHANGED_FILES" AUTO_DEPLOY=true SKIP_PULL_CODE=true bash scripts/deploy-registry.sh
           docker logout "$REGISTRY" || true
+          EOF
+
+      # Smoke test the live app over the existing SSH connection. The app binds
+      # to 127.0.0.1:$PORT on the VPS, so we probe it locally with retries.
+      # A failure here fails the workflow (and surfaces a rollback signal).
+      - name: Verify deployment health
+        run: |
+          SSH_OPTS="-i $HOME/.ssh/deploy_key -o IdentitiesOnly=yes -o PreferredAuthentications=publickey -o StrictHostKeyChecking=yes"
+          ssh $SSH_OPTS -p ${{ secrets.DO_SSH_PORT }} ${{ secrets.DO_USERNAME }}@${{ secrets.DO_HOST }} \
+            "PROJECT_PATH='${{ secrets.DO_PROJECT_PATH }}' bash -s" << 'EOF'
+          set -e
+          cd "$PROJECT_PATH"
+          PORT="$(grep -E '^PORT=' .env.production 2>/dev/null | head -n1 | cut -d= -f2 | tr -d '\r' || true)"
+          PORT="${PORT:-8000}"
+          echo "Probing http://127.0.0.1:${PORT}/health ..."
+          for i in $(seq 1 12); do
+            if curl -fsS --max-time 5 "http://127.0.0.1:${PORT}/health" >/dev/null; then
+              echo "✅ Health check passed on attempt ${i}"
+              exit 0
+            fi
+            echo "  attempt ${i}/12 not ready; retrying in 5s..."
+            sleep 5
+          done
+          echo "❌ Health check failed after retries — app did not become healthy"
+          exit 1
           EOF
 
       - name: Deployment Status
