@@ -2,6 +2,8 @@ import { STORAGE_ROOT } from '@/config'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 
+const resolvedStorageRoot = path.resolve(STORAGE_ROOT)
+
 export async function ensureDir(dir: string) {
   await fs.mkdir(dir, { recursive: true })
 }
@@ -10,9 +12,12 @@ export async function ensureDir(dir: string) {
  * Join paths safely within STORAGE_ROOT. Rejects attempts to escape root.
  */
 export function safeJoin(...segments: string[]) {
-  const joined = path.join(STORAGE_ROOT, ...segments)
-  const normalized = path.normalize(joined)
-  if (!normalized.startsWith(STORAGE_ROOT)) {
+  const joined = path.join(resolvedStorageRoot, ...segments)
+  const normalized = path.resolve(joined)
+  const withinRoot =
+    normalized === resolvedStorageRoot ||
+    normalized.startsWith(resolvedStorageRoot + path.sep)
+  if (!withinRoot) {
     throw new Error('Unsafe path')
   }
   return normalized

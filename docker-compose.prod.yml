@@ -90,6 +90,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: ${PORT:-8000}
+      STORAGE_ROOT: /app/storage/uploads
       # Construct DATABASE_URL using variables from .env.production
       # Reduced connection limit for 2GB RAM
       DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/${DB_NAME:-century_padel}?schema=public&connection_limit=10&pool_timeout=20

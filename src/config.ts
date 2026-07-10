@@ -1,6 +1,13 @@
+import 'dotenv/config'
 import path from 'node:path'
 
-export const STORAGE_ROOT = path.resolve(process.cwd(), 'src/storage/uploads')
+/** Writable upload directory (e.g. courts/, banners/). */
+export const STORAGE_ROOT = path.resolve(
+  process.env.STORAGE_ROOT ?? path.join(process.cwd(), 'storage', 'uploads'),
+)
+
+/** Parent of uploads/ — used by serveStatic for /storage/uploads/* URLs. */
+export const STORAGE_STATIC_ROOT = path.dirname(STORAGE_ROOT)
 export const DEFAULT_SUBDIR = 'misc' // fallback folder
 export const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024 // 10MB (tune as needed)
 

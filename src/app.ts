@@ -6,7 +6,7 @@ import timezone from 'dayjs/plugin/timezone.js'
 import utc from 'dayjs/plugin/utc.js'
 
 import { serveStatic } from '@hono/node-server/serve-static'
-import { JAKARTA_TZ } from './config'
+import { JAKARTA_TZ, STORAGE_STATIC_ROOT } from './config'
 import createApp from './lib/create-app'
 import adminAnalyticsRoute from './routes/admin/analytics.route'
 import adminAuthRoute from './routes/admin/auth.route'
@@ -73,7 +73,7 @@ dayjs.tz.setDefault(JAKARTA_TZ)
 
 const app = createApp()
 
-app.use('/storage/*', serveStatic({ root: './src' }))
+app.use('/storage/*', serveStatic({ root: STORAGE_STATIC_ROOT }))
 
 // ADD NEW ROUTES HERE
 const routes = [

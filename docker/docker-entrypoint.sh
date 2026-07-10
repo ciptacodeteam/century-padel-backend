@@ -48,6 +48,9 @@ fi
 
 echo "✅ Database is ready!"
 
+# Ensure writable storage directories exist (uploads, logs)
+mkdir -p /app/storage/uploads /app/storage/logs
+
 # Sync database schema (migrate deploy when migrations exist, else db push)
 MIGRATIONS_DIR="prisma/migrations"
 HAS_MIGRATIONS=false
