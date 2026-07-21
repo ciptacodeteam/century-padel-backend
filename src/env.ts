@@ -6,6 +6,43 @@ function req(name: string, fallback?: string) {
   return v
 }
 
+export type StorageStrategy = 'local' | 'blob'
+
+type StorageConfig =
+  | { storageStrategy: 'local'; blobToken: string | undefined }
+  | { storageStrategy: 'blob'; blobToken: string }
+
+export function parseStorageStrategy(
+  value: string | undefined,
+  blobToken: string | undefined,
+): StorageStrategy {
+  const strategy = value?.trim() || 'local'
+
+  if (strategy !== 'local' && strategy !== 'blob') {
+    throw new Error(
+      `Invalid STORAGE_STRATEGY "${strategy}". Expected "local" or "blob"`,
+    )
+  }
+
+  if (strategy === 'blob' && !blobToken?.trim()) {
+    throw new Error(
+      'Missing env BLOB_READ_WRITE_TOKEN for STORAGE_STRATEGY "blob"',
+    )
+  }
+
+  return strategy
+}
+
+const blobToken = process.env.BLOB_READ_WRITE_TOKEN || undefined
+const storageStrategy = parseStorageStrategy(
+  process.env.STORAGE_STRATEGY,
+  blobToken,
+)
+const storageConfig: StorageConfig =
+  storageStrategy === 'blob'
+    ? { storageStrategy, blobToken: blobToken as string }
+    : { storageStrategy, blobToken }
+
 export const env = {
   nodeEnv: process.env.NODE_ENV ?? 'development',
   port: Number(process.env.PORT ?? 3000),
@@ -33,7 +70,6 @@ export const env = {
   fazpassMerchantKey: process.env.FAZPASS_MERCHANT_KEY ?? '',
   fazpassApiUrl: process.env.FAZPASS_API_URL ?? 'https://api.fazpass.com/v1',
   pwdPepper: process.env.PWD_PEPPER ?? undefined,
-  blobToken: process.env.BLOB_READ_WRITE_TOKEN ?? undefined,
   smtp: {
     host: process.env.SMTP_HOST ?? 'smtp.mailtrap.io',
     port: parseInt(process.env.SMTP_PORT ?? '2525'),
@@ -41,5 +77,5 @@ export const env = {
     pass: process.env.SMTP_PASS ?? '',
     from: process.env.SMTP_FROM ?? 'noreply@centurypadel.id',
   },
-  storageStrategy: process.env.STORAGE_STRATEGY || 'local', // 'local' or 'blob'
+  ...storageConfig,
 }

@@ -20,3 +20,4 @@ test-results/
 .vercel
 
 storage/*
+src/storage/uploads
