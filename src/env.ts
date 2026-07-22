@@ -7,6 +7,43 @@ function req(name: string, fallback?: string) {
   return v
 }
 
+export type StorageStrategy = 'local' | 'blob'
+
+type StorageConfig =
+  | { storageStrategy: 'local'; blobToken: string | undefined }
+  | { storageStrategy: 'blob'; blobToken: string }
+
+export function parseStorageStrategy(
+  value: string | undefined,
+  blobToken: string | undefined,
+): StorageStrategy {
+  const strategy = value?.trim() || 'local'
+
+  if (strategy !== 'local' && strategy !== 'blob') {
+    throw new Error(
+      `Invalid STORAGE_STRATEGY "${strategy}". Expected "local" or "blob"`,
+    )
+  }
+
+  if (strategy === 'blob' && !blobToken?.trim()) {
+    throw new Error(
+      'Missing env BLOB_READ_WRITE_TOKEN for STORAGE_STRATEGY "blob"',
+    )
+  }
+
+  return strategy
+}
+
+const blobToken = process.env.BLOB_READ_WRITE_TOKEN || undefined
+const storageStrategy = parseStorageStrategy(
+  process.env.STORAGE_STRATEGY,
+  blobToken,
+)
+const storageConfig: StorageConfig =
+  storageStrategy === 'blob'
+    ? { storageStrategy, blobToken: blobToken as string }
+    : { storageStrategy, blobToken }
+
 export const env = {
   nodeEnv: process.env.NODE_ENV ?? 'development',
   port: Number(process.env.PORT ?? 3000),
@@ -22,9 +59,7 @@ export const env = {
     issuer: req('JWT_ISSUER', 'century-padel-backend'),
     audience: req('JWT_AUDIENCE', 'century-padel-frontend'),
     expiresIn: parseJwtDuration(
-      process.env.JWT_EXPIRES_IN ??
-        process.env.JWT_EXPIRES ??
-        '1m',
+      process.env.JWT_EXPIRES_IN ?? process.env.JWT_EXPIRES ?? '1m',
       'minute',
     ),
     refreshExpiresIn: parseJwtDuration(
@@ -44,14 +79,18 @@ export const env = {
   fazpassMerchantKey: process.env.FAZPASS_MERCHANT_KEY ?? '',
   fazpassApiUrl: process.env.FAZPASS_API_URL ?? 'https://api.fazpass.com/v1',
   pwdPepper: process.env.PWD_PEPPER ?? undefined,
-  blobToken: process.env.BLOB_READ_WRITE_TOKEN ?? undefined,
   resend: {
     apiKey: process.env.RESEND_API_KEY ?? '',
-    from:
-      process.env.RESEND_FROM ??
-      'Century Padel <onboarding@resend.dev>',
+    from: process.env.RESEND_FROM ?? 'Century Padel <onboarding@resend.dev>',
     backupAlertEmail:
       process.env.BACKUP_ALERT_EMAIL ?? 'ciptacodeteam@gmail.com',
   },
-  storageStrategy: process.env.STORAGE_STRATEGY || 'local', // 'local' or 'blob'
+  smtp: {
+    host: process.env.SMTP_HOST ?? 'smtp.mailtrap.io',
+    port: parseInt(process.env.SMTP_PORT ?? '2525'),
+    user: process.env.SMTP_USER ?? '',
+    pass: process.env.SMTP_PASS ?? '',
+    from: process.env.SMTP_FROM ?? 'noreply@centurypadel.id',
+  },
+  ...storageConfig,
 }
