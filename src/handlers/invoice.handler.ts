@@ -225,6 +225,7 @@ export const getInvoiceDetailHandler = factory.createHandlers(
 
       // Build payment instructions if pending/awaiting
       let paymentInstructions: any = null
+      let paymentRequest: any = null
       if (
         invoice.payment &&
         [PaymentStatus.PENDING, PaymentStatus.AWAITING_CONFIRMATION].includes(
@@ -232,20 +233,30 @@ export const getInvoiceDetailHandler = factory.createHandlers(
         )
       ) {
         // Attempt to fetch live payment request details from Xendit v3
-        let paymentRequest: any = null
         const isMockPayment =
           storedMeta?.mock === true ||
           String(invoice.payment.externalRef || '').startsWith('mock_')
-        if (invoice.payment.externalRef && !isMockPayment) {
+        if (
+          invoice.payment.externalRef &&
+          !isMockPayment &&
+          !storedMeta?.payment_session_id
+        ) {
           paymentRequest = await xenditService.getPaymentRequestV3(
             invoice.payment.externalRef,
           )
         }
 
-        const channelCode = paymentRequest?.channel_code || storedMeta?.channel_code
+        const channelCode =
+          paymentRequest?.channel_code || storedMeta?.channel_code
         const channelProps =
-          paymentRequest?.channel_properties || storedMeta?.channel_properties || {}
-        const actions = paymentRequest?.actions || storedMeta?.actions || {}
+          paymentRequest?.channel_properties ||
+          storedMeta?.channel_properties ||
+          {}
+        const actions = Array.isArray(
+          paymentRequest?.actions || storedMeta?.actions,
+        )
+          ? paymentRequest?.actions || storedMeta?.actions
+          : []
 
         // Virtual Account detection (sample heuristic)
         if (channelCode && channelCode.toUpperCase().includes('VA')) {
@@ -262,9 +273,11 @@ export const getInvoiceDetailHandler = factory.createHandlers(
             type: 'QRIS',
             qrString: channelProps.qr_string || null,
             qrImage:
-              actions?.desktop_web_checkout_url ||
-              actions?.mobile_web_checkout_url ||
-              null,
+              actions.find(
+                (action: any) =>
+                  action.descriptor === 'QR_STRING' ||
+                  action.descriptor === 'QR_CODE',
+              )?.value || null,
             expiresAt: invoice.payment.dueDate || null,
           }
         } else if (storedMeta?.invoiceUrl) {
@@ -276,6 +289,37 @@ export const getInvoiceDetailHandler = factory.createHandlers(
           }
         }
       }
+
+      // Prefer the latest gateway response so a user reopening this invoice
+      // receives the still-active payment instructions and redirect URL.
+      const resolvedPaymentMeta = paymentRequest
+        ? {
+            ...(storedMeta || {}),
+            ...paymentRequest,
+            payment_request_id:
+              paymentRequest.id || storedMeta?.payment_request_id,
+            actions: paymentRequest.actions || storedMeta?.actions || [],
+          }
+        : storedMeta
+      const resolvedActions = Array.isArray(resolvedPaymentMeta?.actions)
+        ? resolvedPaymentMeta.actions
+        : []
+      const redirectAction = resolvedActions.find((action: any) => {
+        const actionType = String(action?.type || '').toUpperCase()
+        const descriptor = String(action?.descriptor || '').toUpperCase()
+        return (
+          actionType === 'REDIRECT' ||
+          actionType === 'REDIRECT_CUSTOMER' ||
+          descriptor === 'DEEPLINK_CHECKOUT' ||
+          descriptor === 'WEB_URL' ||
+          descriptor === 'MOBILE_URL'
+        )
+      })
+      const paymentUrl =
+        redirectAction?.url ||
+        redirectAction?.value ||
+        resolvedPaymentMeta?.invoiceUrl ||
+        null
 
       const responsePayload = {
         id: invoice.id,
@@ -302,8 +346,9 @@ export const getInvoiceDetailHandler = factory.createHandlers(
               }
             : null,
         },
-        paymentMeta: storedMeta,
+        paymentMeta: resolvedPaymentMeta,
         paymentInstructions,
+        paymentUrl,
       }
 
       return c.json(
@@ -542,7 +587,8 @@ export const mockPayInvoiceHandler = factory.createHandlers(
             status: PaymentStatus.PAID,
             paidAt: now,
             meta: {
-              ...((invoice.payment.meta as Record<string, unknown> | null) || {}),
+              ...((invoice.payment.meta as Record<string, unknown> | null) ||
+                {}),
               status: 'SUCCEEDED',
               mock: true,
               paid_at: now.toISOString(),

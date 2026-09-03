@@ -12,6 +12,7 @@ import {
   VerifyOtpSchema,
 } from '@/lib/validation'
 import { sendPhoneOtp, verifyPhoneOtp } from '@/services/phone.service'
+import { validateOtp } from '@/services/otp.service'
 import { zValidator } from '@hono/zod-validator'
 import dayjs from 'dayjs'
 import { PhoneVerificationType } from '@prisma/client'
@@ -31,14 +32,12 @@ export const sendPhoneVerificationOtpHandler = factory.createHandlers(
           phone: formattedPhone,
           isUsed: false,
         },
-        orderBy: {
-          createdAt: 'desc',
-        },
+        orderBy: { updatedAt: 'desc' },
       })
 
       if (
         existingRecord &&
-        dayjs(existingRecord.createdAt).add(1, 'minute') > dayjs()
+        dayjs(existingRecord.updatedAt).add(1, 'minute') > dayjs()
       ) {
         c.var.logger.warn(
           `OTP already sent recently to ${formattedPhone}, requestId: ${existingRecord.requestId}`,
@@ -115,55 +114,7 @@ export const verifyPhoneVerificationOtpHandler = factory.createHandlers(
         `Verifying phone OTP for ${phoneNumber}, requestId: ${requestId}`,
       )
 
-      const verificationRecord = await db.phoneVerification.findUnique({
-        where: {
-          requestId,
-          phone: phoneNumber,
-        },
-      })
-
-      if (!verificationRecord) {
-        c.var.logger.error(
-          `No verification record found for phone ${phoneNumber} with requestId ${requestId}`,
-        )
-        return c.json(
-          err('Invalid requestId or phone number', status.BAD_REQUEST),
-          status.BAD_REQUEST,
-        )
-      }
-
-      if (verificationRecord.isUsed) {
-        c.var.logger.error(
-          `OTP code already used for phone ${phoneNumber}, requestId: ${requestId}`,
-        )
-
-        return c.json(
-          err('OTP code has already been used', status.BAD_REQUEST),
-          status.BAD_REQUEST,
-        )
-      }
-
-      if (verificationRecord.code !== code) {
-        c.var.logger.error(
-          `Invalid OTP code for phone ${phoneNumber}, requestId: ${requestId}`,
-        )
-
-        return c.json(
-          err('Invalid OTP code', status.BAD_REQUEST),
-          status.BAD_REQUEST,
-        )
-      }
-
-      if (verificationRecord.expiresAt < dayjs().toDate()) {
-        c.var.logger.error(
-          `OTP code expired for phone ${phoneNumber}, requestId: ${requestId}`,
-        )
-
-        return c.json(
-          err('OTP code has expired', status.BAD_REQUEST),
-          status.BAD_REQUEST,
-        )
-      }
+      const verificationRecord = await validateOtp(phoneNumber, requestId, code)
 
       if (env.nodeEnv === 'production') {
         const success = await verifyPhoneOtp(requestId, code)
@@ -181,10 +132,7 @@ export const verifyPhoneVerificationOtpHandler = factory.createHandlers(
       }
 
       await db.phoneVerification.update({
-        where: {
-          requestId,
-          phone: phoneNumber,
-        },
+        where: { id: verificationRecord.id },
         data: {
           isUsed: true,
         },

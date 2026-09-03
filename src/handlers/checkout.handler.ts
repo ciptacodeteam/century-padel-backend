@@ -18,6 +18,7 @@ import { BookingStatus, PaymentStatus, SlotType } from '@prisma/client'
 import dayjs from 'dayjs'
 import status from 'http-status'
 import { z } from 'zod'
+import { validateCoachSlots } from '@/services/coach-slot.service'
 
 // const PROCESSING_FEE_PERCENT = 0.02 // 2% processing fee
 
@@ -259,39 +260,9 @@ export const applyPromoCodeHandler = factory.createHandlers(
         }
 
         if (coachSlots && coachSlots.length > 0) {
-          const coachSlotData = await tx.slot.findMany({
-            where: {
-              id: { in: coachSlots },
-              type: SlotType.COACH,
-              isAvailable: true,
-            },
-            include: {
-              bookingCoaches: {
-                where: {
-                  booking: {
-                    status: {
-                      not: BookingStatus.CANCELLED,
-                    },
-                  },
-                },
-                select: { id: true },
-                take: 1,
-              },
-            },
-          })
-
-          if (coachSlotData.length !== coachSlots.length) {
-            throw new BadRequestException(
-              'One or more coach slots not found or unavailable',
-            )
-          }
+          const coachSlotData = await validateCoachSlots(tx, coachSlots)
 
           for (const slot of coachSlotData) {
-            if (slot.bookingCoaches.length > 0) {
-              throw new BadRequestException(
-                'One or more coach slots are already booked',
-              )
-            }
             totalPrice += slot.price
           }
         }
@@ -367,10 +338,7 @@ export const applyPromoCodeHandler = factory.createHandlers(
 
       if (!promo) {
         return c.json(
-          ok(
-            { isValid: false, discountAmount: 0 },
-            'Promo code not found',
-          ),
+          ok({ isValid: false, discountAmount: 0 }, 'Promo code not found'),
           status.OK,
         )
       }
@@ -378,10 +346,7 @@ export const applyPromoCodeHandler = factory.createHandlers(
       const now = dayjs()
       if (promo.status !== 'ACTIVE') {
         return c.json(
-          ok(
-            { isValid: false, discountAmount: 0 },
-            'Promo code is not active',
-          ),
+          ok({ isValid: false, discountAmount: 0 }, 'Promo code is not active'),
           status.OK,
         )
       }
@@ -632,39 +597,11 @@ export const checkoutHandler = factory.createHandlers(
 
         // Process coach slots
         if (coachSlots && coachSlots.length > 0) {
-          const coachSlotData = await tx.slot.findMany({
-            where: {
-              id: { in: coachSlots },
-              type: SlotType.COACH,
-              isAvailable: true,
-            },
-            include: {
-              bookingCoaches: {
-                where: {
-                  booking: {
-                    status: {
-                      not: BookingStatus.CANCELLED,
-                    },
-                  },
-                },
-                select: { id: true },
-                take: 1,
-              },
-            },
+          const coachSlotData = await validateCoachSlots(tx, coachSlots, {
+            reserve: true,
           })
 
-          if (coachSlotData.length !== coachSlots.length) {
-            throw new BadRequestException(
-              'One or more coach slots not found or unavailable',
-            )
-          }
-
           for (const slot of coachSlotData) {
-            if (slot.bookingCoaches.length > 0) {
-              throw new BadRequestException(
-                'One or more coach slots are already booked',
-              )
-            }
             totalPrice += slot.price
 
             // Get coach type for the staff
@@ -688,15 +625,6 @@ export const checkoutHandler = factory.createHandlers(
               price: slot.price,
             })
           }
-          // Update slots to unavailable
-          await tx.slot.updateMany({
-            where: {
-              id: { in: coachSlots },
-            },
-            data: {
-              isAvailable: false,
-            },
-          })
         }
 
         // Process ballboy slots
@@ -982,96 +910,98 @@ export const checkoutHandler = factory.createHandlers(
             throw new BadRequestException(
               'Payment gateway unavailable. Please try again later (missing API key).',
             )
-          } else try {
-            const channelCode = (paymentMethod as any).channel || ''
-            let channelProperties: Record<string, any> = {}
-            const userDetails = await tx.user.findUnique({
-              where: { id: user.id },
-              select: { name: true, email: true, phone: true },
-            })
+          } else
+            try {
+              const channelCode = (paymentMethod as any).channel || ''
+              let channelProperties: Record<string, any> = {}
+              const userDetails = await tx.user.findUnique({
+                where: { id: user.id },
+                select: { name: true, email: true, phone: true },
+              })
 
-            // Handle credit card payment with 3DS
-            if (channelCode === 'CARDS') {
-              xenditInvoiceResponse = await handleCreditCardPayment(
-                tx,
-                paymentMethodId,
-                invoiceNumber,
-                booking.id,
-                user.id,
-                finalTotal,
-                validated.cardPayment,
-              )
-            } else if (channelCode === 'MANDIRI_VIRTUAL_ACCOUNT') {
-              channelProperties = {
-                expires_at: dayjs().add(15, 'minutes').toISOString(),
-                display_name: userDetails?.name || 'Customer',
+              // Handle credit card payment with 3DS
+              if (channelCode === 'CARDS') {
+                xenditInvoiceResponse = await handleCreditCardPayment(
+                  tx,
+                  paymentMethodId,
+                  invoiceNumber,
+                  booking.id,
+                  user.id,
+                  finalTotal,
+                  validated.cardPayment,
+                )
+              } else if (channelCode === 'MANDIRI_VIRTUAL_ACCOUNT') {
+                channelProperties = {
+                  expires_at: dayjs().add(15, 'minutes').toISOString(),
+                  display_name: userDetails?.name || 'Customer',
+                }
+              } else if (channelCode.includes('VIRTUAL_ACCOUNT')) {
+                // Other VA channels (BCA, BNI, BRI, etc.) also require display_name
+                channelProperties = {
+                  expires_at: dayjs().add(15, 'minutes').toISOString(),
+                  display_name: userDetails?.name || 'Customer',
+                }
+              } else if (channelCode === 'QRIS' || channelCode === 'QR') {
+                channelProperties = {
+                  expires_at: dayjs().add(15, 'minutes').toISOString(),
+                }
+              } else if (
+                channelCode.includes('EWALLET') ||
+                ['DANA', 'OVO', 'LINKAJA', 'SHOPEEPAY'].includes(channelCode)
+              ) {
+                channelProperties = {
+                  success_return_url: `${env.frontEndUrl}/payment/success?invoice_id=${invoice.id}`,
+                  failure_return_url: `${env.frontEndUrl}/payment/failed?invoice_id=${invoice.id}`,
+                }
+              } else {
+                channelProperties = {
+                  expires_at: dayjs().add(15, 'minutes').toISOString(),
+                }
               }
-            } else if (channelCode.includes('VIRTUAL_ACCOUNT')) {
-              // Other VA channels (BCA, BNI, BRI, etc.) also require display_name
-              channelProperties = {
-                expires_at: dayjs().add(15, 'minutes').toISOString(),
-                display_name: userDetails?.name || 'Customer',
-              }
-            } else if (channelCode === 'QRIS' || channelCode === 'QR') {
-              channelProperties = {
-                expires_at: dayjs().add(15, 'minutes').toISOString(),
-              }
-            } else if (
-              channelCode.includes('EWALLET') ||
-              ['DANA', 'OVO', 'LINKAJA', 'SHOPEEPAY'].includes(channelCode)
-            ) {
-              channelProperties = {
-                success_return_url: `${env.frontEndUrl}/payment/success?invoice_id=${invoice.id}`,
-                failure_return_url: `${env.frontEndUrl}/payment/failed?invoice_id=${invoice.id}`,
-              }
-            } else {
-              channelProperties = {
-                expires_at: dayjs().add(15, 'minutes').toISOString(),
-              }
-            }
 
-            // Skip payment request creation for credit card (already handled above)
-            if (channelCode !== 'CARDS') {
-              c.var.logger.info(
-                `Creating Xendit payment request channel=${channelCode} amount=${finalTotal}`,
+              // Skip payment request creation for credit card (already handled above)
+              if (channelCode !== 'CARDS') {
+                c.var.logger.info(
+                  `Creating Xendit payment request channel=${channelCode} amount=${finalTotal}`,
+                )
+                xenditInvoiceResponse =
+                  await xenditService.createPaymentRequestV3({
+                    referenceId: invoiceNumber,
+                    requestAmount: finalTotal,
+                    country: 'ID',
+                    currency: 'IDR',
+                    captureMethod: 'AUTOMATIC',
+                    channelCode,
+                    channelProperties,
+                    description: `Payment for booking ${booking.id}`,
+                    metadata: {
+                      bookingId: booking.id,
+                      userId: user.id,
+                      invoiceNumber: invoice.number,
+                    },
+                  })
+              }
+            } catch (errX: any) {
+              const errMsg = errX?.message || 'Payment gateway error'
+              xenditError = {
+                message: errMsg,
+                code:
+                  errMsg.includes('IP allowlist') ||
+                  errMsg.includes('allowlist')
+                    ? 'XENDIT_IP_NOT_ALLOWLIST'
+                    : errMsg.includes('channel_properties')
+                      ? 'XENDIT_CHANNEL_PROPERTIES_INVALID'
+                      : errMsg.includes('below the minimum limit') ||
+                          errMsg.includes('minimum amount')
+                        ? 'XENDIT_AMOUNT_TOO_LOW'
+                        : errMsg.includes('tokenize') || errMsg.includes('card')
+                          ? 'XENDIT_CARD_ERROR'
+                          : 'XENDIT_ERROR',
+              }
+              c.var.logger.error(
+                `Xendit error: ${xenditError.code} - ${xenditError.message}`,
               )
-              xenditInvoiceResponse =
-                await xenditService.createPaymentRequestV3({
-                  referenceId: invoiceNumber,
-                  requestAmount: finalTotal,
-                  country: 'ID',
-                  currency: 'IDR',
-                  captureMethod: 'AUTOMATIC',
-                  channelCode,
-                  channelProperties,
-                  description: `Payment for booking ${booking.id}`,
-                  metadata: {
-                    bookingId: booking.id,
-                    userId: user.id,
-                    invoiceNumber: invoice.number,
-                  },
-                })
             }
-          } catch (errX: any) {
-            const errMsg = errX?.message || 'Payment gateway error'
-            xenditError = {
-              message: errMsg,
-              code:
-                errMsg.includes('IP allowlist') || errMsg.includes('allowlist')
-                  ? 'XENDIT_IP_NOT_ALLOWLIST'
-                  : errMsg.includes('channel_properties')
-                    ? 'XENDIT_CHANNEL_PROPERTIES_INVALID'
-                    : errMsg.includes('below the minimum limit') ||
-                        errMsg.includes('minimum amount')
-                      ? 'XENDIT_AMOUNT_TOO_LOW'
-                      : errMsg.includes('tokenize') || errMsg.includes('card')
-                        ? 'XENDIT_CARD_ERROR'
-                        : 'XENDIT_ERROR',
-            }
-            c.var.logger.error(
-              `Xendit error: ${xenditError.code} - ${xenditError.message}`,
-            )
-          }
           if (!xenditInvoiceResponse) {
             // Provide user-friendly error messages based on error code
             let userMessage = xenditError?.message || 'Payment gateway error'

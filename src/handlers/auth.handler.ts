@@ -1,6 +1,6 @@
 import { DEFAULT_OTP_CODE, OTP_LENGTH } from '@/constants'
 import { env } from '@/env'
-import { UnauthorizedException } from '@/exceptions'
+import { BadRequestException, UnauthorizedException } from '@/exceptions'
 import { validateHook } from '@/helpers/validate-hook'
 import { factory } from '@/lib/create-app'
 import { addDuration } from '@/lib/jwt-duration'
@@ -38,7 +38,7 @@ import {
 import { requireAuth } from '@/middlewares/auth'
 import { queueSendTemplatedEmail } from '@/services/email.service'
 import { validateOtp } from '@/services/otp.service'
-import { sendPhoneOtp } from '@/services/phone.service'
+import { sendPhoneOtp, verifyPhoneOtp } from '@/services/phone.service'
 import { getFileUrl } from '@/services/upload.service'
 import { AppRouteHandler, UserTokenPayload } from '@/types'
 import { zValidator } from '@hono/zod-validator'
@@ -163,31 +163,52 @@ export const registerHandler = factory.createHandlers(
 
       const formattedPhone = await formatPhone(phone)
 
+      const existingUser = await db.user.findUnique({
+        where: { phone: formattedPhone },
+      })
+
+      if (existingUser) {
+        throw new BadRequestException('User already exists')
+      }
+
+      await validateOtp(formattedPhone, requestId, code)
+
+      if (env.nodeEnv === 'production') {
+        const verifiedByFazpass = await verifyPhoneOtp(requestId, code)
+        if (!verifiedByFazpass) {
+          throw new BadRequestException('Failed to verify OTP')
+        }
+      }
+
       const { token, refreshToken } = await db.$transaction(async (tx) => {
-        const existingUser = await tx.user.findUnique({
+        const userCreatedWhileVerifying = await tx.user.findUnique({
           where: { phone: formattedPhone },
         })
 
-        if (existingUser) {
+        if (userCreatedWhileVerifying) {
           c.var.logger.error(
             `User already exists with phone number: ${formattedPhone}`,
           )
-          throw new Error('User already exists')
+          throw new BadRequestException('User already exists')
         }
 
-        await validateOtp(formattedPhone, requestId, code)
-
-        // Mark the OTP as used
-        await tx.phoneVerification.updateMany({
+        const claimedOtp = await tx.phoneVerification.updateMany({
           where: {
             requestId,
             phone: formattedPhone,
+            code,
+            isUsed: false,
+            expiresAt: { gt: new Date() },
           },
           data: {
             type: PhoneVerificationType.REGISTER,
             isUsed: true,
           },
         })
+
+        if (claimedOtp.count !== 1) {
+          throw new BadRequestException('OTP code is no longer valid')
+        }
 
         const hashPwd = await hashPassword(password)
 
@@ -399,6 +420,24 @@ export const forgotPasswordHandler = factory.createHandlers(
         )
       }
 
+      const recentOtp = await db.phoneVerification.findUnique({
+        where: { phone: formattedPhone },
+      })
+
+      if (
+        recentOtp &&
+        !recentOtp.isUsed &&
+        dayjs(recentOtp.updatedAt).add(1, 'minute').isAfter(dayjs())
+      ) {
+        return c.json(
+          err(
+            'OTP already sent recently. Please wait before requesting a new one.',
+            status.TOO_MANY_REQUESTS,
+          ),
+          status.TOO_MANY_REQUESTS,
+        )
+      }
+
       let code = DEFAULT_OTP_CODE
       let requestId = Math.random().toString(36).substring(2, 30)
 
@@ -470,32 +509,38 @@ export const resetPasswordHandler = factory.createHandlers(
         )
       }
 
-      // Mark the OTP as used
-      await db.phoneVerification.update({
+      const verifiedRequest = await db.phoneVerification.findFirst({
         where: {
-          requestId: requestId,
+          requestId,
           phone: formattedPhone,
-        },
-        data: {
           type: PhoneVerificationType.FORGOT_PASSWORD,
           isUsed: true,
+          expiresAt: { gt: new Date() },
         },
       })
 
-      // Here you would typically hash the new password before saving it
-      // For demonstration purposes, we'll just log it
-      c.var.logger.info(
-        `Resetting password for ${formattedPhone} to ${newPassword}`,
-      )
+      if (!verifiedRequest) {
+        throw new BadRequestException(
+          'OTP verification is required before resetting the password',
+        )
+      }
 
       const hashNewPassword = await hashPassword(newPassword)
 
-      await db.user.update({
-        where: { id: existingUser.id },
-        data: {
-          password: hashNewPassword,
-        },
+      await db.$transaction(async (tx) => {
+        await tx.phoneVerification.delete({
+          where: { id: verifiedRequest.id },
+        })
+
+        await tx.user.update({
+          where: { id: existingUser.id },
+          data: {
+            password: hashNewPassword,
+          },
+        })
       })
+
+      c.var.logger.info(`Password reset completed for ${formattedPhone}`)
 
       return c.json(ok(null, 'Password reset successful'))
     } catch (err) {

@@ -15,6 +15,7 @@ import dayjs from 'dayjs'
 import status from 'http-status'
 import { z } from 'zod'
 import { hashPassword } from '@/lib/password'
+import { validateCoachSlots } from '@/services/coach-slot.service'
 
 const adminCheckoutSchema = z
   .object({
@@ -244,36 +245,9 @@ export const adminCheckoutHandler = factory.createHandlers(
           c.var.logger.info(
             `Processing ${coachSlots.length} coach slots: ${coachSlots.join(', ')}`,
           )
-          const slotData = await tx.slot.findMany({
-            where: {
-              id: { in: coachSlots },
-              type: SlotType.COACH,
-              isAvailable: true,
-            },
-            include: {
-              bookingCoaches: {
-                where: {
-                  booking: {
-                    status: {
-                      not: BookingStatus.CANCELLED,
-                    },
-                  },
-                },
-                select: { id: true },
-                take: 1,
-              },
-            },
+          const slotData = await validateCoachSlots(tx, coachSlots, {
+            reserve: true,
           })
-          if (slotData.length !== coachSlots.length) {
-            c.var.logger.warn(
-              `Coach slots mismatch: requested ${coachSlots.length}, found ${slotData.length}. ` +
-                `Requested IDs: ${coachSlots.join(', ')}. ` +
-                `Found IDs: ${slotData.map((s) => s.id).join(', ')}`,
-            )
-            throw new BadRequestException(
-              'One or more coach slots not found or unavailable',
-            )
-          }
           // Use a generic coach type; if none exists, create a default one.
           let defaultCoachType = await tx.bookingCoachType.findFirst()
           if (!defaultCoachType) {
@@ -286,11 +260,6 @@ export const adminCheckoutHandler = factory.createHandlers(
             })
           }
           for (const slot of slotData) {
-            if (slot.bookingCoaches.length > 0) {
-              throw new BadRequestException(
-                'One or more coach slots are already booked',
-              )
-            }
             totalPrice += slot.price
             await tx.bookingCoach.create({
               data: {
@@ -310,15 +279,6 @@ export const adminCheckoutHandler = factory.createHandlers(
           c.var.logger.info(
             `Total coach slots booked: ${bookedItems.coachSlots.length}. Total coach price: ${slotData.reduce((sum, s) => sum + s.price, 0)}`,
           )
-          // Update slots to unavailable
-          await tx.slot.updateMany({
-            where: {
-              id: { in: coachSlots },
-            },
-            data: {
-              isAvailable: false,
-            },
-          })
         }
 
         // Ballboys

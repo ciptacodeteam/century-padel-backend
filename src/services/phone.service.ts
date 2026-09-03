@@ -12,7 +12,10 @@ export const FAZPASS_API_URL = env.fazpassApiUrl
 export const FAZPASS_MERCHANT_KEY = env.fazpassMerchantKey
 export const FAZPASS_GATEWAY_KEY = env.fazpassGatewayKey
 
-if (!FAZPASS_API_URL || !FAZPASS_MERCHANT_KEY || !FAZPASS_GATEWAY_KEY) {
+if (
+  env.nodeEnv === 'production' &&
+  (!FAZPASS_API_URL || !FAZPASS_MERCHANT_KEY || !FAZPASS_GATEWAY_KEY)
+) {
   throw new Error('Fazpass configuration is missing')
 }
 
@@ -32,12 +35,14 @@ export async function sendPhoneOtp(
     const response = await axios.post(SEND_OTP_URL, payload, {
       headers: {
         authorization: `Bearer ${FAZPASS_MERCHANT_KEY}`,
+        'content-type': 'application/json',
       },
+      timeout: 10_000,
     })
 
-    if (!response.status) {
-      log.error(`Failed to send OTP: ${response}`)
-      throw new Error('Failed to send OTP')
+    if (response.data?.status !== true || !response.data?.data?.id) {
+      log.error(`Fazpass rejected OTP delivery: ${response.data?.message}`)
+      throw new Error(response.data?.message || 'Failed to send OTP')
     }
 
     const responseData = SendOTPResponse.fromJson(response.data)
@@ -60,14 +65,16 @@ export async function verifyPhoneOtp(
     const response = await axios.post(VERIFY_OTP_URL, payload, {
       headers: {
         authorization: `Bearer ${FAZPASS_MERCHANT_KEY}`,
+        'content-type': 'application/json',
       },
+      timeout: 10_000,
     })
 
     log.info('OTP Verification Response:', response.data)
 
     const responseData = VerifyOTPResponse.fromJson(response.data)
 
-    return responseData.status
+    return responseData.status === true
   } catch (error) {
     log.error(`Error verifying OTP: ${error}`)
     throw error

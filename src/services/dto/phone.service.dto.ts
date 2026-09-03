@@ -1,9 +1,7 @@
-import { FAZPASS_GATEWAY_KEY } from '../phone.service'
-
 export class GenerateOTPPayload {
   constructor(
     public phone: string,
-    public gateway_key: string = FAZPASS_GATEWAY_KEY,
+    public gateway_key: string,
   ) {}
 
   toJson(): any {
@@ -79,7 +77,7 @@ export class SendOTPPayload {
   constructor(
     public phone: string,
     public otp: string,
-    public gateway_key: string = FAZPASS_GATEWAY_KEY,
+    public gateway_key: string,
   ) {}
 
   toJson(): any {

@@ -1,4 +1,5 @@
 import { DEFAULT_DATE_FORMAT } from '@/config'
+import { OTP_LENGTH } from '@/constants'
 import { Gender } from '@prisma/client'
 import dayjs from 'dayjs'
 import z from 'zod'
@@ -9,8 +10,21 @@ export const idSchema = z.object({
 
 export type IdSchema = z.infer<typeof idSchema>
 
+const indonesianMobileNumberSchema = z
+  .string()
+  .trim()
+  .min(10)
+  .max(20)
+  .refine(
+    (phone) => {
+      const cleaned = phone.replace(/[\s\-()]/g, '')
+      return /^(?:\+62|62|0)?8[1-9]\d{7,10}$/.test(cleaned)
+    },
+    { message: 'Phone number must be a valid Indonesian mobile number' },
+  )
+
 export const phoneSchema = z.object({
-  phone: z.string().min(10).max(15),
+  phone: indonesianMobileNumberSchema,
 })
 
 export type PhoneSchema = z.infer<typeof phoneSchema>
@@ -21,15 +35,14 @@ export const authTokenCookieSchema = z.object({
 })
 
 export const verifyOtpSchema = z.object({
-  phone: z.string().min(10).max(15),
-  code: z.string().length(4),
-  requestId: z.string(),
+  phone: indonesianMobileNumberSchema,
+  code: z.string().length(OTP_LENGTH),
+  requestId: z.string().min(1),
 })
 
 export type VerifyOtpSchema = z.infer<typeof verifyOtpSchema>
 
 export const loginSchema = phoneSchema.extend({
-  phone: z.string().min(10).max(15),
   password: z.string().min(6).max(100),
 })
 
@@ -37,8 +50,8 @@ export type LoginSchema = z.infer<typeof loginSchema>
 
 export const registerSchema = phoneSchema.extend({
   name: z.string().min(3).max(100),
-  code: z.string().length(4),
-  requestId: z.string(),
+  code: z.string().length(OTP_LENGTH),
+  requestId: z.string().min(1),
   password: z.string().min(6).max(100),
 })
 
@@ -772,7 +785,7 @@ export type SendVerificationOtpSchema = z.infer<
 export const verifyVerificationOtpSchema = z.object({
   type: z.enum(['phone', 'email']),
   requestId: z.string().min(1, 'Request ID is required'),
-  code: z.string().min(4, 'OTP code is required'),
+  code: z.string().length(OTP_LENGTH, `OTP code must be ${OTP_LENGTH} digits`),
 })
 
 export type VerifyVerificationOtpSchema = z.infer<

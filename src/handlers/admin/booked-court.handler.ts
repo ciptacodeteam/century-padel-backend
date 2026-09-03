@@ -15,6 +15,7 @@ import status from 'http-status'
 import dayjs from 'dayjs'
 import { z } from 'zod'
 import { BadRequestException, NotFoundException } from '@/exceptions'
+import { validateCoachSlots } from '@/services/coach-slot.service'
 
 // GET /admin/booked-courts
 // Get all booked courts with comprehensive booking information
@@ -1045,6 +1046,19 @@ export const rescheduleCourtBookingHandler = factory.createHandlers(
           })
         }
 
+        if (coachSlotReplacements.length > 0) {
+          await validateCoachSlots(
+            tx,
+            coachSlotReplacements.map((item) => item.newSlotId),
+            {
+              reserve: true,
+              excludeBookingCoachIds: coachSlotReplacements.map(
+                (item) => item.bookingCoachId,
+              ),
+            },
+          )
+        }
+
         // Release old court slot and lock new court slot
         await tx.slot.update({
           where: { id: bookingDetail.slotId },
@@ -1080,14 +1094,6 @@ export const rescheduleCourtBookingHandler = factory.createHandlers(
             where: { id: item.oldSlotId },
             data: {
               isAvailable: true,
-            },
-          })
-
-          // lock new coach slot
-          await tx.slot.update({
-            where: { id: item.newSlotId },
-            data: {
-              isAvailable: false,
             },
           })
 

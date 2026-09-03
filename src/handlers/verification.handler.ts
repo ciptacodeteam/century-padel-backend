@@ -11,7 +11,8 @@ import {
   verifyVerificationOtpSchema,
   VerifyVerificationOtpSchema,
 } from '@/lib/validation'
-import { sendPhoneOtp } from '@/services/phone.service'
+import { sendPhoneOtp, verifyPhoneOtp } from '@/services/phone.service'
+import { validateOtp } from '@/services/otp.service'
 import { queueSendTemplatedEmail } from '@/services/email.service'
 import { requireAuth } from '@/middlewares/auth'
 import { zValidator } from '@hono/zod-validator'
@@ -90,14 +91,12 @@ export const sendVerificationOtpHandler = factory.createHandlers(
             phone: formattedPhone,
             isUsed: false,
           },
-          orderBy: {
-            createdAt: 'desc',
-          },
+          orderBy: { updatedAt: 'desc' },
         })
 
         if (
           existingRecord &&
-          dayjs(existingRecord.createdAt).add(1, 'minute') > dayjs()
+          dayjs(existingRecord.updatedAt).add(1, 'minute') > dayjs()
         ) {
           return c.json(
             err(
@@ -297,25 +296,16 @@ export const verifyVerificationOtpHandler = factory.createHandlers(
           )
         }
 
-        if (verification.isUsed) {
-          return c.json(
-            err('OTP code has already been used', status.BAD_REQUEST),
-            status.BAD_REQUEST,
-          )
-        }
+        await validateOtp(verification.phone, requestId, code)
 
-        if (dayjs().isAfter(dayjs(verification.expiresAt))) {
-          return c.json(
-            err('OTP code has expired', status.BAD_REQUEST),
-            status.BAD_REQUEST,
-          )
-        }
-
-        if (verification.code !== code) {
-          return c.json(
-            err('Invalid OTP code', status.BAD_REQUEST),
-            status.BAD_REQUEST,
-          )
+        if (env.nodeEnv === 'production') {
+          const verifiedByFazpass = await verifyPhoneOtp(requestId, code)
+          if (!verifiedByFazpass) {
+            return c.json(
+              err('Failed to verify OTP', status.BAD_REQUEST),
+              status.BAD_REQUEST,
+            )
+          }
         }
 
         // Update user phone verification status

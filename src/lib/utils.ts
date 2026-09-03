@@ -21,6 +21,11 @@ export async function formatPhone(phone: string) {
     return `+62${cleaned.slice(1)}`
   }
 
+  // Handle Indonesian mobile numbers entered without a country or trunk prefix
+  if (cleaned.startsWith('8')) {
+    return `+62${cleaned}`
+  }
+
   // Default: just add '+'
   if (!cleaned.startsWith('+')) {
     return `+${cleaned}`
@@ -32,7 +37,7 @@ export async function formatPhone(phone: string) {
 export async function generateOtp(otpLength: number) {
   const min = Math.pow(10, otpLength - 1)
   const max = Math.pow(10, otpLength) - 1
-  return (Math.floor(Math.random() * (max - min + 1)) + min).toString()
+  return crypto.randomInt(min, max + 1).toString()
 }
 
 /**
