@@ -943,12 +943,46 @@ export const checkoutHandler = factory.createHandlers(
         let xenditInvoiceResponse: any = null
         let xenditError: any = null
         if (paymentMethod.channel) {
-          if (!env.xendit.apiKey) {
+          if (env.paymentGatewayMode === 'mock') {
+            const channelCode = (paymentMethod as any).channel || 'MOCK'
+            xenditInvoiceResponse = {
+              payment_request_id: `mock_${invoiceNumber}`,
+              reference_id: invoiceNumber,
+              status: 'PENDING',
+              channel_code: channelCode,
+              channel_properties: {
+                account_number: '8808123456789012',
+                account_name: 'CENTURY PADEL MOCK',
+                expires_at: dayjs().add(15, 'minutes').toISOString(),
+              },
+              actions:
+                channelCode === 'QRIS'
+                  ? [
+                      {
+                        descriptor: 'QR_STRING',
+                        type: 'QR_CODE',
+                        value: `MOCK-QRIS-${invoiceNumber}-${finalTotal}`,
+                      },
+                    ]
+                  : [
+                      {
+                        descriptor: 'VIRTUAL_ACCOUNT_NUMBER',
+                        type: 'VIRTUAL_ACCOUNT',
+                        value: '8808123456789012',
+                        display_name: paymentMethod.name,
+                        expiry: dayjs().add(15, 'minutes').toISOString(),
+                      },
+                    ],
+              request_amount: finalTotal,
+              currency: 'IDR',
+              created: new Date().toISOString(),
+              mock: true,
+            }
+          } else if (!env.xendit.apiKey) {
             throw new BadRequestException(
               'Payment gateway unavailable. Please try again later (missing API key).',
             )
-          }
-          try {
+          } else try {
             const channelCode = (paymentMethod as any).channel || ''
             let channelProperties: Record<string, any> = {}
             const userDetails = await tx.user.findUnique({

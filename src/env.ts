@@ -73,6 +73,7 @@ export const env = {
     apiKey: process.env.XENDIT_API_KEY ?? '',
     callbackToken: process.env.XENDIT_CALLBACK_TOKEN ?? '',
   },
+  paymentGatewayMode: process.env.PAYMENT_GATEWAY_MODE ?? 'xendit',
   webhookBaseUrl: req('WEBHOOK_BASE_URL', 'http://localhost:8787/webhooks'),
   ngrokToken: process.env.NGROK_AUTHTOKEN ?? '',
   fazpassGatewayKey: process.env.FAZPASS_GATEWAY_KEY ?? '',

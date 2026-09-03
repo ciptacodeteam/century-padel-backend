@@ -13,6 +13,7 @@ import xenditService from '@/services/xendit.service'
 import { getFileUrl } from '@/services/upload.service'
 import { BadRequestException, NotFoundException } from '@/exceptions'
 import dayjs from 'dayjs'
+import { env } from '@/env'
 
 // GET /invoices
 export const getUserInvoicesHandler = factory.createHandlers(
@@ -232,15 +233,19 @@ export const getInvoiceDetailHandler = factory.createHandlers(
       ) {
         // Attempt to fetch live payment request details from Xendit v3
         let paymentRequest: any = null
-        if (invoice.payment.externalRef) {
+        const isMockPayment =
+          storedMeta?.mock === true ||
+          String(invoice.payment.externalRef || '').startsWith('mock_')
+        if (invoice.payment.externalRef && !isMockPayment) {
           paymentRequest = await xenditService.getPaymentRequestV3(
             invoice.payment.externalRef,
           )
         }
 
-        const channelCode = paymentRequest?.channel_code
-        const channelProps = paymentRequest?.channel_properties || {}
-        const actions = paymentRequest?.actions || {}
+        const channelCode = paymentRequest?.channel_code || storedMeta?.channel_code
+        const channelProps =
+          paymentRequest?.channel_properties || storedMeta?.channel_properties || {}
+        const actions = paymentRequest?.actions || storedMeta?.actions || {}
 
         // Virtual Account detection (sample heuristic)
         if (channelCode && channelCode.toUpperCase().includes('VA')) {
@@ -485,6 +490,107 @@ export const expireInvoiceHandler = factory.createHandlers(
       c.var.logger.fatal(`Error in expireInvoiceHandler: ${error}`)
       throw error
     }
+  },
+)
+
+// POST /invoices/:id/mock-pay
+// Local development helper to mark a pending invoice as paid without Xendit.
+export const mockPayInvoiceHandler = factory.createHandlers(
+  requireAuth,
+  zValidator('param', z.object({ id: z.string().min(1) }), validateHook),
+  async (c) => {
+    if (env.nodeEnv === 'production' || env.paymentGatewayMode !== 'mock') {
+      throw new BadRequestException('Mock payment is not enabled')
+    }
+
+    const user = c.get('user')
+    if (!user || !user.id) {
+      throw new Error('Unauthorized')
+    }
+
+    const { id } = c.req.valid('param') as { id: string }
+    const now = new Date()
+
+    const result = await db.$transaction(async (tx) => {
+      const invoice = await tx.invoice.findFirst({
+        where: {
+          userId: user.id,
+          OR: [{ id }, { number: id }],
+        },
+        include: {
+          payment: true,
+          booking: true,
+          classBooking: true,
+          membershipUser: true,
+        },
+      })
+
+      if (!invoice) {
+        throw new NotFoundException('Invoice not found')
+      }
+
+      if (invoice.status !== PaymentStatus.PENDING) {
+        throw new BadRequestException(
+          `Cannot mock-pay invoice with status ${invoice.status}`,
+        )
+      }
+
+      if (invoice.payment) {
+        await tx.payment.update({
+          where: { id: invoice.payment.id },
+          data: {
+            status: PaymentStatus.PAID,
+            paidAt: now,
+            meta: {
+              ...((invoice.payment.meta as Record<string, unknown> | null) || {}),
+              status: 'SUCCEEDED',
+              mock: true,
+              paid_at: now.toISOString(),
+            },
+          },
+        })
+      }
+
+      const updatedInvoice = await tx.invoice.update({
+        where: { id: invoice.id },
+        data: {
+          status: PaymentStatus.PAID,
+          paidAt: now,
+        },
+      })
+
+      if (invoice.booking) {
+        await tx.booking.update({
+          where: { id: invoice.booking.id },
+          data: {
+            status: BookingStatus.CONFIRMED,
+            holdExpiresAt: null,
+          },
+        })
+      }
+
+      if (invoice.classBooking) {
+        await tx.classBooking.update({
+          where: { id: invoice.classBooking.id },
+          data: { status: BookingStatus.CONFIRMED },
+        })
+      }
+
+      return updatedInvoice
+    })
+
+    return c.json(
+      ok(
+        {
+          invoiceId: result.id,
+          invoiceNumber: result.number,
+          status: result.status,
+          paidAt: result.paidAt,
+        },
+        'Mock payment completed',
+      ),
+      status.OK,
+    )
   },
 )
 
