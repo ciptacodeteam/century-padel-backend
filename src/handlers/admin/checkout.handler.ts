@@ -16,6 +16,7 @@ import status from 'http-status'
 import { z } from 'zod'
 import { hashPassword } from '@/lib/password'
 import { validateCoachSlots } from '@/services/coach-slot.service'
+import { calculateCourtHours } from '@/services/membership-hours.service'
 
 const adminCheckoutSchema = z
   .object({
@@ -58,7 +59,6 @@ export const adminCheckoutHandler = factory.createHandlers(
       userId: inputUserId,
       name,
       phone,
-      totalHours,
       courtSlots,
       coachSlots,
       coachDescription,
@@ -124,10 +124,21 @@ export const adminCheckoutHandler = factory.createHandlers(
           }
         }
 
+        const membershipCourtSlots = courtSlots?.length
+          ? await tx.slot.findMany({
+              where: {
+                id: { in: courtSlots },
+                type: SlotType.COURT,
+              },
+              select: { startAt: true, endAt: true },
+            })
+          : []
+        const membershipHoursUsed = calculateCourtHours(membershipCourtSlots)
+
         // Check for active membership BEFORE calculating prices
         // This determines if court costs should be excluded from totalPrice
         let activeMembership: MembershipUser | null = null
-        if (totalHours > 0) {
+        if (membershipHoursUsed > 0) {
           const now = new Date()
           activeMembership = await tx.membershipUser.findFirst({
             where: {
@@ -136,7 +147,8 @@ export const adminCheckoutHandler = factory.createHandlers(
               isSuspended: false,
               startDate: { lte: now }, // Membership must have started
               endDate: { gt: now }, // Membership must not have expired
-              remainingSessions: { gte: totalHours }, // Must have enough sessions
+              remainingSessions: { gte: membershipHoursUsed },
+              invoice: { is: { status: PaymentStatus.PAID } },
             },
             orderBy: {
               endDate: 'asc', // Use membership that expires first
@@ -380,12 +392,13 @@ export const adminCheckoutHandler = factory.createHandlers(
           }
         }
 
-        // Deduct totalHours from user's active membership sessions
+        // Deduct the court duration from the user's active membership hours.
+        // Always derive this from persisted slots instead of trusting the client.
         // (Membership was already checked earlier if it exists)
-        if (activeMembership && totalHours > 0) {
+        if (activeMembership && membershipHoursUsed > 0) {
           const newRemainingSessions = Math.max(
             0,
-            activeMembership.remainingSessions - totalHours,
+            activeMembership.remainingSessions - membershipHoursUsed,
           )
 
           await tx.membershipUser.update({
@@ -399,14 +412,14 @@ export const adminCheckoutHandler = factory.createHandlers(
 
           // Log for tracking
           c.var.logger.info(
-            `Deducted ${totalHours} hours from membership ${activeMembership.id}. ` +
+            `Deducted ${membershipHoursUsed} hours from membership ${activeMembership.id}. ` +
               `Court cost covered: ${courtCostCoveredByMembership}. ` +
-              `Remaining: ${newRemainingSessions} sessions`,
+              `Remaining: ${newRemainingSessions} hours`,
           )
-        } else if (totalHours > 0) {
-          // No active membership with available sessions
+        } else if (membershipHoursUsed > 0) {
+          // No active membership with enough remaining hours
           c.var.logger.warn(
-            `User ${resolvedUserId} has no active membership with available sessions for ${totalHours} hours`,
+            `User ${resolvedUserId} has no active membership with ${membershipHoursUsed} available hours`,
           )
         }
 
@@ -449,7 +462,7 @@ export const adminCheckoutHandler = factory.createHandlers(
           invoiceId: invoice.id,
           totalPrice,
           processingFee,
-          totalHours,
+          totalHours: membershipHoursUsed,
           bookedItems,
         }
       })

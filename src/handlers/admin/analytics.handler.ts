@@ -943,6 +943,10 @@ export const getBusinessInsightsHandler = factory.createHandlers(
 
       const data = await getBusinessAnalytics(startDate, endDate)
 
+      if (c.get('admin')?.role === 'ADMIN_VIEWER') {
+        return c.json(ok({ ...data, revenue: undefined }), status.OK)
+      }
+
       return c.json(ok(data), status.OK)
     } catch (error) {
       c.var.logger.fatal(`Error in getBusinessInsightsHandler: ${error}`)

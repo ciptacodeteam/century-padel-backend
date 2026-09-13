@@ -88,7 +88,7 @@ async function seedStaff() {
       joinedAt: dayjs().subtract(2, 'years').toDate(),
     },
     {
-      name: 'Viewer Admin',
+      name: 'Manager User',
       email: 'viewer@centurypadel.id',
       phone: '+6281100000008',
       password: hashedPassword,

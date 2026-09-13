@@ -89,7 +89,7 @@ export const requireAdminViewer: MiddlewareHandler = async (c, next) => {
   return requireRole('ADMIN_VIEWER')(c, next)
 }
 
-// Allow both ADMIN and ADMIN_VIEWER (read-only access for viewer)
+// Allow both ADMIN and the legacy ADMIN_VIEWER value (displayed as Manager).
 export const requireAdminOrViewer: MiddlewareHandler = async (c, next) => {
   const admin = c.get('admin')
 
@@ -104,7 +104,7 @@ export const requireAdminOrViewer: MiddlewareHandler = async (c, next) => {
   return next()
 }
 
-// Only allow ADMIN (blocks ADMIN_VIEWER from write operations)
+// Only allow ADMIN for operations reserved for the owner-level admin.
 export const requireAdminWriteAccess: MiddlewareHandler = async (c, next) => {
   const admin = c.get('admin')
 
@@ -119,29 +119,34 @@ export const requireAdminWriteAccess: MiddlewareHandler = async (c, next) => {
   return next()
 }
 
-// Middleware to block ADMIN_VIEWER from POST, PUT, PATCH, DELETE requests
-// Exception: ADMIN_VIEWER can perform admin checkout (booking)
-export const blockAdminViewerWrites: MiddlewareHandler = async (c, next) => {
+const managerRestrictedAnalyticsPaths = [
+  '/admin/analytics/income-by-source',
+  '/admin/analytics/payment-methods',
+]
+
+export function isManagerRestrictedAnalyticsPath(path: string): boolean {
+  return managerRestrictedAnalyticsPaths.some(
+    (restrictedPath) =>
+      path === restrictedPath || path.startsWith(`${restrictedPath}/`),
+  )
+}
+
+// ADMIN_VIEWER is retained as the persisted enum value for backwards
+// compatibility, but represents the Manager role in the application.
+export const enforceManagerRestrictions: MiddlewareHandler = async (
+  c,
+  next,
+) => {
   const admin = c.get('admin')
-  const method = c.req.method
   const path = c.req.path
 
-  // Allow ADMIN_VIEWER to access admin checkout (booking)
-  const allowedPaths = ['/admin/checkout']
-
-  // If user is ADMIN_VIEWER and trying to modify data
   if (
     admin &&
     admin.role === 'ADMIN_VIEWER' &&
-    ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)
+    isManagerRestrictedAnalyticsPath(path)
   ) {
-    // Check if the path is in the allowed list
-    if (allowedPaths.some((allowedPath) => path.startsWith(allowedPath))) {
-      return next()
-    }
-
     throw new ForbiddenException(
-      'Admin viewer role has read-only access. Write operations are not permitted.',
+      'Manager cannot access restricted financial analytics.',
     )
   }
 

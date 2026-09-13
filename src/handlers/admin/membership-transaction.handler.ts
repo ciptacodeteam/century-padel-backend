@@ -485,12 +485,12 @@ export const exportMembershipTransactionsToExcelHandler =
             'Membership Description':
               transaction.membership.description || 'N/A',
             'Membership Price': transaction.membership.price,
-            'Total Sessions': transaction.membership.sessions,
+            'Total Hours': transaction.membership.sessions,
             'Duration (Days)': transaction.membership.duration,
             Benefits: benefits,
             'Start Date': dayjs(transaction.startDate).format('YYYY-MM-DD'),
             'End Date': dayjs(transaction.endDate).format('YYYY-MM-DD'),
-            'Remaining Sessions': transaction.remainingSessions,
+            'Remaining Hours': transaction.remainingSessions,
             'Remaining Duration': transaction.remainingDuration,
             'Is Expired': transaction.isExpired ? 'Yes' : 'No',
             'Is Suspended': transaction.isSuspended ? 'Yes' : 'No',
@@ -528,12 +528,12 @@ export const exportMembershipTransactionsToExcelHandler =
           { wch: 25 }, // Membership Name
           { wch: 40 }, // Membership Description
           { wch: 15 }, // Membership Price
-          { wch: 15 }, // Total Sessions
+          { wch: 15 }, // Total Hours
           { wch: 15 }, // Duration (Days)
           { wch: 40 }, // Benefits
           { wch: 15 }, // Start Date
           { wch: 15 }, // End Date
-          { wch: 18 }, // Remaining Sessions
+          { wch: 18 }, // Remaining Hours
           { wch: 18 }, // Remaining Duration
           { wch: 12 }, // Is Expired
           { wch: 15 }, // Is Suspended

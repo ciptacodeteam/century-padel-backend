@@ -143,9 +143,12 @@ routes.forEach((route) => {
 })
 
 // Import admin middlewares
-import { requireAdminAuth, blockAdminViewerWrites } from './middlewares/auth'
+import {
+  enforceManagerRestrictions,
+  requireAdminAuth,
+} from './middlewares/auth'
 
-// Apply admin authentication and viewer write protection to all admin routes
+// Apply admin authentication and Manager-specific analytics restrictions.
 // Exclude auth endpoints (login, register, refresh-token) from authentication requirement
 app.use('/admin/*', async (c, next) => {
   const path = c.req.path
@@ -162,9 +165,9 @@ app.use('/admin/*', async (c, next) => {
     return next()
   }
 
-  // Apply authentication and write protection for all other admin routes
+  // Apply authentication and role restrictions for all other admin routes
   await requireAdminAuth(c, async () => {
-    await blockAdminViewerWrites(c, next)
+    await enforceManagerRestrictions(c, next)
   })
 })
 

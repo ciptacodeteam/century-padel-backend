@@ -14,6 +14,7 @@ import { getFileUrl } from '@/services/upload.service'
 import { BadRequestException, NotFoundException } from '@/exceptions'
 import dayjs from 'dayjs'
 import { env } from '@/env'
+import { restoreMembershipHoursForBooking } from '@/services/membership-hours.service'
 
 // GET /invoices
 export const getUserInvoicesHandler = factory.createHandlers(
@@ -755,6 +756,11 @@ export const cancelUserBookingHandler = factory.createHandlers(
           inventories: booking.inventories.length,
         }
 
+        const restoredMembershipHours = await restoreMembershipHoursForBooking(
+          tx,
+          booking,
+        )
+
         // 3. Update booking status to CANCELLED
         const updatedBooking = await tx.booking.update({
           where: { id: booking.id },
@@ -839,7 +845,12 @@ export const cancelUserBookingHandler = factory.createHandlers(
           )
         }
 
-        return { updatedBooking, releasedCounts, refundInfo }
+        return {
+          updatedBooking,
+          releasedCounts,
+          refundInfo,
+          restoredMembershipHours,
+        }
       })
 
       c.var.logger.info(
@@ -858,6 +869,7 @@ export const cancelUserBookingHandler = factory.createHandlers(
               ballboySlots: result.releasedCounts.ballboySlots,
             },
             restoredInventories: result.releasedCounts.inventories,
+            restoredMembershipHours: result.restoredMembershipHours,
             refund: result.refundInfo,
           },
           'Booking cancelled successfully. All resources have been released.',

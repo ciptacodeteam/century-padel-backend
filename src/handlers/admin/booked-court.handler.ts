@@ -16,6 +16,10 @@ import dayjs from 'dayjs'
 import { z } from 'zod'
 import { BadRequestException, NotFoundException } from '@/exceptions'
 import { validateCoachSlots } from '@/services/coach-slot.service'
+import {
+  adjustMembershipHoursForReschedule,
+  restoreMembershipHoursForBooking,
+} from '@/services/membership-hours.service'
 
 // GET /admin/booked-courts
 // Get all booked courts with comprehensive booking information
@@ -774,6 +778,11 @@ export const cancelBookingHandler = factory.createHandlers(
           inventories: booking.inventories.length,
         }
 
+        const restoredMembershipHours = await restoreMembershipHoursForBooking(
+          tx,
+          booking,
+        )
+
         // 3. Update booking status to CANCELLED
         const updatedBooking = await tx.booking.update({
           where: { id: bookingId },
@@ -848,7 +857,7 @@ export const cancelBookingHandler = factory.createHandlers(
           }
         }
 
-        return { updatedBooking, releasedCounts }
+        return { updatedBooking, releasedCounts, restoredMembershipHours }
       })
 
       // Fetch the updated booking with all details for response
@@ -901,6 +910,7 @@ export const cancelBookingHandler = factory.createHandlers(
               ballboySlots: result.releasedCounts.ballboySlots,
             },
             restoredInventories: result.releasedCounts.inventories,
+            restoredMembershipHours: result.restoredMembershipHours,
           },
           'Booking cancelled successfully. All related records have been updated.',
         ),
@@ -992,6 +1002,19 @@ export const rescheduleCourtBookingHandler = factory.createHandlers(
         if (dayjs(newSlot.startAt).isBefore(dayjs())) {
           throw new BadRequestException('Selected slot time has already passed')
         }
+
+        const membershipHourDifference =
+          await adjustMembershipHoursForReschedule(
+            tx,
+            {
+              userId: bookingDetail.booking.userId,
+              createdAt: bookingDetail.booking.createdAt,
+              courtNormalPrice: bookingDetail.booking.courtNormalPrice,
+              details: [{ slot: bookingDetail.slot }],
+            },
+            bookingDetail.slot,
+            newSlot,
+          )
 
         // Before actually moving the court slot, check if there are coach slots
         // at the same time that also need to be moved. If any corresponding
@@ -1106,7 +1129,10 @@ export const rescheduleCourtBookingHandler = factory.createHandlers(
           })
         }
 
-        const priceDifference = newSlot.price - bookingDetail.price
+        const priceDifference =
+          bookingDetail.booking.courtNormalPrice === 0
+            ? 0
+            : newSlot.price - bookingDetail.price
         let updatedBooking =
           bookingDetail.booking as typeof bookingDetail.booking & {
             invoice: typeof bookingDetail.booking.invoice
@@ -1151,6 +1177,7 @@ export const rescheduleCourtBookingHandler = factory.createHandlers(
           updatedBooking,
           previousSlot: bookingDetail.slot,
           priceDifference,
+          membershipHourDifference,
         }
       })
 
@@ -1169,6 +1196,7 @@ export const rescheduleCourtBookingHandler = factory.createHandlers(
             },
             previousSlot: result.previousSlot,
             priceDifference: result.priceDifference,
+            membershipHourDifference: result.membershipHourDifference,
           },
           'Court booking rescheduled successfully.',
         ),
