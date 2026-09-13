@@ -2,6 +2,7 @@ import { BadRequestException, NotFoundException } from '@/exceptions'
 import { validateHook } from '@/helpers/validate-hook'
 import { factory } from '@/lib/create-app'
 import { db } from '@/lib/prisma'
+import { getBookableSlotEndThreshold } from '@/lib/booking-slot-cutoff'
 import { ok } from '@/lib/response'
 import { generateInvoiceNumber, formatPhone } from '@/lib/utils'
 import { zValidator } from '@hono/zod-validator'
@@ -129,6 +130,7 @@ export const adminCheckoutHandler = factory.createHandlers(
               where: {
                 id: { in: courtSlots },
                 type: SlotType.COURT,
+                endAt: { gt: getBookableSlotEndThreshold() },
               },
               select: { startAt: true, endAt: true },
             })
@@ -186,6 +188,7 @@ export const adminCheckoutHandler = factory.createHandlers(
               id: { in: courtSlots },
               type: SlotType.COURT,
               isAvailable: true,
+              endAt: { gt: getBookableSlotEndThreshold() },
             },
             include: {
               bookingDetails: {

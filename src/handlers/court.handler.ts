@@ -3,6 +3,7 @@ import { NotFoundException } from '@/exceptions'
 import { validateHook } from '@/helpers/validate-hook'
 import { factory } from '@/lib/create-app'
 import { db } from '@/lib/prisma'
+import { getBookableSlotEndThreshold } from '@/lib/booking-slot-cutoff'
 import buildFindManyOptions from '@/lib/query'
 import { ok } from '@/lib/response'
 import {
@@ -61,6 +62,7 @@ export const getAllCourtHandler = factory.createHandlers(
       const slotWhere: any = {
         type: SlotType.COURT,
         isAvailable: true,
+        endAt: { gt: getBookableSlotEndThreshold() },
         bookingDetails: {
           none: {
             booking: {
@@ -170,6 +172,7 @@ export const getCourtSlotsHandler = factory.createHandlers(
         type: SlotType.COURT,
         courtId,
         isAvailable: true,
+        endAt: { gt: getBookableSlotEndThreshold() },
         bookingDetails: {
           none: {
             booking: {
@@ -241,6 +244,7 @@ export const getAvailableCourtSlotsHandler = factory.createHandlers(
       const where: any = {
         type: SlotType.COURT,
         isAvailable: true,
+        endAt: { gt: getBookableSlotEndThreshold() },
         bookingDetails: {
           none: {
             booking: {

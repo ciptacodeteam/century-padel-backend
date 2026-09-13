@@ -3,6 +3,7 @@ import { BadRequestException, NotFoundException } from '@/exceptions'
 import { validateHook } from '@/helpers/validate-hook'
 import { factory } from '@/lib/create-app'
 import { db } from '@/lib/prisma'
+import { getBookableSlotEndThreshold } from '@/lib/booking-slot-cutoff'
 import { err, ok } from '@/lib/response'
 import { generateInvoiceNumber } from '@/lib/utils'
 import {
@@ -223,6 +224,7 @@ export const applyPromoCodeHandler = factory.createHandlers(
               id: { in: courtSlots },
               type: SlotType.COURT,
               isAvailable: true,
+              endAt: { gt: getBookableSlotEndThreshold() },
             },
             include: {
               bookingDetails: {
@@ -532,6 +534,7 @@ export const checkoutHandler = factory.createHandlers(
               id: { in: courtSlots },
               type: SlotType.COURT,
               isAvailable: true,
+              endAt: { gt: getBookableSlotEndThreshold() },
             },
             include: {
               bookingDetails: {
