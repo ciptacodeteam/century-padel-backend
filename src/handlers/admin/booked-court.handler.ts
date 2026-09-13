@@ -2,6 +2,10 @@ import { validateHook } from '@/helpers/validate-hook'
 import { factory } from '@/lib/create-app'
 import { db } from '@/lib/prisma'
 import buildFindManyOptions from '@/lib/query'
+import {
+  CUSTOMER_RESCHEDULE_MIN_HOURS,
+  canCustomerReschedule,
+} from '@/lib/reschedule-policy'
 import { ok } from '@/lib/response'
 import {
   IdSchema,
@@ -703,8 +707,6 @@ export const getBookingsByCourtHandler = factory.createHandlers(
   },
 )
 
-const MIN_RESCHEDULE_DAYS = 3
-
 // Schema for cancel booking request
 const cancelBookingSchema = z.object({
   reason: z.string().min(1, 'Cancellation reason is required').optional(),
@@ -960,15 +962,9 @@ export const rescheduleCourtBookingHandler = factory.createHandlers(
           throw new BadRequestException('Cannot reschedule a cancelled booking')
         }
 
-        const hoursUntilStart = dayjs(bookingDetail.slot.startAt).diff(
-          dayjs(),
-          'hour',
-          true,
-        )
-
-        if (hoursUntilStart < MIN_RESCHEDULE_DAYS * 24) {
+        if (!canCustomerReschedule(bookingDetail.slot.startAt)) {
           throw new BadRequestException(
-            `Reschedule is only allowed at least ${MIN_RESCHEDULE_DAYS} days before play date`,
+            `Reschedule is only allowed at least H-2 (${CUSTOMER_RESCHEDULE_MIN_HOURS} hours) before the play schedule`,
           )
         }
 
