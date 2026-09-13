@@ -9,6 +9,8 @@ import { ok } from '@/lib/response'
 import {
   AvailableCourtSlotsQuerySchema,
   availableCourtSlotsQuerySchema,
+  BulkUpdateSlotPricingSchema,
+  bulkUpdateSlotPricingSchema,
   CreateCourtSchema,
   createCourtSchema,
   IdSchema,
@@ -499,6 +501,93 @@ export const updateSlotPricingHandler = factory.createHandlers(
       )
     } catch (error) {
       c.var.logger.fatal(`Error in updateSlotPricingHandler: ${error}`)
+      throw error
+    }
+  },
+)
+
+export const bulkUpdateSlotPricingHandler = factory.createHandlers(
+  zValidator('param', idSchema, validateHook),
+  zValidator('json', bulkUpdateSlotPricingSchema, validateHook),
+  async (c) => {
+    try {
+      const { id: courtId } = c.req.valid('param') as IdSchema
+      const {
+        slotIds,
+        price,
+        discountPrice = 0,
+      } = c.req.valid('json') as BulkUpdateSlotPricingSchema
+
+      const uniqueSlotIds = [...new Set(slotIds)]
+      const slots = await db.slot.findMany({
+        where: {
+          id: { in: uniqueSlotIds },
+          courtId,
+          type: SlotType.COURT,
+        },
+        include: {
+          bookingDetails: {
+            where: {
+              booking: {
+                status: { not: BookingStatus.CANCELLED },
+              },
+            },
+            select: { id: true },
+            take: 1,
+          },
+        },
+      })
+
+      if (slots.length !== uniqueSlotIds.length) {
+        throw new BadRequestException(
+          'One or more slots do not belong to this court',
+        )
+      }
+
+      const editableSlots = slots.filter(
+        (slot) => slot.bookingDetails.length === 0,
+      )
+      const editableSlotIds = editableSlots.map((slot) => slot.id)
+
+      if (editableSlotIds.length === 0) {
+        throw new BadRequestException(
+          'All selected slots already have active bookings',
+        )
+      }
+
+      await db.$transaction(async (tx) => {
+        await tx.slot.updateMany({
+          where: { id: { in: editableSlotIds } },
+          data: { price, discountPrice },
+        })
+
+        await tx.courtCostSchedule.updateMany({
+          where: {
+            courtId,
+            startAt: { in: editableSlots.map((slot) => slot.startAt) },
+          },
+          data: { price, discountPrice },
+        })
+      })
+
+      const skippedCount = slots.length - editableSlots.length
+
+      return c.json(
+        ok(
+          {
+            updatedCount: editableSlots.length,
+            skippedCount,
+          },
+          `${editableSlots.length} slot prices updated${
+            skippedCount > 0
+              ? `; ${skippedCount} booked slots were skipped`
+              : ''
+          }`,
+        ),
+        status.OK,
+      )
+    } catch (error) {
+      c.var.logger.fatal(`Error in bulkUpdateSlotPricingHandler: ${error}`)
       throw error
     }
   },

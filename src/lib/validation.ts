@@ -243,6 +243,25 @@ export const updateSlotPricingSchema = z.object({
 
 export type UpdateSlotPricingSchema = z.infer<typeof updateSlotPricingSchema>
 
+export const bulkUpdateSlotPricingSchema = z
+  .object({
+    slotIds: z.array(z.string().min(1)).min(1).max(5000),
+    price: z.number().min(0),
+    discountPrice: z.number().min(0).optional(),
+  })
+  .refine(
+    ({ price, discountPrice }) =>
+      discountPrice === undefined || discountPrice <= price,
+    {
+      message: 'Discount price cannot exceed normal price',
+      path: ['discountPrice'],
+    },
+  )
+
+export type BulkUpdateSlotPricingSchema = z.infer<
+  typeof bulkUpdateSlotPricingSchema
+>
+
 export const createCourtSchema = z.object({
   name: z.string().min(3).max(100),
   description: z.string().max(500).optional(),
