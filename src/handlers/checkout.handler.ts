@@ -7,6 +7,10 @@ import { getBookableSlotEndThreshold } from '@/lib/booking-slot-cutoff'
 import { err, ok } from '@/lib/response'
 import { generateInvoiceNumber } from '@/lib/utils'
 import {
+  isVirtualAccountChannel,
+  resolveXenditChannelCode,
+} from '@/lib/payment-channel'
+import {
   applyPromoCodeSchema,
   ApplyPromoCodeSchema,
   extendedCheckoutSchema,
@@ -875,6 +879,12 @@ export const checkoutHandler = factory.createHandlers(
         let xenditError: any = null
         if (paymentMethod.channel) {
           if (env.paymentGatewayMode === 'mock') {
+            if (env.nodeEnv === 'production') {
+              throw new BadRequestException(
+                'Mock payment mode is disabled in production. Configure PAYMENT_GATEWAY_MODE=xendit.',
+              )
+            }
+
             const channelCode = (paymentMethod as any).channel || 'MOCK'
             xenditInvoiceResponse = {
               payment_request_id: `mock_${invoiceNumber}`,
@@ -915,7 +925,10 @@ export const checkoutHandler = factory.createHandlers(
             )
           } else
             try {
-              const channelCode = (paymentMethod as any).channel || ''
+              const channelCode = resolveXenditChannelCode(
+                paymentMethod.channel,
+                paymentMethod.name,
+              )
               let channelProperties: Record<string, any> = {}
               const userDetails = await tx.user.findUnique({
                 where: { id: user.id },
@@ -933,13 +946,7 @@ export const checkoutHandler = factory.createHandlers(
                   finalTotal,
                   validated.cardPayment,
                 )
-              } else if (channelCode === 'MANDIRI_VIRTUAL_ACCOUNT') {
-                channelProperties = {
-                  expires_at: dayjs().add(15, 'minutes').toISOString(),
-                  display_name: userDetails?.name || 'Customer',
-                }
-              } else if (channelCode.includes('VIRTUAL_ACCOUNT')) {
-                // Other VA channels (BCA, BNI, BRI, etc.) also require display_name
+              } else if (isVirtualAccountChannel(channelCode)) {
                 channelProperties = {
                   expires_at: dayjs().add(15, 'minutes').toISOString(),
                   display_name: userDetails?.name || 'Customer',
@@ -950,11 +957,13 @@ export const checkoutHandler = factory.createHandlers(
                 }
               } else if (
                 channelCode.includes('EWALLET') ||
-                ['DANA', 'OVO', 'LINKAJA', 'SHOPEEPAY'].includes(channelCode)
+                ['DANA', 'OVO', 'LINKAJA', 'SHOPEEPAY', 'GOPAY'].includes(
+                  channelCode,
+                )
               ) {
                 channelProperties = {
-                  success_return_url: `${env.frontEndUrl}/payment/success?invoice_id=${invoice.id}`,
-                  failure_return_url: `${env.frontEndUrl}/payment/failed?invoice_id=${invoice.id}`,
+                  success_return_url: `${env.frontEndUrl}/payment/success?invoice_id=${invoice.number}`,
+                  failure_return_url: `${env.frontEndUrl}/payment/failed?invoice_id=${invoice.number}`,
                 }
               } else {
                 channelProperties = {

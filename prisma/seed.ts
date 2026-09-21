@@ -276,26 +276,26 @@ async function seedPaymentMethods() {
   const methods = [
     {
       name: 'BCA Virtual Account',
-      channel: 'VA',
+      channel: 'BCA_VIRTUAL_ACCOUNT',
       fees: 4000,
       percentage: 0,
       isActive: true,
     },
     {
       name: 'Mandiri Virtual Account',
-      channel: 'VA',
+      channel: 'MANDIRI_VIRTUAL_ACCOUNT',
       fees: 4000,
       percentage: 0,
       isActive: true,
     },
     {
       name: 'GoPay',
-      channel: 'EWALLET',
+      channel: 'GOPAY',
       fees: 0,
       percentage: 2,
       isActive: true,
     },
-    { name: 'OVO', channel: 'EWALLET', fees: 0, percentage: 2, isActive: true },
+    { name: 'OVO', channel: 'OVO', fees: 0, percentage: 2, isActive: true },
     { name: 'QRIS', channel: 'QRIS', fees: 0, percentage: 0.7, isActive: true },
     { name: 'Cash', channel: 'CASH', fees: 0, percentage: 0, isActive: true },
   ]
@@ -304,7 +304,7 @@ async function seedPaymentMethods() {
   for (const methodData of methods) {
     const method = await db.paymentMethod.upsert({
       where: { name: methodData.name },
-      update: {},
+      update: methodData,
       create: methodData,
     })
     createdMethods.push(method)

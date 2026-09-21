@@ -5,6 +5,10 @@ import { factory } from '@/lib/create-app'
 import { db } from '@/lib/prisma'
 import { ok } from '@/lib/response'
 import { generateInvoiceNumber } from '@/lib/utils'
+import {
+  isVirtualAccountChannel,
+  resolveXenditChannelCode,
+} from '@/lib/payment-channel'
 import { requireAuth } from '@/middlewares/auth'
 import { xenditService } from '@/services/xendit.service'
 import { zValidator } from '@hono/zod-validator'
@@ -121,26 +125,32 @@ export const membershipCheckoutHandler = factory.createHandlers(
         let xenditInvoiceResponse: any = null
         let xenditError: any = null
         if (paymentMethod.channel) {
+          if (
+            env.nodeEnv === 'production' &&
+            env.paymentGatewayMode === 'mock'
+          ) {
+            throw new BadRequestException(
+              'Mock payment mode is disabled in production. Configure PAYMENT_GATEWAY_MODE=xendit.',
+            )
+          }
+
           if (!env.xendit.apiKey) {
             throw new BadRequestException(
               'Payment gateway unavailable. Please try again later (missing API key).',
             )
           }
           try {
-            const channelCode = (paymentMethod as any).channel || ''
+            const channelCode = resolveXenditChannelCode(
+              paymentMethod.channel,
+              paymentMethod.name,
+            )
             let channelProperties: Record<string, any> = {}
             const userDetails = await tx.user.findUnique({
               where: { id: user.id },
               select: { name: true, email: true, phone: true },
             })
 
-            if (channelCode === 'MANDIRI_VIRTUAL_ACCOUNT') {
-              channelProperties = {
-                expires_at: dayjs().add(24, 'hours').toISOString(),
-                display_name: userDetails?.name || 'Customer',
-              }
-            } else if (channelCode.includes('VIRTUAL_ACCOUNT')) {
-              // Other VA channels (BCA, BNI, BRI, etc.) also require display_name
+            if (isVirtualAccountChannel(channelCode)) {
               channelProperties = {
                 expires_at: dayjs().add(24, 'hours').toISOString(),
                 display_name: userDetails?.name || 'Customer',
@@ -151,11 +161,13 @@ export const membershipCheckoutHandler = factory.createHandlers(
               }
             } else if (
               channelCode.includes('EWALLET') ||
-              ['DANA', 'OVO', 'LINKAJA', 'SHOPEEPAY'].includes(channelCode)
+              ['DANA', 'OVO', 'LINKAJA', 'SHOPEEPAY', 'GOPAY'].includes(
+                channelCode,
+              )
             ) {
               channelProperties = {
-                success_return_url: `${env.frontEndUrl}/payment/success?invoice_id=${invoice.id}`,
-                failure_return_url: `${env.frontEndUrl}/payment/failed?invoice_id=${invoice.id}`,
+                success_return_url: `${env.frontEndUrl}/payment/success?invoice_id=${invoice.number}`,
+                failure_return_url: `${env.frontEndUrl}/payment/failed?invoice_id=${invoice.number}`,
               }
             } else {
               channelProperties = {
@@ -229,11 +241,16 @@ export const membershipCheckoutHandler = factory.createHandlers(
             fees: paymentMethod.fees,
             status: PaymentStatus.PENDING,
             dueDate: dayjs().add(24, 'hours').toDate(),
-            externalRef: xenditInvoiceResponse?.id || null,
+            externalRef:
+              xenditInvoiceResponse?.id ||
+              xenditInvoiceResponse?.payment_request_id ||
+              null,
             // Store as JSON object to Prisma Json column (not string)
             meta: xenditInvoiceResponse
               ? {
-                  payment_request_id: xenditInvoiceResponse.id,
+                  payment_request_id:
+                    xenditInvoiceResponse.id ||
+                    xenditInvoiceResponse.payment_request_id,
                   reference_id: xenditInvoiceResponse.reference_id,
                   status: xenditInvoiceResponse.status,
                   channel_code: xenditInvoiceResponse.channel_code,

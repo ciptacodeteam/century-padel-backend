@@ -15,6 +15,7 @@ import { BadRequestException, NotFoundException } from '@/exceptions'
 import dayjs from 'dayjs'
 import { env } from '@/env'
 import { restoreMembershipHoursForBooking } from '@/services/membership-hours.service'
+import { isVirtualAccountChannel } from '@/lib/payment-channel'
 
 // GET /invoices
 export const getUserInvoicesHandler = factory.createHandlers(
@@ -259,12 +260,20 @@ export const getInvoiceDetailHandler = factory.createHandlers(
           ? paymentRequest?.actions || storedMeta?.actions
           : []
 
-        // Virtual Account detection (sample heuristic)
-        if (channelCode && channelCode.toUpperCase().includes('VA')) {
+        if (isVirtualAccountChannel(channelCode)) {
+          const vaAction = actions.find(
+            (action: any) =>
+              String(action.descriptor || '').toUpperCase() ===
+              'VIRTUAL_ACCOUNT_NUMBER',
+          )
           paymentInstructions = {
             type: 'VIRTUAL_ACCOUNT',
             bankCode: channelProps.bank_code || channelProps.bank || null,
-            accountNumber: channelProps.account_number || null,
+            accountNumber:
+              vaAction?.value ||
+              channelProps.virtual_account_number ||
+              channelProps.account_number ||
+              null,
             accountName: channelProps.account_name || null,
             expiresAt: invoice.payment.dueDate || null,
           }
