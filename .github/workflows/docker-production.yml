@@ -167,16 +167,38 @@ jobs:
           PORT="$(grep -E '^PORT=' .env.production 2>/dev/null | head -n1 | cut -d= -f2 | tr -d '\r' || true)"
           PORT="${PORT:-8000}"
           echo "Probing http://127.0.0.1:${PORT}/health ..."
+          APP_OK=false
           for i in $(seq 1 6); do
             if curl -fsS --max-time 5 "http://127.0.0.1:${PORT}/health" 2>/dev/null \
               | grep -qE '"success"[[:space:]]*:[[:space:]]*true|"up"[[:space:]]*:[[:space:]]*true'; then
-              echo "✅ Health check passed on attempt ${i}"
-              exit 0
+              echo "✅ App health check passed on attempt ${i}"
+              APP_OK=true
+              break
             fi
             echo "  attempt ${i}/6 not ready; retrying in 5s..."
             sleep 5
           done
-          echo "❌ Health check failed after retries"
+          if [ "$APP_OK" != true ]; then
+            echo "❌ App health check failed after retries"
+            LAST_GOOD="$(cat .deploy-last-good-image 2>/dev/null || true)"
+            if [ -n "$LAST_GOOD" ]; then
+              echo "Last known-good image on disk: $LAST_GOOD"
+              echo "Manual rollback: APP_IMAGE=$LAST_GOOD ./scripts/deploy-registry.sh"
+            fi
+            exit 1
+          fi
+
+          echo "Probing public nginx http://127.0.0.1/health ..."
+          for i in $(seq 1 6); do
+            if curl -fsS --max-time 5 "http://127.0.0.1/health" 2>/dev/null \
+              | grep -qE '"success"[[:space:]]*:[[:space:]]*true|"up"[[:space:]]*:[[:space:]]*true'; then
+              echo "✅ Nginx health check passed on attempt ${i}"
+              exit 0
+            fi
+            echo "  nginx attempt ${i}/6 not ready; retrying in 5s..."
+            sleep 5
+          done
+          echo "❌ Nginx /health failed — app is up but public proxy is not (stale upstream?)"
           LAST_GOOD="$(cat .deploy-last-good-image 2>/dev/null || true)"
           if [ -n "$LAST_GOOD" ]; then
             echo "Last known-good image on disk: $LAST_GOOD"

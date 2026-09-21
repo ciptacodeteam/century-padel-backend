@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-DOMAIN="${SSL_DOMAIN:-api.centurypadel.id}"
+DOMAIN="${SSL_DOMAIN:-api.centurypadelid.com}"
 CERT="/etc/letsencrypt/live/${DOMAIN}/fullchain.pem"
 CONF_DIR="/etc/nginx/conf.d"
 TEMPLATE_DIR="/etc/nginx/templates"

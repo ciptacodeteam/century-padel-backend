@@ -1,8 +1,9 @@
 # HTTPS production config — activated automatically once Let's Encrypt certs exist.
 
 upstream backend {
+    zone backend 64k;
     least_conn;
-    server app:8000 max_fails=3 fail_timeout=30s;
+    server app:8000 resolve max_fails=3 fail_timeout=10s;
     keepalive 32;
 }
 
@@ -12,6 +13,14 @@ server {
 
     location /.well-known/acme-challenge/ {
         root /var/www/certbot;
+    }
+
+    # Internal + Docker healthcheck path (port 80 is otherwise HTTPS-only).
+    location /health {
+        proxy_pass http://backend;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        access_log off;
     }
 
     location / {

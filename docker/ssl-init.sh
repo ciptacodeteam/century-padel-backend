@@ -1,6 +1,7 @@
 #!/bin/bash
 # Obtain the initial Let's Encrypt certificate (fully containerized setup).
-# Safe to re-run — skips if a valid certificate already exists.
+# Safe to re-run: renews if the existing cert is expired, always restarts nginx
+# and ensures the certbot renewal service is running.
 
 set -e
 
@@ -34,7 +35,7 @@ if [ -f "$ENV_FILE" ]; then
   set +a
 fi
 
-DOMAIN="${SSL_DOMAIN:-api.centurypadel.id}"
+DOMAIN="${SSL_DOMAIN:-api.centurypadelid.com}"
 EMAIL="${SSL_EMAIL:-admin@${DOMAIN#api.}}"
 
 print_info "SSL domain: ${DOMAIN}"
@@ -53,24 +54,32 @@ for i in $(seq 1 20); do
 done
 
 # Check for existing certificate in the certbot volume
-if $DOCKER_COMPOSE -f "$COMPOSE_FILE" run --rm --entrypoint certbot certbot certificates 2>/dev/null | grep -q "Certificate Name: ${DOMAIN}"; then
-  print_success "Certificate already exists for ${DOMAIN}"
-  print_info "Restarting nginx to ensure HTTPS config is active..."
-  $DOCKER_COMPOSE -f "$COMPOSE_FILE" restart nginx
-  exit 0
+CERT_INFO="$($DOCKER_COMPOSE -f "$COMPOSE_FILE" run --rm --entrypoint certbot certbot certificates 2>/dev/null || true)"
+
+if echo "$CERT_INFO" | grep -q "Certificate Name: ${DOMAIN}"; then
+  if echo "$CERT_INFO" | grep -Eqi "INVALID:|EXPIRED"; then
+    print_warning "Certificate for ${DOMAIN} is expired or invalid — renewing"
+    $DOCKER_COMPOSE -f "$COMPOSE_FILE" run --rm --entrypoint certbot certbot renew \
+      --force-renewal \
+      --webroot \
+      --webroot-path=/var/www/certbot
+    print_success "Certificate renewed"
+  else
+    print_success "Certificate already exists for ${DOMAIN}"
+  fi
+else
+  print_info "Requesting initial certificate from Let's Encrypt..."
+  $DOCKER_COMPOSE -f "$COMPOSE_FILE" run --rm --entrypoint certbot certbot certonly \
+    --webroot \
+    --webroot-path=/var/www/certbot \
+    --email "$EMAIL" \
+    --agree-tos \
+    --no-eff-email \
+    -d "$DOMAIN"
+  print_success "Certificate obtained"
 fi
 
-print_info "Requesting initial certificate from Let's Encrypt..."
-$DOCKER_COMPOSE -f "$COMPOSE_FILE" run --rm --entrypoint certbot certbot certonly \
-  --webroot \
-  --webroot-path=/var/www/certbot \
-  --email "$EMAIL" \
-  --agree-tos \
-  --no-eff-email \
-  -d "$DOMAIN"
-
-print_success "Certificate obtained"
-print_info "Restarting nginx to switch from HTTP-only to HTTPS..."
+print_info "Restarting nginx so it loads the current certificate..."
 $DOCKER_COMPOSE -f "$COMPOSE_FILE" restart nginx
 
 sleep 3

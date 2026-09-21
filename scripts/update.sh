@@ -99,9 +99,16 @@ fi
 compose -f "$COMPOSE_FILE" up -d --no-deps email-worker scheduler-worker
 print_success "Workers restarted"
 
-# Reload nginx only if nginx config templates changed
 if [ -n "${CHANGED_FILES:-}" ] && echo "$CHANGED_FILES" | grep -q 'docker/nginx/'; then
-  print_info "Nginx config changed — restarting nginx"
+  print_info "Nginx config changed — recreating nginx"
+  compose -f "$COMPOSE_FILE" up -d --no-deps nginx
+else
+  reload_nginx_upstream
+fi
+
+print_info "Probing public path through nginx..."
+if ! probe_nginx_http_health 6; then
+  print_warning "Nginx /health probe failed — recreating nginx"
   compose -f "$COMPOSE_FILE" up -d --no-deps nginx
 fi
 

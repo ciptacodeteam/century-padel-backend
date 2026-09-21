@@ -143,6 +143,37 @@ probe_app_http_health() {
   return 1
 }
 
+# Probe through nginx on :80 (covers HTTPS mode via the /health location).
+# Catches stale upstream IPs that localhost:8000 cannot see.
+probe_nginx_http_health() {
+  local max_attempts="${1:-6}"
+  local i
+
+  for i in $(seq 1 "$max_attempts"); do
+    if curl -fsS --max-time 5 "http://127.0.0.1/health" 2>/dev/null \
+      | grep -qE '"success"[[:space:]]*:[[:space:]]*true|"up"[[:space:]]*:[[:space:]]*true'; then
+      return 0
+    fi
+    echo "  Nginx health attempt ${i}/${max_attempts} not ready; retrying in 3s..."
+    sleep 3
+  done
+  return 1
+}
+
+# Recreating the app container gives it a new Docker IP. Nginx resolves
+# `app` at start/reload, so skip this and public traffic 502s without CORS.
+reload_nginx_upstream() {
+  print_info "Reloading nginx so it re-resolves the app upstream"
+
+  if compose -f "$COMPOSE_FILE" exec -T nginx nginx -s reload 2>/dev/null; then
+    print_success "Nginx reloaded"
+    return 0
+  fi
+
+  print_warning "Nginx reload failed — restarting nginx container"
+  compose -f "$COMPOSE_FILE" up -d --no-deps nginx
+}
+
 # Restore the last known-good image and restart app + workers.
 rollback_app_deployment() {
   local rollback_image="$1"
@@ -162,6 +193,7 @@ rollback_app_deployment() {
   print_info "Waiting for rolled-back app to become healthy..."
   if wait_for_healthy app 30 && probe_app_http_health "$(resolve_app_port)" 12; then
     compose -f "$COMPOSE_FILE" up -d --no-deps email-worker scheduler-worker
+    reload_nginx_upstream
     persist_app_image "$rollback_image"
     save_last_good_app_image "$rollback_image"
     print_success "Rollback complete — previous version is serving again"

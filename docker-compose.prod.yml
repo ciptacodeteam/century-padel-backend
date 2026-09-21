@@ -227,7 +227,7 @@ services:
     env_file:
       - .env.production
     environment:
-      SSL_DOMAIN: ${SSL_DOMAIN:-api.centurypadel.id}
+      SSL_DOMAIN: ${SSL_DOMAIN:-api.centurypadelid.com}
     ports:
       - '80:80'
       - '443:443'
@@ -249,7 +249,7 @@ services:
       test:
         [
           'CMD-SHELL',
-          'wget -qO- http://app:8000/health 2>/dev/null | grep -q "\"success\":true" || wget -qO- http://app:8000/health 2>/dev/null | grep -q "up"',
+          'wget -qO- http://127.0.0.1/health 2>/dev/null | grep -qE "\"success\":true|\"up\""',
         ]
       interval: 30s
       timeout: 10s
@@ -267,7 +267,8 @@ services:
           cpus: '0.25'
           memory: '64M'
 
-  # Certbot - webroot renewal; reloads nginx via Docker API after successful renew
+  # Certbot — webroot renewal. docker.sock is required so the deploy-hook can
+  # SIGHUP nginx after a successful renew (the certbot image has no curl/docker CLI).
   certbot:
     image: certbot/certbot:latest
     container_name: century-padel-certbot
