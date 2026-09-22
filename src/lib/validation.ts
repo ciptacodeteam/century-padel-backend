@@ -506,6 +506,7 @@ export const createMembershipSchema = z.object({
   price: z.number().min(0),
   sessions: z.number().min(1),
   duration: z.number().min(1),
+  scheduleVisibilityMonths: z.number().int().min(1),
   sequence: z.number().min(0).optional(),
   isActive: z.coerce.boolean().optional(),
   benefits: z.array(z.string().max(200)).optional(),

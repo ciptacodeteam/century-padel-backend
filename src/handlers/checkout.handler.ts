@@ -17,6 +17,10 @@ import {
 } from '@/lib/validation'
 import { requireAuth } from '@/middlewares/auth'
 import { notificationService } from '@/services/notification.service'
+import {
+  getUserScheduleVisibilityHorizon,
+  isDateWithinScheduleVisibility,
+} from '@/services/schedule-visibility.service'
 import { xenditService } from '@/services/xendit.service'
 import { zValidator } from '@hono/zod-validator'
 import { BookingStatus, PaymentStatus, SlotType } from '@prisma/client'
@@ -251,10 +255,16 @@ export const applyPromoCodeHandler = factory.createHandlers(
             )
           }
 
+          const { horizon } = await getUserScheduleVisibilityHorizon(user.id)
           for (const slot of courtSlotData) {
             if (slot.bookingDetails.length > 0) {
               throw new BadRequestException(
                 'One or more court slots are already booked',
+              )
+            }
+            if (!isDateWithinScheduleVisibility(slot.startAt, horizon)) {
+              throw new BadRequestException(
+                'One or more court slots are outside your schedule visibility window',
               )
             }
             const discountedPrice =
@@ -561,10 +571,16 @@ export const checkoutHandler = factory.createHandlers(
             )
           }
 
+          const { horizon } = await getUserScheduleVisibilityHorizon(user.id)
           for (const slot of courtSlotData) {
             if (slot.bookingDetails.length > 0) {
               throw new BadRequestException(
                 'One or more court slots are already booked',
+              )
+            }
+            if (!isDateWithinScheduleVisibility(slot.startAt, horizon)) {
+              throw new BadRequestException(
+                'One or more court slots are outside your schedule visibility window',
               )
             }
             const normalPrice = slot.price

@@ -574,18 +574,19 @@ model BookingCoach {
 // Membership
 // ------------------------------
 model Membership {
-  id          String   @id @default(cuid())
-  name        String
-  description String?
-  content     String?
-  contentHtml String?
-  price       Int      @db.Integer
-  sessions    Int // how many sessions included (e.g., court bookings) in hours
-  duration    Int // how many days valid after applying membership in days
-  sequence    Int      @default(0)
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @default(now()) @updatedAt
+  id                        String   @id @default(cuid())
+  name                      String
+  description               String?
+  content                   String?
+  contentHtml               String?
+  price                     Int      @db.Integer
+  sessions                  Int // how many sessions included (e.g., court bookings) in hours
+  duration                  Int // how many days valid after applying membership in days
+  scheduleVisibilityMonths  Int      @default(1) // how many months ahead the buyer can see/book schedule
+  sequence                  Int      @default(0)
+  isActive                  Boolean  @default(true)
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @default(now()) @updatedAt
 
   benefits       MembershipBenefit[]
   membershipUser MembershipUser[]

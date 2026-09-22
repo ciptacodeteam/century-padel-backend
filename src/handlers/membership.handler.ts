@@ -10,6 +10,7 @@ import {
   searchQuerySchema,
   SearchQuerySchema,
 } from '@/lib/validation'
+import { getUserScheduleVisibilityMonths } from '@/services/schedule-visibility.service'
 import { zValidator } from '@hono/zod-validator'
 import status from 'http-status'
 import { InvoiceStatus } from 'xendit-node/invoice/models'
@@ -139,33 +140,38 @@ export const getMyActiveMembershipHandler = factory.createHandlers(
 
       // Find active membership
       const now = new Date()
-      const activeMembership = await db.membershipUser.findFirst({
-        where: {
-          userId: user.id,
-          isExpired: false,
-          isSuspended: false,
-          startDate: { lte: now }, // Membership must have started
-          endDate: { gt: now }, // Membership must not have expired
-          invoice: {
-            status: InvoiceStatus.Paid, // Only paid memberships
-          },
-        },
-        orderBy: {
-          endDate: 'asc', // Get the one that expires first
-        },
-        include: {
-          membership: {
-            select: {
-              id: true,
-              name: true,
-              price: true,
+      const [activeMembership, scheduleVisibilityMonths] = await Promise.all([
+        db.membershipUser.findFirst({
+          where: {
+            userId: user.id,
+            isExpired: false,
+            isSuspended: false,
+            startDate: { lte: now }, // Membership must have started
+            endDate: { gt: now }, // Membership must not have expired
+            invoice: {
+              status: InvoiceStatus.Paid, // Only paid memberships
             },
           },
-        },
-      })
+          orderBy: {
+            endDate: 'asc', // Get the one that expires first
+          },
+          include: {
+            membership: {
+              select: {
+                id: true,
+                name: true,
+                price: true,
+                scheduleVisibilityMonths: true,
+              },
+            },
+          },
+        }),
+        getUserScheduleVisibilityMonths(user.id),
+      ])
 
       return c.json(
         ok({
+          scheduleVisibilityMonths,
           activeMembership: activeMembership
             ? {
                 id: activeMembership.id,
@@ -179,6 +185,8 @@ export const getMyActiveMembershipHandler = factory.createHandlers(
                   id: activeMembership.membership.id,
                   name: activeMembership.membership.name,
                   price: activeMembership.membership.price,
+                  scheduleVisibilityMonths:
+                    activeMembership.membership.scheduleVisibilityMonths,
                 },
               }
             : null,

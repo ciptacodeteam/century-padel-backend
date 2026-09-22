@@ -86,6 +86,7 @@ export const createMembershipHandler = factory.createHandlers(
           contentHtml: membershipData.contentHtml,
           sessions: membershipData.sessions,
           duration: membershipData.duration,
+          scheduleVisibilityMonths: membershipData.scheduleVisibilityMonths,
           sequence: membershipData.sequence,
           isActive: membershipData.isActive,
           benefits: {
@@ -153,6 +154,7 @@ export const updateMembershipHandler = factory.createHandlers(
           contentHtml: membershipData.contentHtml,
           sessions: membershipData.sessions,
           duration: membershipData.duration,
+          scheduleVisibilityMonths: membershipData.scheduleVisibilityMonths,
           sequence: membershipData.sequence,
           isActive:
             membershipData.isActive !== undefined

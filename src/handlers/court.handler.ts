@@ -14,12 +14,41 @@ import {
   searchQuerySchema,
   SearchQuerySchema,
 } from '@/lib/validation'
+import { getUserScheduleVisibilityHorizon } from '@/services/schedule-visibility.service'
 import { getFileUrl } from '@/services/upload.service'
 import { zValidator } from '@hono/zod-validator'
 import { BookingStatus, SlotType } from '@prisma/client'
 import dayjs from 'dayjs'
+import type { Context } from 'hono'
 import status from 'http-status'
 import z from 'zod'
+
+/**
+ * Restrict public court slot queries to the user's membership schedule horizon.
+ * Admin sessions are unrestricted so back-office booking stays fully usable.
+ */
+async function applyScheduleVisibilityToSlotWhere(
+  c: Context,
+  slotWhere: Record<string, any>,
+) {
+  const admin = c.get('admin')
+  if (admin) {
+    return
+  }
+
+  const user = c.get('user')
+  const { horizon } = await getUserScheduleVisibilityHorizon(user?.id)
+
+  if (!Array.isArray(slotWhere.AND)) {
+    slotWhere.AND = slotWhere.AND ? [slotWhere.AND] : []
+  }
+
+  slotWhere.AND.push({
+    startAt: {
+      lte: horizon,
+    },
+  })
+}
 
 export const getAllCourtHandler = factory.createHandlers(
   zValidator(
@@ -95,6 +124,8 @@ export const getAllCourtHandler = factory.createHandlers(
         // If no date filter, ensure AND is an array for the bookingDetails check
         slotWhere.AND = slotWhere.AND || []
       }
+
+      await applyScheduleVisibilityToSlotWhere(c, slotWhere)
 
       // Find courts that have at least one available, unbooked slot
       const courts = await db.court.findMany({
@@ -205,6 +236,8 @@ export const getCourtSlotsHandler = factory.createHandlers(
         ]
       }
 
+      await applyScheduleVisibilityToSlotWhere(c, where)
+
       // Query slots
       const slots = await db.slot.findMany({
         where,
@@ -280,6 +313,8 @@ export const getAvailableCourtSlotsHandler = factory.createHandlers(
           },
         ]
       }
+
+      await applyScheduleVisibilityToSlotWhere(c, where)
 
       const slots = await db.slot.findMany({
         where,

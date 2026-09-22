@@ -24,3 +24,4 @@ storage/*
 .deploy-last-good-image
 logs/
 src/storage/uploads
+graphify-out/
