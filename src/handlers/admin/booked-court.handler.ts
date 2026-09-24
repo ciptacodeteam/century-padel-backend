@@ -1006,7 +1006,12 @@ export const rescheduleCourtBookingHandler = factory.createHandlers(
               userId: bookingDetail.booking.userId,
               createdAt: bookingDetail.booking.createdAt,
               courtNormalPrice: bookingDetail.booking.courtNormalPrice,
-              details: [{ slot: bookingDetail.slot }],
+              details: [
+                {
+                  slot: bookingDetail.slot,
+                  membershipUserId: bookingDetail.membershipUserId,
+                },
+              ],
             },
             bookingDetail.slot,
             newSlot,

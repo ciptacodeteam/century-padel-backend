@@ -11,9 +11,9 @@ dayjs.extend(timezone)
 export const DEFAULT_SCHEDULE_VISIBILITY_MONTHS = 1
 
 /**
- * Horizon is the last bookable calendar day for a visibility window of N months.
- * Example (Jakarta): today in September, N=1 → end of October;
- * N=4 → end of January.
+ * Horizon is the last bookable day for a rolling visibility window of N months.
+ * Example (Jakarta): 24 September with N=1 → 24 October;
+ * N=4 → 24 January.
  */
 export function getScheduleVisibilityHorizonDate(
   months: number = DEFAULT_SCHEDULE_VISIBILITY_MONTHS,
@@ -23,9 +23,8 @@ export function getScheduleVisibilityHorizonDate(
 
   return dayjs(now)
     .tz(JAKARTA_TZ)
-    .startOf('month')
     .add(visibilityMonths, 'month')
-    .endOf('month')
+    .endOf('day')
     .toDate()
 }
 

@@ -74,6 +74,46 @@ describe('membership hours', () => {
     expect(update).not.toHaveBeenCalled()
   })
 
+  it('restores only the slot explicitly covered by membership in a mixed booking', async () => {
+    const update = vi.fn().mockResolvedValue({})
+    const tx = {
+      membershipUser: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: 'membership-user-1',
+          remainingSessions: 9,
+          endDate: new Date('2099-09-30T00:00:00.000Z'),
+          membership: { sessions: 10, type: 'HAPPY_HOUR' },
+        }),
+        update,
+      },
+    } as unknown as Prisma.TransactionClient
+
+    const restoredHours = await restoreMembershipHoursForBooking(tx, {
+      userId: 'user-1',
+      createdAt: new Date('2026-09-13T00:00:00.000Z'),
+      courtNormalPrice: 300_000,
+      details: [
+        { membershipUserId: 'membership-user-1', slot: oneHourSlot },
+        {
+          membershipUserId: null,
+          slot: {
+            startAt: new Date('2026-09-20T09:00:00.000Z'),
+            endAt: new Date('2026-09-20T10:00:00.000Z'),
+          },
+        },
+      ],
+    })
+
+    expect(restoredHours).toBe(1)
+    expect(update).toHaveBeenCalledWith({
+      where: { id: 'membership-user-1' },
+      data: {
+        remainingSessions: { increment: 1 },
+        isExpired: false,
+      },
+    })
+  })
+
   it('deducts only the extra hour when rescheduled to a longer slot', async () => {
     const update = vi.fn().mockResolvedValue({})
     const tx = {

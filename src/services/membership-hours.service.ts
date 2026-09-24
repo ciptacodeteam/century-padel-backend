@@ -1,5 +1,6 @@
 import { BadRequestException } from '@/exceptions'
 import { PaymentStatus, Prisma, type Slot } from '@prisma/client'
+import { canMembershipUseSlots } from './membership-eligibility.service'
 
 type TransactionClient = Prisma.TransactionClient
 
@@ -8,6 +9,7 @@ type BookingForMembershipHours = {
   createdAt: Date
   courtNormalPrice: number
   details: Array<{
+    membershipUserId?: string | null
     slot: Pick<Slot, 'startAt' | 'endAt'>
   }>
 }
@@ -31,6 +33,16 @@ async function findMembershipUsedByBooking(
   tx: TransactionClient,
   booking: BookingForMembershipHours,
 ) {
+  const explicitMembershipUserId = booking.details.find(
+    (detail) => detail.membershipUserId,
+  )?.membershipUserId
+  if (explicitMembershipUserId) {
+    return tx.membershipUser.findUnique({
+      where: { id: explicitMembershipUserId },
+      include: { membership: true },
+    })
+  }
+
   if (booking.courtNormalPrice !== 0 || booking.details.length === 0) {
     return null
   }
@@ -61,7 +73,16 @@ export async function restoreMembershipHoursForBooking(
   tx: TransactionClient,
   booking: BookingForMembershipHours,
 ): Promise<number> {
-  const hours = calculateCourtHours(booking.details.map(({ slot }) => slot))
+  const explicitlyCoveredDetails = booking.details.filter(
+    (detail) => detail.membershipUserId,
+  )
+  const coveredDetails =
+    explicitlyCoveredDetails.length > 0
+      ? explicitlyCoveredDetails
+      : booking.courtNormalPrice === 0
+        ? booking.details
+        : []
+  const hours = calculateCourtHours(coveredDetails.map(({ slot }) => slot))
   if (hours === 0) return 0
 
   const membershipUser = await findMembershipUsedByBooking(tx, booking)
@@ -92,10 +113,16 @@ export async function adjustMembershipHoursForReschedule(
 ): Promise<number> {
   const hourDifference =
     calculateCourtHours([newSlot]) - calculateCourtHours([oldSlot])
-  if (hourDifference === 0 || booking.courtNormalPrice !== 0) return 0
 
   const membershipUser = await findMembershipUsedByBooking(tx, booking)
   if (!membershipUser) return 0
+
+  if (!canMembershipUseSlots(membershipUser.membership.type, [newSlot])) {
+    throw new BadRequestException(
+      'Membership Happy Hour cannot be rescheduled to a Peak Hour slot',
+    )
+  }
+  if (hourDifference === 0) return 0
 
   if (hourDifference > 0) {
     if (membershipUser.remainingSessions < hourDifference) {

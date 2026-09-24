@@ -161,6 +161,7 @@ export const getMyActiveMembershipHandler = factory.createHandlers(
                 id: true,
                 name: true,
                 price: true,
+                type: true,
                 scheduleVisibilityMonths: true,
               },
             },
@@ -185,6 +186,7 @@ export const getMyActiveMembershipHandler = factory.createHandlers(
                   id: activeMembership.membership.id,
                   name: activeMembership.membership.name,
                   price: activeMembership.membership.price,
+                  type: activeMembership.membership.type,
                   scheduleVisibilityMonths:
                     activeMembership.membership.scheduleVisibilityMonths,
                 },

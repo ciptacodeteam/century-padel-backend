@@ -77,6 +77,12 @@ enum PromoCodeStatus {
   INACTIVE
 }
 
+enum MembershipType {
+  ALL_HOUR
+  PEAK_HOUR
+  HAPPY_HOUR
+}
+
 // ------------------------------
 // Notifications
 // ------------------------------
@@ -487,7 +493,10 @@ model BookingDetail {
   slot    Slot    @relation(fields: [slotId], references: [id])
   court   Court?  @relation(fields: [courtId], references: [id])
   courtId String?
+  membershipUserId String?
+  membershipUser   MembershipUser? @relation(fields: [membershipUserId], references: [id])
 
+  @@index([membershipUserId])
   @@map("booking_details")
 }
 
@@ -582,6 +591,7 @@ model Membership {
   price                     Int      @db.Integer
   sessions                  Int // how many sessions included (e.g., court bookings) in hours
   duration                  Int // how many days valid after applying membership in days
+  type                      MembershipType @default(ALL_HOUR)
   scheduleVisibilityMonths  Int      @default(1) // how many months ahead the buyer can see/book schedule
   sequence                  Int      @default(0)
   isActive                  Boolean  @default(true)
@@ -592,7 +602,7 @@ model Membership {
   membershipUser MembershipUser[]
 
   @@unique([name])
-  @@index([isActive, sequence])
+  @@index([type, isActive, sequence])
   @@map("memberships")
 }
 
@@ -626,6 +636,7 @@ model MembershipUser {
   user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   membership Membership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
   invoice    Invoice?
+  bookingDetails BookingDetail[]
 
   @@index([userId, isExpired, isSuspended])
   @@map("membership_users")

@@ -8,7 +8,6 @@ import { generateInvoiceNumber, formatPhone } from '@/lib/utils'
 import { zValidator } from '@hono/zod-validator'
 import {
   BookingStatus,
-  MembershipUser,
   PaymentStatus,
   SlotType,
 } from '@prisma/client'
@@ -17,7 +16,7 @@ import status from 'http-status'
 import { z } from 'zod'
 import { hashPassword } from '@/lib/password'
 import { validateCoachSlots } from '@/services/coach-slot.service'
-import { calculateCourtHours } from '@/services/membership-hours.service'
+import { allocateMembershipSlots } from '@/services/membership-eligibility.service'
 
 const adminCheckoutSchema = z
   .object({
@@ -25,6 +24,9 @@ const adminCheckoutSchema = z
     name: z.string().min(1).optional(),
     phone: z.string().min(5).optional(),
     totalHours: z.number().positive(),
+    // Membership usage is intentionally restricted to client checkout.
+    // Reject `true` here so the rule cannot be bypassed through the admin API.
+    useMembership: z.literal(false).default(false),
     courtSlots: z.array(z.string()).optional(),
     coachSlots: z.array(z.string()).optional(),
     // Optional description for coach booking – e.g. names of up to 4 members
@@ -65,6 +67,7 @@ export const adminCheckoutHandler = factory.createHandlers(
       coachDescription,
       ballboySlots,
       inventories,
+      useMembership,
     } = c.req.valid('json') as AdminCheckoutSchema
 
     // Get the admin (cashier) creating this booking
@@ -132,30 +135,65 @@ export const adminCheckoutHandler = factory.createHandlers(
                 type: SlotType.COURT,
                 endAt: { gt: getBookableSlotEndThreshold() },
               },
-              select: { startAt: true, endAt: true },
+              select: { id: true, startAt: true, endAt: true },
             })
           : []
-        const membershipHoursUsed = calculateCourtHours(membershipCourtSlots)
+        let membershipHoursUsed = 0
 
         // Check for active membership BEFORE calculating prices
         // This determines if court costs should be excluded from totalPrice
-        let activeMembership: MembershipUser | null = null
-        if (membershipHoursUsed > 0) {
+        let activeMembership: {
+          id: string
+          remainingSessions: number
+          coveredSlotIds: Set<string>
+        } | null = null
+        if (useMembership) {
+          if (membershipCourtSlots.length === 0) {
+            throw new BadRequestException(
+              'Membership can only be used for court bookings',
+            )
+          }
+
           const now = new Date()
-          activeMembership = await tx.membershipUser.findFirst({
+          const membershipCandidates = await tx.membershipUser.findMany({
             where: {
               userId: resolvedUserId!,
               isExpired: false,
               isSuspended: false,
               startDate: { lte: now }, // Membership must have started
               endDate: { gt: now }, // Membership must not have expired
-              remainingSessions: { gte: membershipHoursUsed },
+              remainingSessions: { gt: 0 },
               invoice: { is: { status: PaymentStatus.PAID } },
             },
+            include: { membership: true },
             orderBy: {
               endDate: 'asc', // Use membership that expires first
             },
           })
+
+          const eligibleMembership = membershipCandidates
+            .map((candidate) => ({
+              candidate,
+              allocation: allocateMembershipSlots(
+                candidate.membership.type,
+                candidate.remainingSessions,
+                membershipCourtSlots,
+              ),
+            }))
+            .find((item) => item.allocation.hours > 0)
+
+          if (!eligibleMembership) {
+            throw new BadRequestException(
+              'Membership is unavailable, has insufficient hours, or cannot be used for the selected court hours',
+            )
+          }
+
+          activeMembership = {
+            id: eligibleMembership.candidate.id,
+            remainingSessions: eligibleMembership.candidate.remainingSessions,
+            coveredSlotIds: eligibleMembership.allocation.slotIds,
+          }
+          membershipHoursUsed = eligibleMembership.allocation.hours
         }
 
         // Create booking in CONFIRMED state (admin bypasses payment)
@@ -226,7 +264,9 @@ export const adminCheckoutHandler = factory.createHandlers(
 
             // If membership covers this booking, exclude court costs from totalPrice
             // but still track the original price
-            if (activeMembership) {
+            const coveredByMembership =
+              activeMembership?.coveredSlotIds.has(slot.id) ?? false
+            if (coveredByMembership) {
               courtCostCoveredByMembership += normalPrice
               // Don't add to totalPrice - membership covers it
             } else {
@@ -240,6 +280,9 @@ export const adminCheckoutHandler = factory.createHandlers(
                 price: normalPrice,
                 discountPrice: discountedPrice,
                 courtId: slot.courtId || undefined,
+                membershipUserId: coveredByMembership
+                  ? activeMembership?.id
+                  : undefined,
               },
             })
             bookedItems.courtSlots.push(slot.id)
@@ -429,10 +472,6 @@ export const adminCheckoutHandler = factory.createHandlers(
         // Update totals on booking
         // (totalPrice already excludes court costs if covered by membership)
         const processingFee = 0
-        if (activeMembership) {
-          courtNormalPrice = 0
-          courtDiscountPrice = 0
-        }
         await tx.booking.update({
           where: { id: booking.id },
           data: {

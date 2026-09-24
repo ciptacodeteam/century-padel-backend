@@ -149,6 +149,7 @@ export const searchCustomersHandler = factory.createHandlers(
               id: true,
               name: true,
               price: true,
+              type: true,
             },
           },
         },
@@ -185,6 +186,7 @@ export const searchCustomersHandler = factory.createHandlers(
                   id: activeMembership.membership.id,
                   name: activeMembership.membership.name,
                   price: activeMembership.membership.price,
+                  type: activeMembership.membership.type,
                 },
               }
             : null, // Always include activeMembership field, set to null if no active membership
@@ -727,6 +729,7 @@ export const getCustomerMembershipDetailsHandler = factory.createHandlers(
               id: true,
               name: true,
               price: true,
+              type: true,
             },
           },
         },
@@ -748,6 +751,7 @@ export const getCustomerMembershipDetailsHandler = factory.createHandlers(
                   id: activeMembership.membership.id,
                   name: activeMembership.membership.name,
                   price: activeMembership.membership.price,
+                  type: activeMembership.membership.type,
                 },
               }
             : null,
@@ -760,4 +764,3 @@ export const getCustomerMembershipDetailsHandler = factory.createHandlers(
     }
   },
 )
-

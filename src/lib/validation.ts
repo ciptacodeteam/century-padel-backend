@@ -506,6 +506,7 @@ export const createMembershipSchema = z.object({
   price: z.number().min(0),
   sessions: z.number().min(1),
   duration: z.number().min(1),
+  type: z.enum(['ALL_HOUR', 'PEAK_HOUR', 'HAPPY_HOUR']),
   scheduleVisibilityMonths: z.number().int().min(1),
   sequence: z.number().min(0).optional(),
   isActive: z.coerce.boolean().optional(),
@@ -654,7 +655,8 @@ export type UpdatePromoCodeSchema = z.infer<typeof updatePromoCodeSchema>
 // Checkout schema
 export const checkoutSchema = z.object({
   bookingId: z.string().optional(), // Optional: for updating existing DRAFT booking
-  paymentMethodId: z.string(),
+  paymentMethodId: z.string().optional(),
+  useMembership: z.boolean().default(false),
   courtSlots: z.array(z.string()).optional(), // Array of slot IDs for court bookings
   coachSlots: z.array(z.string()).optional(), // Array of slot IDs for coach bookings
   ballboySlots: z.array(z.string()).optional(), // Array of slot IDs for ballboy bookings
@@ -877,7 +879,8 @@ export type CreditCardPaymentSchema = z.infer<typeof creditCardPaymentSchema>
 // Update checkout schema to support credit card
 export const extendedCheckoutSchema = z.object({
   bookingId: z.string().optional(),
-  paymentMethodId: z.string(),
+  paymentMethodId: z.string().optional(),
+  useMembership: z.boolean().default(false),
   courtSlots: z.array(z.string()).optional(),
   coachSlots: z.array(z.string()).optional(),
   ballboySlots: z.array(z.string()).optional(),
@@ -907,6 +910,7 @@ export const applyPromoCodeSchema = z.object({
   promoCode: z.string().min(3).max(50).regex(promoCodeRegex, {
     message: 'Promo code must be alphanumeric without spaces',
   }),
+  useMembership: z.boolean().default(false),
   courtSlots: z.array(z.string()).optional(),
   coachSlots: z.array(z.string()).optional(),
   ballboySlots: z.array(z.string()).optional(),

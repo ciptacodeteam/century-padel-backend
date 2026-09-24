@@ -28,6 +28,7 @@ import dayjs from 'dayjs'
 import status from 'http-status'
 import { z } from 'zod'
 import { validateCoachSlots } from '@/services/coach-slot.service'
+import { allocateMembershipSlots } from '@/services/membership-eligibility.service'
 
 // const PROCESSING_FEE_PERCENT = 0.02 // 2% processing fee
 
@@ -196,6 +197,7 @@ export const applyPromoCodeHandler = factory.createHandlers(
         coachSlots: rawCoachSlots,
         ballboySlots: rawBallboySlots,
         inventories,
+        useMembership,
       } = validated
 
       const promoCode = normalizePromoCode(rawPromoCode)
@@ -255,6 +257,40 @@ export const applyPromoCodeHandler = factory.createHandlers(
             )
           }
 
+          let membershipCoveredSlotIds = new Set<string>()
+          if (useMembership) {
+            const now = new Date()
+            const membershipCandidates = await tx.membershipUser.findMany({
+              where: {
+                userId: user.id,
+                isExpired: false,
+                isSuspended: false,
+                startDate: { lte: now },
+                endDate: { gt: now },
+                remainingSessions: { gt: 0 },
+                invoice: { is: { status: PaymentStatus.PAID } },
+              },
+              include: { membership: true },
+              orderBy: { endDate: 'asc' },
+            })
+            const allocation = membershipCandidates
+              .map((candidate) => ({
+                candidate,
+                allocation: allocateMembershipSlots(
+                  candidate.membership.type,
+                  candidate.remainingSessions,
+                  courtSlotData,
+                ),
+              }))
+              .find((item) => item.allocation.hours > 0)
+            if (!allocation) {
+              throw new BadRequestException(
+                'Membership cannot be used for the selected court hours',
+              )
+            }
+            membershipCoveredSlotIds = allocation.allocation.slotIds
+          }
+
           const { horizon } = await getUserScheduleVisibilityHorizon(user.id)
           for (const slot of courtSlotData) {
             if (slot.bookingDetails.length > 0) {
@@ -271,7 +307,9 @@ export const applyPromoCodeHandler = factory.createHandlers(
               slot.discountPrice && slot.discountPrice > 0
                 ? slot.discountPrice
                 : slot.price
-            totalPrice += discountedPrice
+            if (!membershipCoveredSlotIds.has(slot.id)) {
+              totalPrice += discountedPrice
+            }
           }
         }
 
@@ -431,6 +469,7 @@ export const checkoutHandler = factory.createHandlers(
         ballboySlots: rawBallboySlots,
         inventories,
         promoCode: rawPromoCode,
+        useMembership,
       } = validated
 
       // Clean slot IDs to remove any accidentally appended time suffixes
@@ -450,15 +489,20 @@ export const checkoutHandler = factory.createHandlers(
           status.BAD_REQUEST,
         )
       }
+      if (useMembership && (!courtSlots || courtSlots.length === 0)) {
+        throw new BadRequestException(
+          'Membership can only be used for court bookings',
+        )
+      }
 
-      // Validate payment method
-      const paymentMethod = await db.paymentMethod.findUnique({
-        where: { id: paymentMethodId },
-      })
-      if (!paymentMethod) {
+      // Payment method is optional only when the final payable amount is zero.
+      const paymentMethod = paymentMethodId
+        ? await db.paymentMethod.findUnique({ where: { id: paymentMethodId } })
+        : null
+      if (paymentMethodId && !paymentMethod) {
         throw new NotFoundException('Payment method not found')
       }
-      if (!paymentMethod.isActive) {
+      if (paymentMethod && !paymentMethod.isActive) {
         return c.json(
           err('Payment method is not active', status.BAD_REQUEST),
           status.BAD_REQUEST,
@@ -535,6 +579,12 @@ export const checkoutHandler = factory.createHandlers(
         let promoDiscountAmount = 0
         let appliedPromoCodeId: string | null = null
         let appliedPromoCodeText: string | null = null
+        let membershipToUse: {
+          id: string
+          remainingSessions: number
+        } | null = null
+        let membershipHoursUsed = 0
+        let membershipCoveredSlotIds = new Set<string>()
         const xenditItems: Array<{
           name: string
           quantity: number
@@ -571,6 +621,47 @@ export const checkoutHandler = factory.createHandlers(
             )
           }
 
+          if (useMembership) {
+            const now = new Date()
+            const membershipCandidates = await tx.membershipUser.findMany({
+              where: {
+                userId: user.id,
+                isExpired: false,
+                isSuspended: false,
+                startDate: { lte: now },
+                endDate: { gt: now },
+                remainingSessions: { gt: 0 },
+                invoice: { is: { status: PaymentStatus.PAID } },
+              },
+              include: { membership: true },
+              orderBy: { endDate: 'asc' },
+            })
+            const eligibleMembership = membershipCandidates
+              .map((candidate) => ({
+                candidate,
+                allocation: allocateMembershipSlots(
+                  candidate.membership.type,
+                  candidate.remainingSessions,
+                  courtSlotData,
+                ),
+              }))
+              .find((item) => item.allocation.hours > 0)
+
+            if (!eligibleMembership) {
+              throw new BadRequestException(
+                'Membership is unavailable, has insufficient hours, or cannot be used for the selected court hours',
+              )
+            }
+
+            membershipToUse = {
+              id: eligibleMembership.candidate.id,
+              remainingSessions:
+                eligibleMembership.candidate.remainingSessions,
+            }
+            membershipHoursUsed = eligibleMembership.allocation.hours
+            membershipCoveredSlotIds = eligibleMembership.allocation.slotIds
+          }
+
           const { horizon } = await getUserScheduleVisibilityHorizon(user.id)
           for (const slot of courtSlotData) {
             if (slot.bookingDetails.length > 0) {
@@ -589,8 +680,11 @@ export const checkoutHandler = factory.createHandlers(
                 ? slot.discountPrice
                 : slot.price
             courtNormalPrice += normalPrice
-            courtDiscountPrice += discountedPrice
-            totalPrice += discountedPrice
+            const coveredByMembership = membershipCoveredSlotIds.has(slot.id)
+            if (!coveredByMembership) {
+              courtDiscountPrice += discountedPrice
+              totalPrice += discountedPrice
+            }
 
             await tx.bookingDetail.create({
               data: {
@@ -599,13 +693,18 @@ export const checkoutHandler = factory.createHandlers(
                 price: normalPrice,
                 discountPrice: discountedPrice,
                 courtId: slot.courtId || undefined,
+                membershipUserId: coveredByMembership
+                  ? membershipToUse?.id
+                  : undefined,
               },
             })
-            xenditItems.push({
-              name: `Court booking ${dayjs(slot.startAt).format('YYYY-MM-DD HH:mm')} - ${dayjs(slot.endAt).format('HH:mm')}`,
-              quantity: 1,
-              price: discountedPrice,
-            })
+            if (!coveredByMembership) {
+              xenditItems.push({
+                name: `Court booking ${dayjs(slot.startAt).format('YYYY-MM-DD HH:mm')} - ${dayjs(slot.endAt).format('HH:mm')}`,
+                quantity: 1,
+                price: discountedPrice,
+              })
+            }
           }
           // Update slots to unavailable
           await tx.slot.updateMany({
@@ -616,6 +715,19 @@ export const checkoutHandler = factory.createHandlers(
               isAvailable: false,
             },
           })
+
+          if (membershipToUse && membershipHoursUsed > 0) {
+            const remainingSessions =
+              membershipToUse.remainingSessions - membershipHoursUsed
+            await tx.membershipUser.update({
+              where: { id: membershipToUse.id },
+              data: {
+                remainingSessions,
+                isExpired: remainingSessions === 0,
+              },
+            })
+
+          }
         }
 
         // Process coach slots
@@ -808,14 +920,28 @@ export const checkoutHandler = factory.createHandlers(
           appliedPromoCodeText = promo.code
         }
 
-        // Calculate processing fee (fixed fee + percentage fee + 11% VAT)
-        const percentageFee = Math.round(
-          totalPrice * (Number(paymentMethod.percentage) / 100),
-        )
-        const baseFee = paymentMethod.fees + percentageFee
+        const requiresPayment = totalPrice > 0
+        if (requiresPayment && !paymentMethod) {
+          throw new BadRequestException(
+            'Payment method is required when the booking has a payable amount',
+          )
+        }
+
+        // A fully membership-funded booking has no gateway or processing fee.
+        const percentageFee =
+          requiresPayment && paymentMethod
+            ? Math.round(
+                totalPrice * (Number(paymentMethod.percentage) / 100),
+              )
+            : 0
+        const baseFee =
+          requiresPayment && paymentMethod
+            ? paymentMethod.fees + percentageFee
+            : 0
         const vat = Math.round(baseFee * 0.11) // 11% VAT on total fee
         const processingFee = baseFee + vat
         const finalTotal = totalPrice + processingFee
+        const completedWithoutPayment = finalTotal === 0
 
         if (processingFee > 0) {
           xenditItems.push({
@@ -856,8 +982,13 @@ export const checkoutHandler = factory.createHandlers(
             promoCodeId: appliedPromoCodeId,
             promoCodeText: appliedPromoCodeText,
             promoDiscountAmount,
-            status: PaymentStatus.PENDING,
-            dueDate: dayjs().add(15, 'minutes').toDate(), // Payment due in 15 minutes for booking hold
+            status: completedWithoutPayment
+              ? PaymentStatus.PAID
+              : PaymentStatus.PENDING,
+            dueDate: completedWithoutPayment
+              ? new Date()
+              : dayjs().add(15, 'minutes').toDate(),
+            paidAt: completedWithoutPayment ? new Date() : undefined,
             issuedAt: new Date(),
           },
         })
@@ -893,7 +1024,7 @@ export const checkoutHandler = factory.createHandlers(
         // --- NEW v3 /payment_requests (mandatory for external payment) ---
         let xenditInvoiceResponse: any = null
         let xenditError: any = null
-        if (paymentMethod.channel) {
+        if (requiresPayment && paymentMethod?.channel) {
           if (env.paymentGatewayMode === 'mock') {
             if (env.nodeEnv === 'production') {
               throw new BadRequestException(
@@ -955,7 +1086,7 @@ export const checkoutHandler = factory.createHandlers(
               if (channelCode === 'CARDS') {
                 xenditInvoiceResponse = await handleCreditCardPayment(
                   tx,
-                  paymentMethodId,
+                  paymentMethod.id,
                   invoiceNumber,
                   booking.id,
                   user.id,
@@ -1054,55 +1185,56 @@ export const checkoutHandler = factory.createHandlers(
           }
         }
 
-        // Create payment
-        const payment = await tx.payment.create({
-          data: {
-            paymentMethodId: paymentMethod.id,
-            amount: finalTotal,
-            fees: paymentMethod.fees,
-            status: PaymentStatus.PENDING,
-            dueDate: dayjs().add(15, 'minutes').toDate(),
-            externalRef:
-              xenditInvoiceResponse?.id ||
-              xenditInvoiceResponse?.payment_session_id ||
-              null,
-            // Store payment session or payment request metadata
-            meta: xenditInvoiceResponse
-              ? // For CARDS: Store payment session metadata
-                xenditInvoiceResponse.payment_session_id
-                ? {
-                    payment_session_id:
-                      xenditInvoiceResponse.payment_session_id,
-                    reference_id: xenditInvoiceResponse.reference_id,
-                    session_type: xenditInvoiceResponse.session_type,
-                    status: xenditInvoiceResponse.status,
-                    amount: xenditInvoiceResponse.amount,
-                    currency: xenditInvoiceResponse.currency,
-                    created: xenditInvoiceResponse.created,
-                  }
-                : // For other channels: Store payment request metadata
-                  {
-                    payment_request_id:
-                      xenditInvoiceResponse.payment_request_id,
-                    reference_id: xenditInvoiceResponse.reference_id,
-                    status: xenditInvoiceResponse.status,
-                    channel_code: xenditInvoiceResponse.channel_code,
-                    channel_properties:
-                      xenditInvoiceResponse.channel_properties,
-                    actions: xenditInvoiceResponse.actions,
-                    request_amount: xenditInvoiceResponse.request_amount,
-                    currency: xenditInvoiceResponse.currency,
-                    created: xenditInvoiceResponse.created,
-                  }
-              : undefined,
-          },
-        })
+        const payment =
+          requiresPayment && paymentMethod
+            ? await tx.payment.create({
+                data: {
+                  paymentMethodId: paymentMethod.id,
+                  amount: finalTotal,
+                  fees: paymentMethod.fees,
+                  status: PaymentStatus.PENDING,
+                  dueDate: dayjs().add(15, 'minutes').toDate(),
+                  externalRef:
+                    xenditInvoiceResponse?.id ||
+                    xenditInvoiceResponse?.payment_session_id ||
+                    null,
+                  meta: xenditInvoiceResponse
+                    ? xenditInvoiceResponse.payment_session_id
+                      ? {
+                          payment_session_id:
+                            xenditInvoiceResponse.payment_session_id,
+                          reference_id: xenditInvoiceResponse.reference_id,
+                          session_type: xenditInvoiceResponse.session_type,
+                          status: xenditInvoiceResponse.status,
+                          amount: xenditInvoiceResponse.amount,
+                          currency: xenditInvoiceResponse.currency,
+                          created: xenditInvoiceResponse.created,
+                        }
+                      : {
+                          payment_request_id:
+                            xenditInvoiceResponse.payment_request_id,
+                          reference_id: xenditInvoiceResponse.reference_id,
+                          status: xenditInvoiceResponse.status,
+                          channel_code: xenditInvoiceResponse.channel_code,
+                          channel_properties:
+                            xenditInvoiceResponse.channel_properties,
+                          actions: xenditInvoiceResponse.actions,
+                          request_amount:
+                            xenditInvoiceResponse.request_amount,
+                          currency: xenditInvoiceResponse.currency,
+                          created: xenditInvoiceResponse.created,
+                        }
+                    : undefined,
+                },
+              })
+            : null
 
-        // Link payment to invoice
-        await tx.invoice.update({
-          where: { id: invoice.id },
-          data: { paymentId: payment.id },
-        })
+        if (payment) {
+          await tx.invoice.update({
+            where: { id: invoice.id },
+            data: { paymentId: payment.id },
+          })
+        }
 
         // Admin notification about new booking (non-blocking)
         try {
@@ -1114,20 +1246,22 @@ export const checkoutHandler = factory.createHandlers(
           c.var.logger.warn(`Failed to create booking admin notification: ${e}`)
         }
 
-        // Set hold expiry (15 minutes for all payment methods)
-        const holdExpiresAt = dayjs().add(15, 'minutes').toDate()
+        const holdExpiresAt = completedWithoutPayment
+          ? null
+          : dayjs().add(15, 'minutes').toDate()
 
-        // Update booking status to HOLD
-        await tx.booking.update({
+        const finalizedBooking = await tx.booking.update({
           where: { id: booking.id },
           data: {
-            status: BookingStatus.HOLD,
+            status: completedWithoutPayment
+              ? BookingStatus.CONFIRMED
+              : BookingStatus.HOLD,
             holdExpiresAt,
           },
         })
 
         return {
-          booking,
+          booking: finalizedBooking,
           invoice,
           payment,
           xenditPaymentRequest: xenditInvoiceResponse,
@@ -1174,7 +1308,8 @@ export const checkoutHandler = factory.createHandlers(
             total: result.invoice.total,
             promoDiscountAmount: result.invoice.promoDiscountAmount,
             status: result.booking.status,
-            paymentStatus: result.xenditPaymentRequest?.status || 'PENDING',
+            paymentStatus:
+              result.xenditPaymentRequest?.status || result.invoice.status,
             // For credit cards: payment_session_id to use with card_session.js
             ...(paymentSessionId && { paymentSessionId }),
             // For other channels: payment actions (VA, QRIS, etc.)
