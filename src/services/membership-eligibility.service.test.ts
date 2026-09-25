@@ -5,16 +5,18 @@ import {
   canMembershipUseSlots,
 } from './membership-eligibility.service'
 
-const slotAtJakartaHour = (hour: number) => ({
-  startAt: new Date(`2026-09-24T${String(hour).padStart(2, '0')}:00:00+07:00`),
+const slotAtJakartaTime = (hour: number, minute = 0) => ({
+  startAt: new Date(
+    `2026-09-24T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00+07:00`,
+  ),
 })
 
 describe('membership slot eligibility', () => {
   it('allows all-hour memberships at happy and peak hours', () => {
     expect(
       canMembershipUseSlots(MembershipType.ALL_HOUR, [
-        slotAtJakartaHour(8),
-        slotAtJakartaHour(19),
+        slotAtJakartaTime(8),
+        slotAtJakartaTime(19),
       ]),
     ).toBe(true)
   })
@@ -22,22 +24,27 @@ describe('membership slot eligibility', () => {
   it('allows peak-hour memberships at happy and peak hours', () => {
     expect(
       canMembershipUseSlots(MembershipType.PEAK_HOUR, [
-        slotAtJakartaHour(8),
-        slotAtJakartaHour(19),
+        slotAtJakartaTime(8),
+        slotAtJakartaTime(19),
       ]),
     ).toBe(true)
   })
 
   it('prevents happy-hour memberships from covering peak-hour slots', () => {
     expect(
-      canMembershipUseSlots(MembershipType.HAPPY_HOUR, [slotAtJakartaHour(8)]),
+      canMembershipUseSlots(MembershipType.HAPPY_HOUR, [slotAtJakartaTime(8)]),
     ).toBe(true)
     expect(
       canMembershipUseSlots(MembershipType.HAPPY_HOUR, [
-        slotAtJakartaHour(8),
-        slotAtJakartaHour(15),
+        slotAtJakartaTime(8),
+        slotAtJakartaTime(16),
       ]),
     ).toBe(false)
+    expect(
+      canMembershipUseSlots(MembershipType.HAPPY_HOUR, [
+        slotAtJakartaTime(15, 59),
+      ]),
+    ).toBe(true)
   })
 })
 
@@ -46,13 +53,13 @@ describe('partial membership allocation', () => {
     const result = allocateMembershipSlots(MembershipType.HAPPY_HOUR, 1, [
       {
         id: 'happy',
-        ...slotAtJakartaHour(14),
-        endAt: new Date('2026-09-24T15:00:00+07:00'),
+        ...slotAtJakartaTime(15),
+        endAt: new Date('2026-09-24T16:00:00+07:00'),
       },
       {
         id: 'peak',
-        ...slotAtJakartaHour(15),
-        endAt: new Date('2026-09-24T16:00:00+07:00'),
+        ...slotAtJakartaTime(16),
+        endAt: new Date('2026-09-24T17:00:00+07:00'),
       },
     ])
 

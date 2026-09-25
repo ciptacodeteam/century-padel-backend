@@ -8,7 +8,7 @@ dayjs.extend(utc)
 dayjs.extend(timezone)
 
 export const HAPPY_HOUR_START = 6
-export const PEAK_HOUR_START = 15
+export const PEAK_HOUR_START = 16
 
 type MembershipEligibleSlot = Pick<Slot, 'startAt'>
 type AllocatableSlot = Pick<Slot, 'id' | 'startAt' | 'endAt'>
@@ -20,7 +20,7 @@ export function isHappyHourSlot(slot: MembershipEligibleSlot): boolean {
 
 /**
  * Peak Hour and All Hour packages can be used at every court hour.
- * Happy Hour packages are restricted to slots starting from 06:00 through 14:59.
+ * Happy Hour packages are restricted to slots starting from 06:00 through 15:59.
  */
 export function canMembershipUseSlots(
   membershipType: MembershipType,

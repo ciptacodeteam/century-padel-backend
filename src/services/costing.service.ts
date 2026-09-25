@@ -16,8 +16,8 @@ type SetCourtPricingPayload = {
 }
 
 const HAPPY_START = 6
-const HAPPY_END = 15 // exclusive
-const PEAK_START = 15
+const HAPPY_END = 16 // exclusive
+const PEAK_START = 16
 const PEAK_END = 24 // exclusive
 
 function hoursForBand(start: number, end: number) {
@@ -104,8 +104,8 @@ export async function setCourtPricing({
       })
 
       const slots: any[] = []
-      const happyHours = Array.from({ length: 9 }, (_, i) => i + 6) // 06–14
-      const peakHours = Array.from({ length: 9 }, (_, i) => i + 15) // 15–23
+      const happyHours = hoursForBand(HAPPY_START, HAPPY_END) // 06–15
+      const peakHours = hoursForBand(PEAK_START, PEAK_END) // 16–23
 
       const allHours = [
         ...happyHours.map((h) => ({
@@ -182,9 +182,9 @@ export async function setCourtPricing({
 type UpdateCourtPricingPayload = {
   courtId: string
   date: string // YYYY-MM-DD (local)
-  happyHourPrice: number // 06–15
+  happyHourPrice: number // 06–16 (exclusive)
   happyHourDiscountPrice?: number
-  peakHourPrice: number // 15–24
+  peakHourPrice: number // 16–24 (exclusive)
   peakHourDiscountPrice?: number
   closedHours?: number[] // 0..23 (default: 0–5 closed)
 }
@@ -661,8 +661,8 @@ type UpdateStaffPricingPayload = {
   staffId: string
   type: Extract<SlotType, 'COACH' | 'BALLBOY'>
   date: string // YYYY-MM-DD
-  happyHourPrice: number // 06–15
-  peakHourPrice: number // 15–24
+  happyHourPrice: number // 06–16 (exclusive)
+  peakHourPrice: number // 16–24 (exclusive)
   closedHours?: number[] // hours to remove/close (default: none)
 }
 
