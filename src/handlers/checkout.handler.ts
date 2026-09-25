@@ -234,6 +234,7 @@ export const applyPromoCodeHandler = factory.createHandlers(
               id: { in: courtSlots },
               type: SlotType.COURT,
               isAvailable: true,
+              price: { gt: 0 },
               endAt: { gt: getBookableSlotEndThreshold() },
             },
             include: {
@@ -598,6 +599,7 @@ export const checkoutHandler = factory.createHandlers(
               id: { in: courtSlots },
               type: SlotType.COURT,
               isAvailable: true,
+              price: { gt: 0 },
               endAt: { gt: getBookableSlotEndThreshold() },
             },
             include: {

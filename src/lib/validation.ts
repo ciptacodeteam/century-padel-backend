@@ -203,9 +203,9 @@ export const createCourtCostSchema = z.object({
     message: 'Invalid date format, expected YYYY-MM-DD',
   }),
   days: z.array(z.number().min(0).max(7)),
-  happyHourPrice: z.number().min(0),
+  happyHourPrice: z.number().positive(),
   happyHourDiscountPrice: z.number().min(0).optional(),
-  peakHourPrice: z.number().min(0),
+  peakHourPrice: z.number().positive(),
   peakHourDiscountPrice: z.number().min(0).optional(),
   closedHours: z.array(z.number()).optional(),
 })
@@ -228,7 +228,7 @@ export const overrideSingleCourtCostSchema = z.object({
   }),
   hour: z.number().min(0),
   courtId: z.string(),
-  price: z.number().min(0),
+  price: z.number().positive(),
   discountPrice: z.number().min(0).optional(),
 })
 
@@ -237,7 +237,7 @@ export type OverrideSingleCourtCostSchema = z.infer<
 >
 
 export const updateSlotPricingSchema = z.object({
-  price: z.number().min(0),
+  price: z.number().positive(),
   discountPrice: z.number().min(0).optional(),
 })
 
@@ -246,7 +246,7 @@ export type UpdateSlotPricingSchema = z.infer<typeof updateSlotPricingSchema>
 export const bulkUpdateSlotPricingSchema = z
   .object({
     slotIds: z.array(z.string().min(1)).min(1).max(5000),
-    price: z.number().min(0),
+    price: z.number().positive(),
     discountPrice: z.number().min(0).optional(),
   })
   .refine(

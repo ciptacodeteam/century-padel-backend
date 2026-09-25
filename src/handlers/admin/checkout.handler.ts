@@ -133,6 +133,7 @@ export const adminCheckoutHandler = factory.createHandlers(
               where: {
                 id: { in: courtSlots },
                 type: SlotType.COURT,
+                price: { gt: 0 },
                 endAt: { gt: getBookableSlotEndThreshold() },
               },
               select: { id: true, startAt: true, endAt: true },
@@ -226,6 +227,7 @@ export const adminCheckoutHandler = factory.createHandlers(
               id: { in: courtSlots },
               type: SlotType.COURT,
               isAvailable: true,
+              price: { gt: 0 },
               endAt: { gt: getBookableSlotEndThreshold() },
             },
             include: {

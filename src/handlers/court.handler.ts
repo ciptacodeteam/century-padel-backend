@@ -91,6 +91,7 @@ export const getAllCourtHandler = factory.createHandlers(
       const slotWhere: any = {
         type: SlotType.COURT,
         isAvailable: true,
+        price: { gt: 0 },
         endAt: { gt: getBookableSlotEndThreshold() },
         bookingDetails: {
           none: {
@@ -203,6 +204,7 @@ export const getCourtSlotsHandler = factory.createHandlers(
         type: SlotType.COURT,
         courtId,
         isAvailable: true,
+        price: { gt: 0 },
         endAt: { gt: getBookableSlotEndThreshold() },
         bookingDetails: {
           none: {
@@ -277,6 +279,7 @@ export const getAvailableCourtSlotsHandler = factory.createHandlers(
       const where: any = {
         type: SlotType.COURT,
         isAvailable: true,
+        price: { gt: 0 },
         endAt: { gt: getBookableSlotEndThreshold() },
         bookingDetails: {
           none: {

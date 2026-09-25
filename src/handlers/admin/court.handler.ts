@@ -1,5 +1,5 @@
 import { DATETIME_FORMAT } from '@/constants'
-import { COURT_SUBDIR } from '@/config'
+import { COURT_SUBDIR, JAKARTA_TZ } from '@/config'
 import { BadRequestException, NotFoundException } from '@/exceptions'
 import { validateHook } from '@/helpers/validate-hook'
 import { factory } from '@/lib/create-app'
@@ -255,6 +255,7 @@ export const getAvailableCourtSlotsHandler = factory.createHandlers(
       const where: any = {
         type: SlotType.COURT,
         isAvailable: true,
+        price: { gt: 0 },
         endAt: { gt: getBookableSlotEndThreshold() },
         bookingDetails: {
           none: {
@@ -332,6 +333,7 @@ export const getCostHandler = factory.createHandlers(
   async (c) => {
     try {
       const { id } = c.req.valid('param') as IdSchema
+      const todayStart = dayjs().tz(JAKARTA_TZ).startOf('day').toDate()
 
       const courtCostSlot = await db.$queryRaw`
         SELECT 
@@ -351,6 +353,7 @@ export const getCostHandler = factory.createHandlers(
           ) AS slots
         FROM slots AS s
         WHERE s."courtId" = ${id}
+          AND s."startAt" >= ${todayStart}
         GROUP BY date
         ORDER BY date DESC
       `
