@@ -1,7 +1,13 @@
 import { log } from '@/lib/logger'
 import { db } from '@/lib/prisma'
+import { JAKARTA_TZ } from '@/config'
 import { BookingStatus, SlotType } from '@prisma/client'
 import dayjs from 'dayjs'
+import timezone from 'dayjs/plugin/timezone.js'
+import utc from 'dayjs/plugin/utc.js'
+
+dayjs.extend(utc)
+dayjs.extend(timezone)
 
 type SetCourtPricingPayload = {
   courtId: string
@@ -13,6 +19,7 @@ type SetCourtPricingPayload = {
   peakHourPrice: number
   peakHourDiscountPrice?: number
   closedHours?: number[]
+  replaceFutureSchedule?: boolean
 }
 
 const HAPPY_START = 6
@@ -49,10 +56,167 @@ export async function setCourtPricing({
   peakHourPrice,
   peakHourDiscountPrice = 0,
   closedHours = [0, 1, 2, 3, 4, 5],
+  replaceFutureSchedule = false,
 }: SetCourtPricingPayload) {
   try {
     const start = dayjs(fromDate)
     const end = dayjs(toDate)
+
+    if (!start.isValid() || !end.isValid() || end.isBefore(start, 'day')) {
+      log.warn(
+        `Rejected invalid court pricing range for court ${courtId}: ${fromDate} to ${toDate}`,
+      )
+      return false
+    }
+
+    if (days.length === 0) {
+      log.warn(`Rejected court pricing without operational days: ${courtId}`)
+      return false
+    }
+
+    if (replaceFutureSchedule) {
+      const todayStart = dayjs().tz(JAKARTA_TZ).startOf('day').toDate()
+      const replacementSlots: Array<{
+        type: SlotType
+        courtId: string
+        startAt: Date
+        endAt: Date
+        price: number
+        discountPrice: number
+        isAvailable: boolean
+      }> = []
+
+      for (
+        let d = start;
+        d.isBefore(end) || d.isSame(end, 'day');
+        d = d.add(1, 'day')
+      ) {
+        if (!days.includes(dayNumber(d))) continue
+
+        const hours = [
+          ...hoursForBand(HAPPY_START, HAPPY_END).map((hour) => ({
+            hour,
+            price: happyHourPrice,
+            discountPrice: happyHourDiscountPrice,
+          })),
+          ...hoursForBand(PEAK_START, PEAK_END).map((hour) => ({
+            hour,
+            price: peakHourPrice,
+            discountPrice: peakHourDiscountPrice,
+          })),
+        ].filter(({ hour }) => !closedHours.includes(hour))
+
+        replacementSlots.push(
+          ...hours.map(({ hour, price, discountPrice }) => {
+            const { startAt, endAt } = toUtcRange(
+              d.format('YYYY-MM-DD'),
+              hour,
+            )
+            return {
+              type: SlotType.COURT,
+              courtId,
+              startAt,
+              endAt,
+              price,
+              discountPrice,
+              isAvailable: true,
+            }
+          }),
+        )
+      }
+      const replacementByStart = new Map(
+        replacementSlots.map((slot) => [slot.startAt.getTime(), slot]),
+      )
+
+      await db.$transaction(async (tx) => {
+        await tx.courtCostSchedule.deleteMany({
+          where: {
+            courtId,
+            startAt: { gte: todayStart },
+          },
+        })
+
+        // Remove obsolete slots when they have never been referenced by a booking.
+        // Referenced slots must remain for booking history, but are kept closed.
+        await tx.slot.deleteMany({
+          where: {
+            type: SlotType.COURT,
+            courtId,
+            startAt: { gte: todayStart },
+            bookingDetails: { none: {} },
+          },
+        })
+
+        await tx.slot.updateMany({
+          where: {
+            type: SlotType.COURT,
+            courtId,
+            startAt: { gte: todayStart },
+          },
+          data: { isAvailable: false },
+        })
+
+        // Slots referenced only by cancelled bookings cannot be deleted because
+        // of their history, but can be reused when included in the new range.
+        const reusableSlots = await tx.slot.findMany({
+          where: {
+            type: SlotType.COURT,
+            courtId,
+            startAt: { gte: todayStart },
+            bookingDetails: {
+              none: {
+                booking: {
+                  status: { not: BookingStatus.CANCELLED },
+                },
+              },
+            },
+          },
+          select: { id: true, startAt: true },
+        })
+
+        for (const existingSlot of reusableSlots) {
+          const replacement = replacementByStart.get(
+            existingSlot.startAt.getTime(),
+          )
+          if (!replacement) continue
+
+          await tx.slot.update({
+            where: { id: existingSlot.id },
+            data: {
+              endAt: replacement.endAt,
+              price: replacement.price,
+              discountPrice: replacement.discountPrice,
+              isAvailable: true,
+            },
+          })
+        }
+
+        if (replacementSlots.length > 0) {
+          await tx.slot.createMany({
+            data: replacementSlots,
+            skipDuplicates: true,
+          })
+          await tx.courtCostSchedule.createMany({
+            data: replacementSlots.map(
+              ({ courtId, startAt, endAt, price, discountPrice }) => ({
+                courtId,
+                startAt,
+                endAt,
+                price,
+                discountPrice,
+                isAvailable: true,
+              }),
+            ),
+            skipDuplicates: true,
+          })
+        }
+      })
+
+      log.info(
+        `Replaced future court pricing for court ${courtId} from ${fromDate} to ${toDate}`,
+      )
+      return true
+    }
 
     for (
       let d = start;

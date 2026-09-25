@@ -70,6 +70,7 @@ export const createCourtCostHandler = factory.createHandlers(
         peakHourPrice,
         peakHourDiscountPrice,
         closedHours,
+        replaceFutureSchedule,
       } = validated
 
       const success = await setCourtPricing({
@@ -82,6 +83,7 @@ export const createCourtCostHandler = factory.createHandlers(
         peakHourDiscountPrice,
         toDate,
         closedHours,
+        replaceFutureSchedule,
       })
 
       if (!success) {

@@ -202,12 +202,13 @@ export const createCourtCostSchema = z.object({
   toDate: z.string().refine((val) => dayjs(val, 'YYYY-MM-DD', true).isValid(), {
     message: 'Invalid date format, expected YYYY-MM-DD',
   }),
-  days: z.array(z.number().min(0).max(7)),
+  days: z.array(z.number().min(1).max(7)).min(1),
   happyHourPrice: z.number().positive(),
   happyHourDiscountPrice: z.number().min(0).optional(),
   peakHourPrice: z.number().positive(),
   peakHourDiscountPrice: z.number().min(0).optional(),
   closedHours: z.array(z.number()).optional(),
+  replaceFutureSchedule: z.boolean().optional().default(false),
 })
 
 export type CreateCourtCostSchema = z.infer<typeof createCourtCostSchema>
