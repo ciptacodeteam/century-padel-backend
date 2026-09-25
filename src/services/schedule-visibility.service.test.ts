@@ -15,7 +15,7 @@ describe('schedule-visibility.service', () => {
     )
 
     expect(horizon.toISOString()).toBe(
-      new Date('2026-10-22T23:59:59.999+07:00').toISOString(),
+      new Date('2026-10-22T23:59:59.999Z').toISOString(),
     )
   })
 
@@ -25,21 +25,52 @@ describe('schedule-visibility.service', () => {
     const horizon = getScheduleVisibilityHorizonDate(4, now)
 
     expect(horizon.toISOString()).toBe(
-      new Date('2027-01-22T23:59:59.999+07:00').toISOString(),
+      new Date('2027-01-22T23:59:59.999Z').toISOString(),
     )
   })
 
-  it('treats dates on the horizon day as visible', () => {
-    const horizon = new Date('2026-10-22T23:59:59.999+07:00')
+  it('keeps every business hour on the horizon day visible', () => {
+    const horizon = new Date('2026-10-22T23:59:59.999Z')
     expect(
       isDateWithinScheduleVisibility(
-        new Date('2026-10-22T08:00:00+07:00'),
+        new Date('2026-10-22T17:00:00Z'),
         horizon,
       ),
     ).toBe(true)
     expect(
       isDateWithinScheduleVisibility(
-        new Date('2026-10-23T00:00:00+07:00'),
+        new Date('2026-10-22T23:00:00Z'),
+        horizon,
+      ),
+    ).toBe(true)
+    expect(
+      isDateWithinScheduleVisibility(
+        new Date('2026-10-23T00:00:00Z'),
+        horizon,
+      ),
+    ).toBe(false)
+  })
+
+  it('does not cut off 25 October slots from 17:00 onward for a logged-in user', () => {
+    const now = new Date('2026-09-25T10:00:00+07:00')
+    const horizon = getScheduleVisibilityHorizonDate(1, now)
+
+    expect(horizon.toISOString()).toBe('2026-10-25T23:59:59.999Z')
+    expect(
+      isDateWithinScheduleVisibility(
+        new Date('2026-10-25T17:00:00Z'),
+        horizon,
+      ),
+    ).toBe(true)
+    expect(
+      isDateWithinScheduleVisibility(
+        new Date('2026-10-25T23:00:00Z'),
+        horizon,
+      ),
+    ).toBe(true)
+    expect(
+      isDateWithinScheduleVisibility(
+        new Date('2026-10-26T00:00:00Z'),
         horizon,
       ),
     ).toBe(false)

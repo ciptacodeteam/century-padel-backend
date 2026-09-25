@@ -20,12 +20,15 @@ export function getScheduleVisibilityHorizonDate(
   now: Date = new Date(),
 ): Date {
   const visibilityMonths = Math.max(DEFAULT_SCHEDULE_VISIBILITY_MONTHS, months)
-
-  return dayjs(now)
+  const horizonDate = dayjs(now)
     .tz(JAKARTA_TZ)
     .add(visibilityMonths, 'month')
-    .endOf('day')
-    .toDate()
+    .format('YYYY-MM-DD')
+
+  // Court slots are stored using their business wall-clock components in UTC.
+  // Use the same convention for the upper boundary so the final day does not
+  // get cut off at 17:00 (midnight Jakarta expressed as UTC).
+  return dayjs.utc(horizonDate).endOf('day').toDate()
 }
 
 export async function getUserScheduleVisibilityMonths(
@@ -83,5 +86,5 @@ export function isDateWithinScheduleVisibility(
   date: Date,
   horizon: Date,
 ): boolean {
-  return !dayjs(date).tz(JAKARTA_TZ).isAfter(dayjs(horizon).tz(JAKARTA_TZ), 'day')
+  return !dayjs.utc(date).isAfter(dayjs.utc(horizon), 'day')
 }
