@@ -159,7 +159,9 @@ export const registerHandler = factory.createHandlers(
   async (c) => {
     try {
       const validated = c.req.valid('json') as RegisterSchema
-      const { phone, code, requestId, password, name } = validated
+      const { phone, code, requestId, password, firstName, lastName } =
+        validated
+      const name = `${firstName} ${lastName}`
 
       const formattedPhone = await formatPhone(phone)
 

@@ -14,7 +14,10 @@ import {
   searchQuerySchema,
   UpdateUserSchema,
   updateUserSchema,
+  CreateCustomerSchema,
+  createCustomerSchema,
 } from '@/lib/validation'
+import { hashPassword } from '@/lib/password'
 import { deleteFile, uploadFile } from '@/services/upload.service'
 import { queueEmail } from '@/services/email-queue.service'
 import {
@@ -242,6 +245,66 @@ export const getAllUsersHandler = factory.createHandlers(
       return c.json(ok(users), status.OK)
     } catch (error) {
       c.var.logger.fatal(`Error in getAllUsersHandler: ${error}`)
+      throw error
+    }
+  },
+)
+
+// POST /admin/customers
+// Create a customer manually, using the same default-password convention as walk-ins.
+export const createCustomerHandler = factory.createHandlers(
+  zValidator('form', createCustomerSchema, validateHook),
+  async (c) => {
+    try {
+      const { firstName, lastName, email, phone } = c.req.valid(
+        'form',
+      ) as CreateCustomerSchema
+      const formattedPhone = await formatPhone(phone)
+      const normalizedEmail = email || undefined
+
+      const existingUser = await db.user.findFirst({
+        where: {
+          OR: [
+            { phone: formattedPhone },
+            ...(normalizedEmail ? [{ email: normalizedEmail }] : []),
+          ],
+        },
+        select: { phone: true, email: true },
+      })
+
+      if (existingUser?.phone === formattedPhone) {
+        throw new BadRequestException('Phone number is already registered')
+      }
+
+      if (normalizedEmail && existingUser?.email === normalizedEmail) {
+        throw new BadRequestException('Email is already registered')
+      }
+
+      const password = await hashPassword(formattedPhone)
+      const user = await db.user.create({
+        data: {
+          name: `${firstName} ${lastName}`,
+          email: normalizedEmail,
+          phone: formattedPhone,
+          password,
+        },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          emailVerified: true,
+          phone: true,
+          phoneVerified: true,
+          image: true,
+          banned: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      })
+
+      return c.json(ok(user, 'Customer created successfully'), status.CREATED)
+    } catch (error) {
+      c.var.logger.fatal(`Error in createCustomerHandler: ${error}`)
       throw error
     }
   },

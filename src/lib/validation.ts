@@ -48,12 +48,18 @@ export const loginSchema = phoneSchema.extend({
 
 export type LoginSchema = z.infer<typeof loginSchema>
 
-export const registerSchema = phoneSchema.extend({
-  name: z.string().min(3).max(100),
-  code: z.string().length(OTP_LENGTH),
-  requestId: z.string().min(1),
-  password: z.string().min(6).max(100),
-})
+export const registerSchema = phoneSchema
+  .extend({
+    firstName: z.string().trim().min(1).max(50),
+    lastName: z.string().trim().min(1).max(50),
+    code: z.string().length(OTP_LENGTH),
+    requestId: z.string().min(1),
+    password: z.string().min(6).max(100),
+  })
+  .refine((data) => `${data.firstName} ${data.lastName}`.length <= 100, {
+    message: 'Full name must not exceed 100 characters',
+    path: ['lastName'],
+  })
 
 export type RegisterSchema = z.infer<typeof registerSchema>
 
@@ -762,6 +768,22 @@ export const updateUserSchema = z.object({
 })
 
 export type UpdateUserSchema = z.infer<typeof updateUserSchema>
+
+export const createCustomerSchema = z
+  .object({
+    firstName: z.string().trim().min(1).max(50),
+    lastName: z.string().trim().min(1).max(50),
+    email: z
+      .union([z.string().email().min(5).max(100), z.literal('')])
+      .optional(),
+    phone: indonesianMobileNumberSchema,
+  })
+  .refine((data) => `${data.firstName} ${data.lastName}`.length <= 100, {
+    message: 'Full name must not exceed 100 characters',
+    path: ['lastName'],
+  })
+
+export type CreateCustomerSchema = z.infer<typeof createCustomerSchema>
 
 // Coach Type schemas
 export const createCoachTypeSchema = z.object({

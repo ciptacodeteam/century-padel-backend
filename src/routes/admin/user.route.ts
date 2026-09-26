@@ -7,6 +7,7 @@ import {
   updateUserHandler,
   searchCustomersHandler,
   getCustomerMembershipDetailsHandler,
+  createCustomerHandler,
 } from '@/handlers/admin/user.handler'
 import {
   getCustomerComplimentaryCreditsHandler,
@@ -22,6 +23,7 @@ import {
 const adminUserRoute = createRouter()
   .basePath('/customers')
   .get('/', ...getAllUsersHandler)
+  .post('/', ...createCustomerHandler)
   .get('/search', ...searchCustomersHandler)
   .get('/:id', ...getUserDetailHandler)
   .get('/:id/membership', ...getCustomerMembershipDetailsHandler)
