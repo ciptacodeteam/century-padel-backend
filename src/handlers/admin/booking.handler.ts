@@ -13,6 +13,7 @@ import {
 import { getFileUrl } from '@/services/upload.service'
 import { zValidator } from '@hono/zod-validator'
 import { BookingStatus, PaymentStatus } from '@prisma/client'
+import { restoreComplimentaryCreditsForBooking } from '@/services/complimentary-credit.service'
 import status from 'http-status'
 import * as XLSX from 'xlsx'
 import dayjs from 'dayjs'
@@ -665,6 +666,12 @@ export const rejectBookingTransactionHandler = factory.createHandlers(
             'Cannot reject confirmed booking. Please cancel it instead.',
           )
         }
+
+        await restoreComplimentaryCreditsForBooking(
+          tx,
+          booking.id,
+          c.get('admin')?.id,
+        )
 
         // Update booking status to CANCELLED
         const updatedBooking = await tx.booking.update({

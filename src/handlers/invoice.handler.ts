@@ -15,6 +15,7 @@ import { BadRequestException, NotFoundException } from '@/exceptions'
 import dayjs from 'dayjs'
 import { env } from '@/env'
 import { restoreMembershipHoursForBooking } from '@/services/membership-hours.service'
+import { restoreComplimentaryCreditsForBooking } from '@/services/complimentary-credit.service'
 import { isVirtualAccountChannel } from '@/lib/payment-channel'
 
 // GET /invoices
@@ -492,6 +493,7 @@ export const expireInvoiceHandler = factory.createHandlers(
 
         // Cancel booking if exists
         if (invoice.booking) {
+          await restoreComplimentaryCreditsForBooking(tx, invoice.booking.id)
           await tx.booking.update({
             where: { id: invoice.booking.id },
             data: {
@@ -769,6 +771,8 @@ export const cancelUserBookingHandler = factory.createHandlers(
           tx,
           booking,
         )
+        const restoredComplimentaryCreditMinutes =
+          await restoreComplimentaryCreditsForBooking(tx, booking.id)
 
         // 3. Update booking status to CANCELLED
         const updatedBooking = await tx.booking.update({
@@ -859,6 +863,7 @@ export const cancelUserBookingHandler = factory.createHandlers(
           releasedCounts,
           refundInfo,
           restoredMembershipHours,
+          restoredComplimentaryCreditMinutes,
         }
       })
 
@@ -879,6 +884,8 @@ export const cancelUserBookingHandler = factory.createHandlers(
             },
             restoredInventories: result.releasedCounts.inventories,
             restoredMembershipHours: result.restoredMembershipHours,
+            restoredComplimentaryCreditMinutes:
+              result.restoredComplimentaryCreditMinutes,
             refund: result.refundInfo,
           },
           'Booking cancelled successfully. All resources have been released.',

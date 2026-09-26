@@ -97,6 +97,15 @@ async function seedStaff() {
       joinedAt: dayjs().subtract(1, 'month').toDate(),
     },
     {
+      name: 'Admin Coaching',
+      email: 'coaching@centurypadel.id',
+      phone: '+6281100000009',
+      password: hashedPassword,
+      role: 'ADMIN_COACHING' as const,
+      isActive: true,
+      joinedAt: dayjs().subtract(1, 'month').toDate(),
+    },
+    {
       name: 'Cashier One',
       email: 'cashier1@centurypadel.id',
       phone: '+6281100000002',
@@ -1489,7 +1498,9 @@ async function main() {
   console.info('\n✅ Database seeding completed successfully!')
   console.info('\n📊 Seed Summary:')
   console.info('   👥 5 Users (including 1 banned)')
-  console.info('   👔 7 Staff (1 admin, 2 cashiers, 2 coaches, 2 ballboys)')
+  console.info(
+    '   👔 9 Staff (1 admin, 1 admin coaching, 1 manager, 2 cashiers, 2 coaches, 2 ballboys)',
+  )
   console.info('   🎾 5 Courts (4 active, 1 inactive)')
   console.info('   🎯 5 Inventories')
   console.info('   💳 6 Payment Methods (including Cash)')
@@ -1508,6 +1519,7 @@ async function main() {
   console.info('\n🔑 Login Credentials:')
   console.info('   Users: john.smith@example.com | Password123!')
   console.info('   Admin: admin@centurypadel.id | Staff123!')
+  console.info('   Admin Coaching: coaching@centurypadel.id | Staff123!')
   console.info('   Cashier: cashier1@centurypadel.id | Staff123!')
   console.info('   Coach: andy.murray@centurypadel.id | Staff123!')
 }

@@ -144,7 +144,14 @@ const staffBaseSchema = z.object({
     .optional()
     .default(dayjs().format(DEFAULT_DATE_FORMAT)),
   role: z
-    .enum(['ADMIN', 'ADMIN_VIEWER', 'BALLBOY', 'COACH', 'CASHIER'] as const)
+    .enum([
+      'ADMIN',
+      'ADMIN_COACHING',
+      'ADMIN_VIEWER',
+      'BALLBOY',
+      'COACH',
+      'CASHIER',
+    ] as const)
     .default('ADMIN'),
   coachType: z.enum(['GUIDED_MATCH', 'COACH'] as const).optional(),
   isActive: z.coerce.boolean().optional(),
@@ -654,30 +661,31 @@ export const updatePromoCodeSchema = z
 export type UpdatePromoCodeSchema = z.infer<typeof updatePromoCodeSchema>
 
 // Checkout schema
-export const checkoutSchema = z.object({
-  bookingId: z.string().optional(), // Optional: for updating existing DRAFT booking
-  paymentMethodId: z.string().optional(),
-  useMembership: z.boolean().default(false),
-  courtSlots: z.array(z.string()).optional(), // Array of slot IDs for court bookings
-  coachSlots: z.array(z.string()).optional(), // Array of slot IDs for coach bookings
-  ballboySlots: z.array(z.string()).optional(), // Array of slot IDs for ballboy bookings
-  inventories: z
-    .array(
-      z.object({
-        inventoryId: z.string(),
-        quantity: z.number().min(1),
-      }),
-    )
-    .optional(),
-  promoCode: z
-    .string()
-    .min(3)
-    .max(50)
-    .regex(promoCodeRegex, {
-      message: 'Promo code must be alphanumeric without spaces',
-    })
-    .optional(),
-})
+export const checkoutSchema = z
+  .object({
+    bookingId: z.string().optional(), // Optional: for updating existing DRAFT booking
+    paymentMethodId: z.string().optional(),
+    useMembership: z.boolean().default(false),
+    courtSlots: z.array(z.string()).optional(), // Array of slot IDs for court bookings
+    coachSlots: z.array(z.string()).optional(), // Array of slot IDs for coach bookings
+    ballboySlots: z.array(z.string()).optional(), // Array of slot IDs for ballboy bookings
+    inventories: z
+      .array(
+        z.object({
+          inventoryId: z.string(),
+          quantity: z.number().min(1),
+        }),
+      )
+      .optional(),
+    promoCode: z
+      .string()
+      .min(3)
+      .max(50)
+      .regex(promoCodeRegex, {
+        message: 'Promo code must be alphanumeric without spaces',
+      })
+      .optional(),
+  })
 
 export type CheckoutSchema = z.infer<typeof checkoutSchema>
 
@@ -878,51 +886,53 @@ export const creditCardPaymentSchema = z.object({
 export type CreditCardPaymentSchema = z.infer<typeof creditCardPaymentSchema>
 
 // Update checkout schema to support credit card
-export const extendedCheckoutSchema = z.object({
-  bookingId: z.string().optional(),
-  paymentMethodId: z.string().optional(),
-  useMembership: z.boolean().default(false),
-  courtSlots: z.array(z.string()).optional(),
-  coachSlots: z.array(z.string()).optional(),
-  ballboySlots: z.array(z.string()).optional(),
-  inventories: z
-    .array(
-      z.object({
-        inventoryId: z.string(),
-        quantity: z.number().min(1),
-      }),
-    )
-    .optional(),
-  promoCode: z
-    .string()
-    .min(3)
-    .max(50)
-    .regex(promoCodeRegex, {
-      message: 'Promo code must be alphanumeric without spaces',
-    })
-    .optional(),
-  // Credit card specific fields
-  cardPayment: creditCardPaymentSchema.optional(),
-})
+export const extendedCheckoutSchema = z
+  .object({
+    bookingId: z.string().optional(),
+    paymentMethodId: z.string().optional(),
+    useMembership: z.boolean().default(false),
+    courtSlots: z.array(z.string()).optional(),
+    coachSlots: z.array(z.string()).optional(),
+    ballboySlots: z.array(z.string()).optional(),
+    inventories: z
+      .array(
+        z.object({
+          inventoryId: z.string(),
+          quantity: z.number().min(1),
+        }),
+      )
+      .optional(),
+    promoCode: z
+      .string()
+      .min(3)
+      .max(50)
+      .regex(promoCodeRegex, {
+        message: 'Promo code must be alphanumeric without spaces',
+      })
+      .optional(),
+    // Credit card specific fields
+    cardPayment: creditCardPaymentSchema.optional(),
+  })
 
 export type ExtendedCheckoutSchema = z.infer<typeof extendedCheckoutSchema>
 
-export const applyPromoCodeSchema = z.object({
-  promoCode: z.string().min(3).max(50).regex(promoCodeRegex, {
-    message: 'Promo code must be alphanumeric without spaces',
-  }),
-  useMembership: z.boolean().default(false),
-  courtSlots: z.array(z.string()).optional(),
-  coachSlots: z.array(z.string()).optional(),
-  ballboySlots: z.array(z.string()).optional(),
-  inventories: z
-    .array(
-      z.object({
-        inventoryId: z.string(),
-        quantity: z.number().min(1),
-      }),
-    )
-    .optional(),
-})
+export const applyPromoCodeSchema = z
+  .object({
+    promoCode: z.string().min(3).max(50).regex(promoCodeRegex, {
+      message: 'Promo code must be alphanumeric without spaces',
+    }),
+    useMembership: z.boolean().default(false),
+    courtSlots: z.array(z.string()).optional(),
+    coachSlots: z.array(z.string()).optional(),
+    ballboySlots: z.array(z.string()).optional(),
+    inventories: z
+      .array(
+        z.object({
+          inventoryId: z.string(),
+          quantity: z.number().min(1),
+        }),
+      )
+      .optional(),
+  })
 
 export type ApplyPromoCodeSchema = z.infer<typeof applyPromoCodeSchema>

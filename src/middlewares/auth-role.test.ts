@@ -1,4 +1,7 @@
-import { isManagerRestrictedAnalyticsPath } from '@/middlewares/auth'
+import {
+  canGrantComplimentaryCredit,
+  isManagerRestrictedAnalyticsPath,
+} from '@/middlewares/auth'
 import { describe, expect, it } from 'vitest'
 
 describe('Manager analytics restrictions', () => {
@@ -17,4 +20,17 @@ describe('Manager analytics restrictions', () => {
   ])('allows %s', (path) => {
     expect(isManagerRestrictedAnalyticsPath(path)).toBe(false)
   })
+})
+
+describe('Complimentary credit grant roles', () => {
+  it.each(['ADMIN', 'ADMIN_COACHING'] as const)('allows %s', (role) => {
+    expect(canGrantComplimentaryCredit(role)).toBe(true)
+  })
+
+  it.each(['CASHIER', 'ADMIN_VIEWER', 'COACH', 'BALLBOY'] as const)(
+    'blocks %s',
+    (role) => {
+      expect(canGrantComplimentaryCredit(role)).toBe(false)
+    },
+  )
 })

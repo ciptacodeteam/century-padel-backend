@@ -657,8 +657,7 @@ export const checkoutHandler = factory.createHandlers(
 
             membershipToUse = {
               id: eligibleMembership.candidate.id,
-              remainingSessions:
-                eligibleMembership.candidate.remainingSessions,
+              remainingSessions: eligibleMembership.candidate.remainingSessions,
             }
             membershipHoursUsed = eligibleMembership.allocation.hours
             membershipCoveredSlotIds = eligibleMembership.allocation.slotIds
@@ -728,7 +727,6 @@ export const checkoutHandler = factory.createHandlers(
                 isExpired: remainingSessions === 0,
               },
             })
-
           }
         }
 
@@ -932,9 +930,7 @@ export const checkoutHandler = factory.createHandlers(
         // A fully membership-funded booking has no gateway or processing fee.
         const percentageFee =
           requiresPayment && paymentMethod
-            ? Math.round(
-                totalPrice * (Number(paymentMethod.percentage) / 100),
-              )
+            ? Math.round(totalPrice * (Number(paymentMethod.percentage) / 100))
             : 0
         const baseFee =
           requiresPayment && paymentMethod
@@ -1221,8 +1217,7 @@ export const checkoutHandler = factory.createHandlers(
                           channel_properties:
                             xenditInvoiceResponse.channel_properties,
                           actions: xenditInvoiceResponse.actions,
-                          request_amount:
-                            xenditInvoiceResponse.request_amount,
+                          request_amount: xenditInvoiceResponse.request_amount,
                           currency: xenditInvoiceResponse.currency,
                           created: xenditInvoiceResponse.created,
                         }

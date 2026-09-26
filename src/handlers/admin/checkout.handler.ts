@@ -6,17 +6,18 @@ import { getBookableSlotEndThreshold } from '@/lib/booking-slot-cutoff'
 import { ok } from '@/lib/response'
 import { generateInvoiceNumber, formatPhone } from '@/lib/utils'
 import { zValidator } from '@hono/zod-validator'
-import {
-  BookingStatus,
-  PaymentStatus,
-  SlotType,
-} from '@prisma/client'
+import { BookingStatus, PaymentStatus, SlotType } from '@prisma/client'
 import dayjs from 'dayjs'
 import status from 'http-status'
 import { z } from 'zod'
 import { hashPassword } from '@/lib/password'
 import { validateCoachSlots } from '@/services/coach-slot.service'
 import { allocateMembershipSlots } from '@/services/membership-eligibility.service'
+import {
+  consumeComplimentaryCredits,
+  getSlotDurationMinutes,
+  getTotalSlotDurationMinutes,
+} from '@/services/complimentary-credit.service'
 
 const adminCheckoutSchema = z
   .object({
@@ -27,6 +28,7 @@ const adminCheckoutSchema = z
     // Membership usage is intentionally restricted to client checkout.
     // Reject `true` here so the rule cannot be bypassed through the admin API.
     useMembership: z.literal(false).default(false),
+    useComplimentaryCredit: z.boolean().default(false),
     courtSlots: z.array(z.string()).optional(),
     coachSlots: z.array(z.string()).optional(),
     // Optional description for coach booking – e.g. names of up to 4 members
@@ -68,6 +70,7 @@ export const adminCheckoutHandler = factory.createHandlers(
       ballboySlots,
       inventories,
       useMembership,
+      useComplimentaryCredit,
     } = c.req.valid('json') as AdminCheckoutSchema
 
     // Get the admin (cashier) creating this booking
@@ -88,6 +91,11 @@ export const adminCheckoutHandler = factory.createHandlers(
           data: null,
         },
         status.BAD_REQUEST,
+      )
+    }
+    if (useComplimentaryCredit && (!courtSlots || courtSlots.length === 0)) {
+      throw new BadRequestException(
+        'Complimentary credit can only be used for court bookings',
       )
     }
 
@@ -213,6 +221,8 @@ export const adminCheckoutHandler = factory.createHandlers(
         let courtNormalPrice = 0
         let courtDiscountPrice = 0
         let courtCostCoveredByMembership = 0 // Track court costs covered by membership
+        let complimentaryCreditMinutes = 0
+        let complimentaryCreditValue = 0
         const bookedItems = {
           courtSlots: [] as string[],
           coachSlots: [] as string[],
@@ -249,6 +259,16 @@ export const adminCheckoutHandler = factory.createHandlers(
               'One or more court slots not found or unavailable',
             )
           }
+
+          if (useComplimentaryCredit) {
+            complimentaryCreditMinutes = getTotalSlotDurationMinutes(slotData)
+            await consumeComplimentaryCredits(tx, {
+              userId: resolvedUserId!,
+              bookingId: booking.id,
+              requiredMinutes: complimentaryCreditMinutes,
+              staffId: cashierId,
+            })
+          }
           for (const slot of slotData) {
             if (slot.bookingDetails.length > 0) {
               throw new BadRequestException(
@@ -268,9 +288,12 @@ export const adminCheckoutHandler = factory.createHandlers(
             // but still track the original price
             const coveredByMembership =
               activeMembership?.coveredSlotIds.has(slot.id) ?? false
+            const coveredByComplimentaryCredit = useComplimentaryCredit
             if (coveredByMembership) {
               courtCostCoveredByMembership += normalPrice
               // Don't add to totalPrice - membership covers it
+            } else if (coveredByComplimentaryCredit) {
+              complimentaryCreditValue += discountedPrice
             } else {
               totalPrice += discountedPrice
             }
@@ -285,6 +308,9 @@ export const adminCheckoutHandler = factory.createHandlers(
                 membershipUserId: coveredByMembership
                   ? activeMembership?.id
                   : undefined,
+                complimentaryCreditMinutes: coveredByComplimentaryCredit
+                  ? getSlotDurationMinutes(slot)
+                  : 0,
               },
             })
             bookedItems.courtSlots.push(slot.id)
@@ -481,6 +507,8 @@ export const adminCheckoutHandler = factory.createHandlers(
             processingFee,
             courtNormalPrice,
             courtDiscountPrice,
+            complimentaryCreditMinutes,
+            complimentaryCreditValue,
           },
         })
 

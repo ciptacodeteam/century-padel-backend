@@ -119,6 +119,29 @@ export const requireAdminWriteAccess: MiddlewareHandler = async (c, next) => {
   return next()
 }
 
+// Complimentary credit can be granted by the owner admin or the dedicated
+// coaching admin. Revocation remains restricted to ADMIN.
+export function canGrantComplimentaryCredit(role: Role): boolean {
+  return role === 'ADMIN' || role === 'ADMIN_COACHING'
+}
+
+export const requireComplimentaryCreditGrantAccess: MiddlewareHandler = async (
+  c,
+  next,
+) => {
+  const admin = c.get('admin')
+
+  if (!admin) {
+    throw new UnauthorizedException()
+  }
+
+  if (!canGrantComplimentaryCredit(admin.role)) {
+    throw new ForbiddenException('Complimentary credit grant access required')
+  }
+
+  return next()
+}
+
 const managerRestrictedAnalyticsPaths = [
   '/admin/analytics/income-by-source',
   '/admin/analytics/payment-methods',

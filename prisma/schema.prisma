@@ -16,6 +16,7 @@ datasource db {
 // ------------------------------
 enum Role {
   ADMIN
+  ADMIN_COACHING
   ADMIN_VIEWER
   BALLBOY
   COACH
@@ -83,6 +84,20 @@ enum MembershipType {
   HAPPY_HOUR
 }
 
+enum ComplimentaryCreditPurpose {
+  TRIAL
+  COACHING
+  GOODWILL
+  OTHER
+}
+
+enum ComplimentaryCreditTransactionType {
+  GRANT
+  REDEEM
+  REFUND
+  REVOKE
+}
+
 // ------------------------------
 // Notifications
 // ------------------------------
@@ -122,17 +137,18 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now()) @updatedAt
 
-  authTokens          AuthToken[]
-  bookings            Booking[]
-  membershipUser      MembershipUser[]
-  classBookings       ClassBooking[]
-  clubsLed            Club[]               @relation("ClubLeader")
-  clubMember          ClubMember[]
-  clubJoinRequest     ClubJoinRequest[]
-  invoice             Invoice[]
-  passwordResetTokens PasswordResetToken[]
-  notifications       Notification[]
-  creditCards         UserCreditCard[]
+  authTokens           AuthToken[]
+  bookings             Booking[]
+  membershipUser       MembershipUser[]
+  classBookings        ClassBooking[]
+  clubsLed             Club[]                @relation("ClubLeader")
+  clubMember           ClubMember[]
+  clubJoinRequest      ClubJoinRequest[]
+  invoice              Invoice[]
+  passwordResetTokens  PasswordResetToken[]
+  notifications        Notification[]
+  creditCards          UserCreditCard[]
+  complimentaryCredits ComplimentaryCredit[]
 
   @@map("user")
 }
@@ -180,11 +196,13 @@ model Staff {
   createdAt DateTime   @default(now())
   updatedAt DateTime   @default(now()) @updatedAt
 
-  authTokens          AuthToken[]
+  authTokens                      AuthToken[]
   // Derived schedules now use Slot (see below) instead of separate tables
-  slot                Slot[]
-  coachTypeStaffPrice CoachTypeStaffPrice[]
-  bookingCashier      Booking[]
+  slot                            Slot[]
+  coachTypeStaffPrice             CoachTypeStaffPrice[]
+  bookingCashier                  Booking[]
+  complimentaryCreditsGranted     ComplimentaryCredit[]            @relation("ComplimentaryCreditGrantedBy")
+  complimentaryCreditTransactions ComplimentaryCreditTransaction[]
 
   @@index([isActive, role])
   @@map("staff")
@@ -433,32 +451,36 @@ model Invoice {
 // Booking (Courts + optional add-ons)
 // ------------------------------
 model Booking {
-  id                  String        @id @default(cuid())
-  userId              String
-  status              BookingStatus @default(HOLD)
-  totalPrice          Int           @default(0) @db.Integer
-  processingFee       Int           @default(0) @db.Integer
-  courtNormalPrice    Int           @default(0) @db.Integer
-  courtDiscountPrice  Int           @default(0) @db.Integer
-  promoCodeId         String?
-  promoCodeText       String?
-  promoDiscountAmount Int           @default(0) @db.Integer
-  createdAt           DateTime      @default(now())
-  updatedAt           DateTime      @default(now()) @updatedAt
-  holdExpiresAt       DateTime? // for HOLD; auto-release slots when passed
-  cancelledAt         DateTime?
-  cancellationReason  String?
+  id                            String        @id @default(cuid())
+  userId                        String
+  status                        BookingStatus @default(HOLD)
+  totalPrice                    Int           @default(0) @db.Integer
+  processingFee                 Int           @default(0) @db.Integer
+  courtNormalPrice              Int           @default(0) @db.Integer
+  courtDiscountPrice            Int           @default(0) @db.Integer
+  promoCodeId                   String?
+  promoCodeText                 String?
+  promoDiscountAmount           Int           @default(0) @db.Integer
+  complimentaryCreditMinutes    Int           @default(0)
+  complimentaryCreditValue      Int           @default(0) @db.Integer
+  complimentaryCreditRestoredAt DateTime?
+  createdAt                     DateTime      @default(now())
+  updatedAt                     DateTime      @default(now()) @updatedAt
+  holdExpiresAt                 DateTime? // for HOLD; auto-release slots when passed
+  cancelledAt                   DateTime?
+  cancellationReason            String?
 
   cashierId String? // cashier who handled the payment
 
-  user        User               @relation(fields: [userId], references: [id])
-  cashier     Staff?             @relation(fields: [cashierId], references: [id])
-  promoCode   PromoCode?         @relation(fields: [promoCodeId], references: [id])
-  details     BookingDetail[]
-  inventories BookingInventory[]
-  ballboys    BookingBallboy[]
-  coaches     BookingCoach[]
-  invoice     Invoice?
+  user                            User                             @relation(fields: [userId], references: [id])
+  cashier                         Staff?                           @relation(fields: [cashierId], references: [id])
+  promoCode                       PromoCode?                       @relation(fields: [promoCodeId], references: [id])
+  details                         BookingDetail[]
+  inventories                     BookingInventory[]
+  ballboys                        BookingBallboy[]
+  coaches                         BookingCoach[]
+  invoice                         Invoice?
+  complimentaryCreditTransactions ComplimentaryCreditTransaction[]
 
   @@index([userId, status, createdAt])
   @@index([promoCodeId])
@@ -480,24 +502,65 @@ model Booking {
  */
 
 model BookingDetail {
-  id            String @id @default(cuid())
-  bookingId     String
-  slotId        String // COURT slot
-  price         Int    @db.Integer
-  discountPrice Int    @default(0) @db.Integer
+  id                         String @id @default(cuid())
+  bookingId                  String
+  slotId                     String // COURT slot
+  price                      Int    @db.Integer
+  discountPrice              Int    @default(0) @db.Integer
+  complimentaryCreditMinutes Int    @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now()) @updatedAt
 
-  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  slot    Slot    @relation(fields: [slotId], references: [id])
-  court   Court?  @relation(fields: [courtId], references: [id])
-  courtId String?
+  booking          Booking         @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  slot             Slot            @relation(fields: [slotId], references: [id])
+  court            Court?          @relation(fields: [courtId], references: [id])
+  courtId          String?
   membershipUserId String?
   membershipUser   MembershipUser? @relation(fields: [membershipUserId], references: [id])
 
   @@index([membershipUserId])
   @@map("booking_details")
+}
+
+model ComplimentaryCredit {
+  id               String                     @id @default(cuid())
+  userId           String
+  purpose          ComplimentaryCreditPurpose
+  grantedMinutes   Int
+  remainingMinutes Int
+  expiresAt        DateTime?
+  note             String?
+  isActive         Boolean                    @default(true)
+  grantedById      String
+  createdAt        DateTime                   @default(now())
+  updatedAt        DateTime                   @default(now()) @updatedAt
+
+  user         User                             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  grantedBy    Staff                            @relation("ComplimentaryCreditGrantedBy", fields: [grantedById], references: [id])
+  transactions ComplimentaryCreditTransaction[]
+
+  @@index([userId, isActive, expiresAt])
+  @@map("complimentary_credits")
+}
+
+model ComplimentaryCreditTransaction {
+  id        String                             @id @default(cuid())
+  creditId  String
+  bookingId String?
+  type      ComplimentaryCreditTransactionType
+  minutes   Int
+  note      String?
+  staffId   String?
+  createdAt DateTime                           @default(now())
+
+  credit  ComplimentaryCredit @relation(fields: [creditId], references: [id], onDelete: Cascade)
+  booking Booking?            @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  staff   Staff?              @relation(fields: [staffId], references: [id], onDelete: SetNull)
+
+  @@index([creditId, createdAt])
+  @@index([bookingId, type])
+  @@map("complimentary_credit_transactions")
 }
 
 model BookingInventory {

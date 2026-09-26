@@ -1,5 +1,6 @@
 import { Queue, Worker } from 'bullmq'
 import { db } from '@/lib/prisma'
+import { restoreComplimentaryCreditsForBooking } from '@/services/complimentary-credit.service'
 import { BookingStatus, PaymentStatus } from '@prisma/client'
 import { log } from '@/lib/logger'
 import { getRedisConnection } from '@/lib/redis'
@@ -128,6 +129,10 @@ export async function checkExpiredTransactions() {
 
           // Update booking status to CANCELLED if exists and restore inventory
           if (payment.invoice.booking) {
+            await restoreComplimentaryCreditsForBooking(
+              tx,
+              payment.invoice.booking.id,
+            )
             // Restore inventory quantities (they were decremented during checkout)
             const bookingInventories = await tx.bookingInventory.findMany({
               where: { bookingId: payment.invoice.booking.id },
@@ -257,6 +262,7 @@ export async function checkExpiredTransactions() {
         }
 
         // Update booking status to CANCELLED
+        await restoreComplimentaryCreditsForBooking(tx, booking.id)
         await tx.booking.update({
           where: { id: booking.id },
           data: {

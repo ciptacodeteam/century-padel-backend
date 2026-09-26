@@ -24,6 +24,7 @@ import {
   adjustMembershipHoursForReschedule,
   restoreMembershipHoursForBooking,
 } from '@/services/membership-hours.service'
+import { restoreComplimentaryCreditsForBooking } from '@/services/complimentary-credit.service'
 
 // GET /admin/booked-courts
 // Get all booked courts with comprehensive booking information
@@ -784,6 +785,12 @@ export const cancelBookingHandler = factory.createHandlers(
           tx,
           booking,
         )
+        const restoredComplimentaryCreditMinutes =
+          await restoreComplimentaryCreditsForBooking(
+            tx,
+            booking.id,
+            c.get('admin')?.id,
+          )
 
         // 3. Update booking status to CANCELLED
         const updatedBooking = await tx.booking.update({
@@ -859,7 +866,12 @@ export const cancelBookingHandler = factory.createHandlers(
           }
         }
 
-        return { updatedBooking, releasedCounts, restoredMembershipHours }
+        return {
+          updatedBooking,
+          releasedCounts,
+          restoredMembershipHours,
+          restoredComplimentaryCreditMinutes,
+        }
       })
 
       // Fetch the updated booking with all details for response
@@ -913,6 +925,8 @@ export const cancelBookingHandler = factory.createHandlers(
             },
             restoredInventories: result.releasedCounts.inventories,
             restoredMembershipHours: result.restoredMembershipHours,
+            restoredComplimentaryCreditMinutes:
+              result.restoredComplimentaryCreditMinutes,
           },
           'Booking cancelled successfully. All related records have been updated.',
         ),
@@ -997,6 +1011,18 @@ export const rescheduleCourtBookingHandler = factory.createHandlers(
 
         if (dayjs(newSlot.startAt).isBefore(dayjs())) {
           throw new BadRequestException('Selected slot time has already passed')
+        }
+
+        if (bookingDetail.complimentaryCreditMinutes > 0) {
+          const newDurationMinutes = dayjs(newSlot.endAt).diff(
+            dayjs(newSlot.startAt),
+            'minute',
+          )
+          if (newDurationMinutes !== bookingDetail.complimentaryCreditMinutes) {
+            throw new BadRequestException(
+              'Complimentary-credit bookings can only be moved to a slot with the same duration',
+            )
+          }
         }
 
         const membershipHourDifference =
@@ -1103,6 +1129,8 @@ export const rescheduleCourtBookingHandler = factory.createHandlers(
           data: {
             slotId: newSlot.id,
             price: newSlot.price,
+            discountPrice:
+              newSlot.discountPrice > 0 ? newSlot.discountPrice : newSlot.price,
             courtId: newSlot.courtId,
           },
           include: {
@@ -1131,7 +1159,8 @@ export const rescheduleCourtBookingHandler = factory.createHandlers(
         }
 
         const priceDifference =
-          bookingDetail.booking.courtNormalPrice === 0
+          bookingDetail.booking.courtNormalPrice === 0 ||
+          bookingDetail.complimentaryCreditMinutes > 0
             ? 0
             : newSlot.price - bookingDetail.price
         let updatedBooking =
@@ -1171,6 +1200,30 @@ export const rescheduleCourtBookingHandler = factory.createHandlers(
               },
             })
           }
+        }
+
+        if (bookingDetail.complimentaryCreditMinutes > 0) {
+          const previousValue =
+            bookingDetail.discountPrice > 0
+              ? bookingDetail.discountPrice
+              : bookingDetail.price
+          const newValue =
+            newSlot.discountPrice > 0 ? newSlot.discountPrice : newSlot.price
+          updatedBooking = (await tx.booking.update({
+            where: { id: bookingDetail.bookingId },
+            data: {
+              courtNormalPrice: {
+                increment: newSlot.price - bookingDetail.price,
+              },
+              complimentaryCreditValue: {
+                increment: newValue - previousValue,
+              },
+            },
+            include: {
+              invoice: true,
+              coaches: { include: { slot: true } },
+            },
+          })) as typeof updatedBooking
         }
 
         return {

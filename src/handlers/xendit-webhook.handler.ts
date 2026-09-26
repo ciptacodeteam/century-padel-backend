@@ -15,6 +15,7 @@ import {
 import { notificationService } from '@/services/notification.service'
 import { queueSendTemplatedEmail } from '@/services/email.service'
 import { env } from '@/env'
+import { restoreComplimentaryCreditsForBooking } from '@/services/complimentary-credit.service'
 
 interface XenditWebhookPayload {
   id: string
@@ -261,6 +262,9 @@ async function handlePaymentWebhookV3(c: any, webhook: XenditPaymentWebhook) {
           cancelledAt: new Date(),
         },
       })
+      await db.$transaction((tx) =>
+        restoreComplimentaryCreditsForBooking(tx, invoice.bookingId!),
+      )
       c.var.logger.info(
         `Booking cancelled due to payment failure: ${invoice.bookingId}`,
       )
@@ -557,6 +561,7 @@ async function handlePaymentSessionWebhook(
         }
 
         // Cancel booking
+        await restoreComplimentaryCreditsForBooking(tx, booking.id)
         await tx.booking.update({
           where: { id: booking.id },
           data: {
@@ -739,6 +744,9 @@ async function handleInvoiceWebhookV2(c: any, payload: XenditWebhookPayload) {
           cancelledAt: new Date(),
         },
       })
+      await db.$transaction((tx) =>
+        restoreComplimentaryCreditsForBooking(tx, invoice.bookingId!),
+      )
       c.var.logger.info(
         `Booking cancelled due to expired payment: ${invoice.bookingId}`,
       )
@@ -1146,6 +1154,9 @@ export const xenditPaymentRequestWebhookHandler = factory.createHandlers(
             where: { id: invoice.bookingId },
             data: { status: BookingStatus.CANCELLED },
           })
+          await db.$transaction((tx) =>
+            restoreComplimentaryCreditsForBooking(tx, invoice.bookingId!),
+          )
           c.var.logger.warn(`Booking cancelled: ${invoice.bookingId}`)
         }
 
