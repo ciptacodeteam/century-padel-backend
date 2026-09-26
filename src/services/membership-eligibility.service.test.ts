@@ -7,7 +7,8 @@ import {
 
 const slotAtJakartaTime = (hour: number, minute = 0) => ({
   startAt: new Date(
-    `2026-09-24T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00+07:00`,
+    // Slot records preserve the Jakarta wall-clock components in UTC.
+    `2026-09-24T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00Z`,
   ),
 })
 
@@ -54,12 +55,12 @@ describe('partial membership allocation', () => {
       {
         id: 'happy',
         ...slotAtJakartaTime(15),
-        endAt: new Date('2026-09-24T16:00:00+07:00'),
+        endAt: new Date('2026-09-24T16:00:00Z'),
       },
       {
         id: 'peak',
         ...slotAtJakartaTime(16),
-        endAt: new Date('2026-09-24T17:00:00+07:00'),
+        endAt: new Date('2026-09-24T17:00:00Z'),
       },
     ])
 

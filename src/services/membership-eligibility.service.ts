@@ -1,11 +1,8 @@
-import { JAKARTA_TZ } from '@/config'
 import { MembershipType, type Slot } from '@prisma/client'
 import dayjs from 'dayjs'
-import timezone from 'dayjs/plugin/timezone.js'
 import utc from 'dayjs/plugin/utc.js'
 
 dayjs.extend(utc)
-dayjs.extend(timezone)
 
 export const HAPPY_HOUR_START = 6
 export const PEAK_HOUR_START = 16
@@ -14,7 +11,11 @@ type MembershipEligibleSlot = Pick<Slot, 'startAt'>
 type AllocatableSlot = Pick<Slot, 'id' | 'startAt' | 'endAt'>
 
 export function isHappyHourSlot(slot: MembershipEligibleSlot): boolean {
-  const hour = dayjs(slot.startAt).tz(JAKARTA_TZ).hour()
+  // Court schedules are persisted as wall-clock values in UTC (for example,
+  // the 15:00 local slot is stored as 15:00Z) and returned by the API without
+  // timezone conversion. Read the stored clock hour directly; converting it to
+  // Asia/Jakarta here would turn 15:00 into 22:00 and reject a valid slot.
+  const hour = dayjs.utc(slot.startAt).hour()
   return hour >= HAPPY_HOUR_START && hour < PEAK_HOUR_START
 }
 
