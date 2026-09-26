@@ -4,6 +4,11 @@ import { validateHook } from '@/helpers/validate-hook'
 import { factory } from '@/lib/create-app'
 import { db } from '@/lib/prisma'
 import { getBookableSlotEndThreshold } from '@/lib/booking-slot-cutoff'
+import {
+  heldBookingDetailsInclude,
+  openOrHeldCourtSlotWhere,
+  withSlotBookingStatus,
+} from '@/lib/court-slot-availability'
 import buildFindManyOptions from '@/lib/query'
 import { ok } from '@/lib/response'
 import {
@@ -203,18 +208,9 @@ export const getCourtSlotsHandler = factory.createHandlers(
       const where: any = {
         type: SlotType.COURT,
         courtId,
-        isAvailable: true,
         price: { gt: 0 },
         endAt: { gt: getBookableSlotEndThreshold() },
-        bookingDetails: {
-          none: {
-            booking: {
-              status: {
-                not: BookingStatus.CANCELLED,
-              },
-            },
-          },
-        }, // Slot has no active bookings
+        AND: [openOrHeldCourtSlotWhere()],
       }
 
       // Add date range filter if provided
@@ -224,7 +220,7 @@ export const getCourtSlotsHandler = factory.createHandlers(
 
         // Find slots that overlap with the requested time range
         // A slot overlaps if: slot.startAt < query.endAt AND slot.endAt > query.startAt
-        where.AND = [
+        where.AND.push(
           {
             startAt: {
               lt: endAt,
@@ -235,7 +231,7 @@ export const getCourtSlotsHandler = factory.createHandlers(
               gt: startAt,
             },
           },
-        ]
+        )
       }
 
       await applyScheduleVisibilityToSlotWhere(c, where)
@@ -246,11 +242,14 @@ export const getCourtSlotsHandler = factory.createHandlers(
         orderBy: {
           startAt: 'asc',
         },
+        include: {
+          bookingDetails: heldBookingDetailsInclude,
+        },
       })
 
       // Format datetime fields
       const formattedSlots = slots.map((slot) => ({
-        ...slot,
+        ...withSlotBookingStatus(slot),
         normalPrice: slot.price,
         discountPrice: slot.discountPrice,
         startAt: dayjs(slot.startAt).format(DATETIME_FORMAT),
@@ -258,7 +257,6 @@ export const getCourtSlotsHandler = factory.createHandlers(
         createdAt: dayjs(slot.createdAt).format(DATETIME_FORMAT),
         updatedAt: dayjs(slot.updatedAt).format(DATETIME_FORMAT),
       }))
-      console.log(formattedSlots)
 
       return c.json(ok(formattedSlots), status.OK)
     } catch (error) {
@@ -278,18 +276,9 @@ export const getAvailableCourtSlotsHandler = factory.createHandlers(
 
       const where: any = {
         type: SlotType.COURT,
-        isAvailable: true,
         price: { gt: 0 },
         endAt: { gt: getBookableSlotEndThreshold() },
-        bookingDetails: {
-          none: {
-            booking: {
-              status: {
-                not: BookingStatus.CANCELLED,
-              },
-            },
-          },
-        },
+        AND: [openOrHeldCourtSlotWhere()],
         court: {
           isActive: true,
         },
@@ -303,7 +292,7 @@ export const getAvailableCourtSlotsHandler = factory.createHandlers(
         const startAt = dayjs(query.startAt).startOf('day').toDate()
         const endAt = dayjs(query.endAt).endOf('day').toDate()
 
-        where.AND = [
+        where.AND.push(
           {
             startAt: {
               lt: endAt,
@@ -314,7 +303,7 @@ export const getAvailableCourtSlotsHandler = factory.createHandlers(
               gt: startAt,
             },
           },
-        ]
+        )
       }
 
       await applyScheduleVisibilityToSlotWhere(c, where)
@@ -326,6 +315,7 @@ export const getAvailableCourtSlotsHandler = factory.createHandlers(
         },
         include: {
           court: true,
+          bookingDetails: heldBookingDetailsInclude,
         },
       })
 
@@ -337,7 +327,7 @@ export const getAvailableCourtSlotsHandler = factory.createHandlers(
       }
 
       const formattedSlots = slots.map((slot) => ({
-        ...slot,
+        ...withSlotBookingStatus(slot),
         normalPrice: slot.price,
         discountPrice: slot.discountPrice,
         startAt: dayjs(slot.startAt).format(DATETIME_FORMAT),

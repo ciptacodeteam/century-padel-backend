@@ -1,3 +1,4 @@
+import { BOOKING_PAYMENT_MINUTES } from '@/constants'
 import { env } from '@/env'
 import { BadRequestException, NotFoundException } from '@/exceptions'
 import { validateHook } from '@/helpers/validate-hook'
@@ -967,6 +968,7 @@ export const checkoutHandler = factory.createHandlers(
 
         // Generate invoice number
         const invoiceNumber = await generateInvoiceNumber()
+        const paymentDeadline = dayjs().add(BOOKING_PAYMENT_MINUTES, 'minute')
 
         // Create invoice
         const invoice = await tx.invoice.create({
@@ -985,7 +987,7 @@ export const checkoutHandler = factory.createHandlers(
               : PaymentStatus.PENDING,
             dueDate: completedWithoutPayment
               ? new Date()
-              : dayjs().add(15, 'minutes').toDate(),
+              : paymentDeadline.toDate(),
             paidAt: completedWithoutPayment ? new Date() : undefined,
             issuedAt: new Date(),
           },
@@ -1039,7 +1041,7 @@ export const checkoutHandler = factory.createHandlers(
               channel_properties: {
                 account_number: '8808123456789012',
                 account_name: 'CENTURY PADEL MOCK',
-                expires_at: dayjs().add(15, 'minutes').toISOString(),
+                expires_at: paymentDeadline.toISOString(),
               },
               actions:
                 channelCode === 'QRIS'
@@ -1056,7 +1058,7 @@ export const checkoutHandler = factory.createHandlers(
                         type: 'VIRTUAL_ACCOUNT',
                         value: '8808123456789012',
                         display_name: paymentMethod.name,
-                        expiry: dayjs().add(15, 'minutes').toISOString(),
+                        expiry: paymentDeadline.toISOString(),
                       },
                     ],
               request_amount: finalTotal,
@@ -1093,12 +1095,12 @@ export const checkoutHandler = factory.createHandlers(
                 )
               } else if (isVirtualAccountChannel(channelCode)) {
                 channelProperties = {
-                  expires_at: dayjs().add(15, 'minutes').toISOString(),
+                  expires_at: paymentDeadline.toISOString(),
                   display_name: userDetails?.name || 'Customer',
                 }
               } else if (channelCode === 'QRIS' || channelCode === 'QR') {
                 channelProperties = {
-                  expires_at: dayjs().add(15, 'minutes').toISOString(),
+                  expires_at: paymentDeadline.toISOString(),
                 }
               } else if (
                 channelCode.includes('EWALLET') ||
@@ -1112,7 +1114,7 @@ export const checkoutHandler = factory.createHandlers(
                 }
               } else {
                 channelProperties = {
-                  expires_at: dayjs().add(15, 'minutes').toISOString(),
+                  expires_at: paymentDeadline.toISOString(),
                 }
               }
 
@@ -1191,7 +1193,7 @@ export const checkoutHandler = factory.createHandlers(
                   amount: finalTotal,
                   fees: paymentMethod.fees,
                   status: PaymentStatus.PENDING,
-                  dueDate: dayjs().add(15, 'minutes').toDate(),
+                  dueDate: paymentDeadline.toDate(),
                   externalRef:
                     xenditInvoiceResponse?.id ||
                     xenditInvoiceResponse?.payment_session_id ||
@@ -1245,7 +1247,7 @@ export const checkoutHandler = factory.createHandlers(
 
         const holdExpiresAt = completedWithoutPayment
           ? null
-          : dayjs().add(15, 'minutes').toDate()
+          : paymentDeadline.toDate()
 
         const finalizedBooking = await tx.booking.update({
           where: { id: booking.id },

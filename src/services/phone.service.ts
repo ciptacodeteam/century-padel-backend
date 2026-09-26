@@ -25,30 +25,53 @@ if (
 const SEND_OTP_URL = `${FAZPASS_API_URL}/otp/send`
 const VERIFY_OTP_URL = `${FAZPASS_API_URL}/otp/verify`
 
+// Fazpass channel name for official WhatsApp. "WhatsApp Long Number" is a different channel.
+const OFFICIAL_WHATSAPP_CHANNEL = 'whatsapp'
+
+function isOfficialWhatsAppChannel(channel: string | null | undefined) {
+  return channel?.trim().toLowerCase() === OFFICIAL_WHATSAPP_CHANNEL
+}
+
+async function postSendOtp(payload: Record<string, string>) {
+  const response = await axios.post(SEND_OTP_URL, payload, {
+    headers: {
+      authorization: `Bearer ${FAZPASS_MERCHANT_KEY}`,
+      'content-type': 'application/json',
+    },
+    timeout: 10_000,
+  })
+
+  if (response.data?.status !== true || !response.data?.data?.id) {
+    log.error(`Fazpass rejected OTP delivery: ${response.data?.message}`)
+    throw new Error(response.data?.message || 'Failed to send OTP')
+  }
+
+  return SendOTPResponse.fromJson(response.data)
+}
+
 export async function sendPhoneOtp(
   phone: string,
   otp: string,
 ): Promise<string> {
   try {
     const payload = new SendOTPPayload(phone, otp, FAZPASS_GATEWAY_KEY).toJson()
+    const first = await postSendOtp(payload)
+    const channel = first.getData().channel
 
-    const response = await axios.post(SEND_OTP_URL, payload, {
-      headers: {
-        authorization: `Bearer ${FAZPASS_MERCHANT_KEY}`,
-        'content-type': 'application/json',
-      },
-      timeout: 10_000,
-    })
-
-    if (response.data?.status !== true || !response.data?.data?.id) {
-      log.error(`Fazpass rejected OTP delivery: ${response.data?.message}`)
-      throw new Error(response.data?.message || 'Failed to send OTP')
+    // Official WhatsApp: a new number's first call only checks that WhatsApp
+    // exists, and Fazpass still returns success. The OTP is sent on the next
+    // call to the same endpoint. SMS and WhatsApp Long Number deliver on the first call.
+    if (!isOfficialWhatsAppChannel(channel)) {
+      log.info(`OTP sent channel=${channel} requestId=${first.getId()}`)
+      return first.getId()
     }
 
-    const responseData = SendOTPResponse.fromJson(response.data)
-    log.info(`OTP Generation Response: ${responseData}`)
+    const second = await postSendOtp(payload)
+    log.info(
+      `OTP sent channel=${channel} probeRequestId=${first.getId()} requestId=${second.getId()}`,
+    )
 
-    return responseData.getId()
+    return second.getId()
   } catch (error) {
     log.error(`Error sending OTP: ${error}`)
     throw error

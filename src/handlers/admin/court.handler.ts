@@ -5,6 +5,11 @@ import { validateHook } from '@/helpers/validate-hook'
 import { factory } from '@/lib/create-app'
 import { db } from '@/lib/prisma'
 import { getBookableSlotEndThreshold } from '@/lib/booking-slot-cutoff'
+import {
+  heldBookingDetailsInclude,
+  openOrHeldCourtSlotWhere,
+  withSlotBookingStatus,
+} from '@/lib/court-slot-availability'
 import buildFindManyOptions from '@/lib/query'
 import { ok } from '@/lib/response'
 import {
@@ -254,18 +259,9 @@ export const getAvailableCourtSlotsHandler = factory.createHandlers(
 
       const where: any = {
         type: SlotType.COURT,
-        isAvailable: true,
         price: { gt: 0 },
         endAt: { gt: getBookableSlotEndThreshold() },
-        bookingDetails: {
-          none: {
-            booking: {
-              status: {
-                not: BookingStatus.CANCELLED,
-              },
-            },
-          },
-        },
+        AND: [openOrHeldCourtSlotWhere()],
         court: {
           isActive: true,
         },
@@ -279,7 +275,7 @@ export const getAvailableCourtSlotsHandler = factory.createHandlers(
         const startAt = dayjs(query.startAt).startOf('day').toDate()
         const endAt = dayjs(query.endAt).endOf('day').toDate()
 
-        where.AND = [
+        where.AND.push(
           {
             startAt: {
               lt: endAt,
@@ -290,7 +286,7 @@ export const getAvailableCourtSlotsHandler = factory.createHandlers(
               gt: startAt,
             },
           },
-        ]
+        )
       }
 
       const slots = await db.slot.findMany({
@@ -300,6 +296,7 @@ export const getAvailableCourtSlotsHandler = factory.createHandlers(
         },
         include: {
           court: true,
+          bookingDetails: heldBookingDetailsInclude,
         },
       })
 
@@ -311,7 +308,7 @@ export const getAvailableCourtSlotsHandler = factory.createHandlers(
       }
 
       const formattedSlots = slots.map((slot) => ({
-        ...slot,
+        ...withSlotBookingStatus(slot),
         normalPrice: slot.price,
         discountPrice: slot.discountPrice,
         startAt: dayjs(slot.startAt).format(DATETIME_FORMAT),
