@@ -16,8 +16,8 @@ import {
 } from '@/handlers/complimentary-credit.handler'
 import { createRouter } from '@/lib/create-app'
 import {
-  requireAdminWriteAccess,
   requireComplimentaryCreditGrantAccess,
+  requireComplimentaryCreditRevokeAccess,
 } from '@/middlewares/auth'
 
 const adminUserRoute = createRouter()
@@ -35,7 +35,7 @@ const adminUserRoute = createRouter()
   )
   .post(
     '/:id/complimentary-credits/:creditId/revoke',
-    requireAdminWriteAccess,
+    requireComplimentaryCreditRevokeAccess,
     ...revokeComplimentaryCreditHandler,
   )
   .put('/:id', ...updateUserHandler)
