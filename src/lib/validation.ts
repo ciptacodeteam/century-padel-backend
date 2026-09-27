@@ -52,6 +52,7 @@ export const registerSchema = phoneSchema
   .extend({
     firstName: z.string().trim().min(1).max(50),
     lastName: z.string().trim().min(1).max(50),
+    email: z.string().trim().email().min(5).max(100),
     code: z.string().length(OTP_LENGTH),
     requestId: z.string().min(1),
     password: z.string().min(6).max(100),

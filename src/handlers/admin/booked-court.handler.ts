@@ -25,6 +25,8 @@ import {
   restoreMembershipHoursForBooking,
 } from '@/services/membership-hours.service'
 import { restoreComplimentaryCreditsForBooking } from '@/services/complimentary-credit.service'
+import { env } from '@/env'
+import { queueSendTemplatedEmail } from '@/services/email.service'
 import { createBookingCancellationNotification } from '@/services/notification.service'
 
 // GET /admin/booked-courts
@@ -932,6 +934,35 @@ export const cancelBookingHandler = factory.createHandlers(
           },
         },
       })
+
+      if (cancelledBooking?.user.email) {
+        try {
+          const invoiceUrl = cancelledBooking.invoice
+            ? `${env.frontEndUrl.replace(/\/$/, '')}/invoice/${cancelledBooking.invoice.number}`
+            : undefined
+          await queueSendTemplatedEmail(
+            cancelledBooking.user.email,
+            'bookingCancelled',
+            {
+              name: cancelledBooking.user.name || 'there',
+              invoiceNumber: cancelledBooking.invoice?.number,
+              cancelledAt: cancelledBooking.cancelledAt?.toISOString(),
+              reason: cancelledBooking.cancellationReason,
+              invoiceUrl,
+              items: cancelledBooking.details.map((detail) => ({
+                title: detail.court?.name || 'Court',
+                startAt: detail.slot.startAt.toISOString(),
+                endAt: detail.slot.endAt.toISOString(),
+                amount: 0,
+              })),
+            },
+          )
+        } catch (emailError) {
+          c.var.logger.error(
+            `Failed sending booking cancellation email: ${emailError}`,
+          )
+        }
+      }
 
       return c.json(
         ok(

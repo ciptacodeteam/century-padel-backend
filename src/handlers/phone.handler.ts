@@ -17,15 +17,32 @@ import { zValidator } from '@hono/zod-validator'
 import dayjs from 'dayjs'
 import { PhoneVerificationType } from '@prisma/client'
 import status from 'http-status'
+import { z } from 'zod'
+
+const sendRegisterOtpSchema = phoneSchema.extend({
+  email: z.string().trim().email().max(100).optional(),
+})
 
 export const sendPhoneVerificationOtpHandler = factory.createHandlers(
-  zValidator('json', phoneSchema, validateHook),
+  zValidator('json', sendRegisterOtpSchema, validateHook),
   async (c) => {
     try {
-      const validated = c.req.valid('json') as PhoneSchema
-      const { phone } = validated
+      const validated = c.req.valid('json')
+      const { phone, email } = validated
 
       const formattedPhone = await formatPhone(phone)
+
+      if (email) {
+        const emailTaken = await db.user.findUnique({
+          where: { email: email.toLowerCase() },
+        })
+        if (emailTaken) {
+          return c.json(
+            err('Email already in use by another account', status.CONFLICT),
+            status.CONFLICT,
+          )
+        }
+      }
 
       const existingRecord = await db.phoneVerification.findFirst({
         where: {

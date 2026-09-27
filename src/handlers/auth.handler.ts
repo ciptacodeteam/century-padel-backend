@@ -159,9 +159,10 @@ export const registerHandler = factory.createHandlers(
   async (c) => {
     try {
       const validated = c.req.valid('json') as RegisterSchema
-      const { phone, code, requestId, password, firstName, lastName } =
+      const { phone, code, requestId, password, firstName, lastName, email } =
         validated
       const name = `${firstName} ${lastName}`
+      const normalizedEmail = email.toLowerCase()
 
       const formattedPhone = await formatPhone(phone)
 
@@ -171,6 +172,17 @@ export const registerHandler = factory.createHandlers(
 
       if (existingUser) {
         throw new BadRequestException('User already exists')
+      }
+
+      const emailTaken = await db.user.findUnique({
+        where: { email: normalizedEmail },
+      })
+
+      if (emailTaken) {
+        return c.json(
+          err('Email already in use by another account', status.CONFLICT),
+          status.CONFLICT,
+        )
       }
 
       await validateOtp(formattedPhone, requestId, code)
@@ -218,6 +230,7 @@ export const registerHandler = factory.createHandlers(
           data: {
             name,
             phone: formattedPhone,
+            email: normalizedEmail,
             password: hashPwd,
             phoneVerified: true, // Phone is verified since OTP was validated during registration
           },

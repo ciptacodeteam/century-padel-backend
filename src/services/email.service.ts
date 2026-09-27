@@ -1,5 +1,131 @@
-import { getDefaultFromAddress, getResendClient } from '@/lib/resend'
+import { JAKARTA_TZ } from '@/config'
+import { env } from '@/env'
 import { log } from '@/lib/logger'
+import { db } from '@/lib/prisma'
+import { getDefaultFromAddress, getResendClient } from '@/lib/resend'
+import dayjs from 'dayjs'
+import timezone from 'dayjs/plugin/timezone.js'
+import utc from 'dayjs/plugin/utc.js'
+import 'dayjs/locale/id.js'
+
+dayjs.extend(utc)
+dayjs.extend(timezone)
+
+type EmailLineItem = {
+  title: string
+  startAt: string
+  endAt: string
+  amount: number
+}
+
+const escapeHtml = (value: unknown) =>
+  String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+
+const formatRp = (amount: number) =>
+  `Rp ${Number(amount || 0).toLocaleString('id-ID')}`
+
+const formatWhen = (value: string | Date | null | undefined, pattern: string) => {
+  if (!value) return ''
+  const parsed = dayjs(value)
+  if (!parsed.isValid()) return ''
+  return parsed.tz(JAKARTA_TZ).locale('id').format(pattern)
+}
+
+const bannerSrc = () =>
+  `${env.frontEndUrl.replace(/\/$/, '')}/email/century-padel-banner.png`
+
+const emailShell = (body: string) => `<!DOCTYPE html>
+<html>
+<body style="margin:0;padding:0;background:#f4f4f5;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;">
+    <tr>
+      <td align="center" style="padding:24px 12px;">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;background:#ffffff;">
+          <tr>
+            <td style="padding:0;line-height:0;font-size:0;">
+              <img src="${bannerSrc()}" alt="Century Padel" width="600" style="display:block;width:100%;max-width:600px;height:auto;border:0;" />
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:28px 28px 36px;font-family:'Plus Jakarta Sans',Arial,Helvetica,sans-serif;color:#111111;">
+              ${body}
+              <p style="margin:28px 0 0;color:#a1a1aa;font-size:11px;line-height:1.5;text-align:center;">
+                Century Padel Medan<br />This is an automated message.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`
+
+const emailButton = (label: string, href: string) => `
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:22px;">
+    <tr>
+      <td align="center" bgcolor="#e35336" style="background:#e35336;border-radius:12px;">
+        <a href="${escapeHtml(href)}" style="display:block;padding:14px 18px;font-family:'Plus Jakarta Sans',Arial,Helvetica,sans-serif;font-size:14px;font-weight:700;color:#ffffff;text-decoration:none;">${escapeHtml(label)}</a>
+      </td>
+    </tr>
+  </table>`
+
+const detailCard = (headHtml: string, bodyHtml: string) => `
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:22px;border:1px solid #ececee;border-radius:16px;">
+    <tr>
+      <td style="background:#fafafa;padding:16px 18px;border-bottom:1px solid #ececee;">${headHtml}</td>
+    </tr>
+    <tr>
+      <td style="padding:16px 18px 8px;">${bodyHtml}</td>
+    </tr>
+  </table>`
+
+const lineItemsHtml = (items: EmailLineItem[], statusLabel?: string) =>
+  items
+    .map((item) => {
+      const time = `${formatWhen(item.startAt, 'HH:mm')} – ${formatWhen(item.endAt, 'HH:mm')}`
+      const date = formatWhen(item.startAt, 'dddd, D MMM YYYY')
+      const trailing = statusLabel
+        ? `<td align="right" valign="top" style="font-size:13px;font-weight:700;color:#e35336;white-space:nowrap;">${escapeHtml(statusLabel)}</td>`
+        : `<td align="right" valign="top" style="font-size:14px;font-weight:700;white-space:nowrap;">${formatRp(item.amount)}</td>`
+      return `<tr>
+        <td style="padding-bottom:16px;">
+          <div style="font-size:15px;font-weight:700;">${escapeHtml(item.title)}</div>
+          <div style="margin-top:4px;font-size:13px;color:#71717a;">${escapeHtml(time)}</div>
+          <div style="margin-top:2px;font-size:13px;color:#71717a;">${escapeHtml(date)}</div>
+        </td>
+        ${trailing}
+      </tr>`
+    })
+    .join('')
+
+const costRows = (
+  rows: Array<{ label: string; amount: number; emphasize?: boolean; deduct?: boolean }>,
+) =>
+  rows
+    .map((row, index) => {
+      const border = row.emphasize
+        ? 'border-top:1px dashed #d4d4d8;'
+        : index === 0
+          ? 'border-top:1px solid #ececee;'
+          : ''
+      const amountStyle = row.emphasize
+        ? 'font-weight:700;color:#e35336;'
+        : 'font-weight:600;'
+      const amount = row.deduct ? `− ${formatRp(row.amount)}` : formatRp(row.amount)
+      return `<tr>
+        <td style="padding:10px 0;font-size:14px;${border}${row.emphasize ? 'font-weight:700;' : ''}">${escapeHtml(row.label)}</td>
+        <td align="right" style="padding:10px 0;font-size:14px;${border}${amountStyle}">${amount}</td>
+      </tr>`
+    })
+    .join('')
+
+const asLineItems = (value: unknown): EmailLineItem[] =>
+  Array.isArray(value) ? (value as EmailLineItem[]) : []
 
 /**
  * Email templates
@@ -74,37 +200,100 @@ export const emailTemplates = {
     `,
   }),
 
-  paymentReceipt: (variables: Record<string, any>) => ({
-    subject: `Payment Receipt - ${variables.invoiceNumber}`,
-    html: `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin:0 auto;">
-        <h2 style="color:#2c3e50;">Payment Successful</h2>
-        <p>Hi ${variables.name},</p>
-        <p>Thank you for your payment. Your transaction has been processed successfully.</p>
-        <table style="width:100%; border-collapse:collapse; margin:20px 0;">
-          <tr>
-            <td style="padding:8px; border:1px solid #eee;">Invoice Number</td>
-            <td style="padding:8px; border:1px solid #eee; font-weight:600;">${variables.invoiceNumber}</td>
-          </tr>
-          <tr>
-            <td style="padding:8px; border:1px solid #eee;">Amount Paid</td>
-            <td style="padding:8px; border:1px solid #eee; font-weight:600;">Rp ${variables.total.toLocaleString('id-ID')}</td>
-          </tr>
-          <tr>
-            <td style="padding:8px; border:1px solid #eee;">Status</td>
-            <td style="padding:8px; border:1px solid #eee; font-weight:600;">PAID</td>
-          </tr>
-        </table>
-        <p>You can view the full invoice details in the app.</p>
-        <p style="margin:25px 0;">
-          <a href="${variables.invoiceUrl}" style="background:#16a34a; color:#fff; padding:12px 20px; text-decoration:none; border-radius:4px;">View Invoice</a>
-        </p>
-        <p style="font-size:12px; color:#666;">If you have questions reply to this email.</p>
-        <hr style="margin-top:30px; border:none; border-top:1px solid #ddd;" />
-        <p style="color:#999; font-size:11px; text-align:center;">Century Padel © 2025. All rights reserved.</p>
-      </div>
-    `,
-  }),
+  bookingConfirmation: (variables: Record<string, any>) => {
+    const items = asLineItems(variables.items)
+    const courtLabel = items[0]?.title || 'Court'
+    return {
+      subject: `Booking Confirmed — ${courtLabel}`,
+      html: emailShell(`
+        <p style="margin:0 0 14px;font-size:16px;line-height:1.5;">Welcome ${escapeHtml(variables.name)},</p>
+        <p style="margin:0;font-size:15px;line-height:1.6;">Your court booking is confirmed. We're excited to see you soon.</p>
+        ${detailCard(
+          `<div style="font-size:14px;font-weight:700;">Booking ID: #${escapeHtml(variables.invoiceNumber)}</div>`,
+          `<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${lineItemsHtml(items)}</table>
+           <div style="font-size:15px;font-weight:700;padding:8px 0 12px;">Rincian Biaya</div>
+           <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${costRows([
+             { label: 'Total', amount: Number(variables.total || 0), emphasize: true },
+           ])}</table>`,
+        )}
+        ${emailButton('Lihat Booking', variables.invoiceUrl)}
+      `),
+    }
+  },
+
+  paymentReceipt: (variables: Record<string, any>) => {
+    const items = asLineItems(variables.items)
+    const rows: Array<{ label: string; amount: number; emphasize?: boolean }> = [
+      { label: 'Subtotal', amount: Number(variables.subtotal || 0) },
+    ]
+    if (Number(variables.processingFee) > 0) {
+      rows.push({
+        label: 'Biaya layanan',
+        amount: Number(variables.processingFee),
+      })
+    }
+    if (Number(variables.promoDiscountAmount) > 0) {
+      rows.push({
+        label: 'Promo',
+        amount: Number(variables.promoDiscountAmount),
+        deduct: true,
+      })
+    }
+    rows.push({
+      label: 'Total Pembayaran',
+      amount: Number(variables.total || 0),
+      emphasize: true,
+    })
+    const paidAtLabel = formatWhen(
+      variables.paidAt,
+      'dddd, D MMM YYYY · HH:mm',
+    )
+
+    const intro = items.length
+      ? "Your payment has been successfully processed and your booking is confirmed. We're excited to see you soon."
+      : 'Your payment has been successfully processed.'
+
+    return {
+      subject: `Payment Receipt - ${variables.invoiceNumber}`,
+      html: emailShell(`
+        <p style="margin:0 0 14px;font-size:16px;line-height:1.5;">Welcome ${escapeHtml(variables.name)},</p>
+        <p style="margin:0;font-size:15px;line-height:1.6;">${intro}</p>
+        ${detailCard(
+          `<div style="font-size:14px;font-weight:700;">Order ID: #${escapeHtml(variables.invoiceNumber)}</div>
+           ${paidAtLabel ? `<div style="margin-top:4px;font-size:13px;color:#71717a;">Payment Time: ${escapeHtml(paidAtLabel)}</div>` : ''}`,
+          `${items.length ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${lineItemsHtml(items)}</table>` : ''}
+           <div style="font-size:15px;font-weight:700;padding:8px 0 12px;">Rincian Biaya</div>
+           <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${costRows(rows)}</table>`,
+        )}
+        ${emailButton('Lihat Invoice', variables.invoiceUrl)}
+      `),
+    }
+  },
+
+  bookingCancelled: (variables: Record<string, any>) => {
+    const items = asLineItems(variables.items)
+    const courtLabel = items[0]?.title || 'Booking'
+    const cancelledAtLabel = formatWhen(
+      variables.cancelledAt,
+      'dddd, D MMM YYYY · HH:mm',
+    )
+    return {
+      subject: `Booking Cancelled — ${courtLabel}`,
+      html: emailShell(`
+        <p style="margin:0 0 14px;font-size:16px;line-height:1.5;">Hi ${escapeHtml(variables.name)},</p>
+        <p style="margin:0;font-size:15px;line-height:1.6;">An admin cancelled this booking. The court time has been released.</p>
+        ${detailCard(
+          `<div style="font-size:14px;font-weight:700;">Booking ID: #${escapeHtml(variables.invoiceNumber || '')}</div>
+           ${cancelledAtLabel ? `<div style="margin-top:4px;font-size:13px;color:#71717a;">Cancelled: ${escapeHtml(cancelledAtLabel)}</div>` : ''}`,
+          `<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${lineItemsHtml(items, 'Dibatalkan')}</table>
+           <div style="font-size:13px;color:#71717a;padding-top:4px;">Alasan</div>
+           <div style="font-size:14px;font-weight:600;padding:4px 0 14px;">${escapeHtml(variables.reason || 'Dibatalkan oleh admin')}</div>
+           <p style="margin:0 0 8px;font-size:13px;line-height:1.55;color:#71717a;">If this booking was already paid, our team will contact you about the refund.</p>`,
+        )}
+        ${variables.invoiceUrl ? emailButton('Lihat Detail', variables.invoiceUrl) : ''}
+      `),
+    }
+  },
 
   emailVerification: (variables: Record<string, any>) => ({
     subject: 'Verify Your Email Address',
@@ -245,6 +434,67 @@ export const sendTemplatedEmail = async (
 
   const { subject, html } = templateFn(variables)
   return sendEmail(to, subject, html, from)
+}
+
+type PaidInvoiceEmailInput = {
+  email: string | null
+  name: string | null
+  invoiceNumber: string
+  subtotal: number
+  processingFee: number
+  promoDiscountAmount: number
+  total: number
+  paidAt?: Date | null
+  bookingId?: string | null
+}
+
+export const queuePaidInvoiceEmails = async (invoice: PaidInvoiceEmailInput) => {
+  if (!invoice.email) return
+
+  const invoiceUrl = `${env.frontEndUrl.replace(/\/$/, '')}/invoice/${invoice.invoiceNumber}`
+  const items = invoice.bookingId
+    ? await loadBookingEmailItems(invoice.bookingId)
+    : []
+
+  await queueSendTemplatedEmail(invoice.email, 'paymentReceipt', {
+    name: invoice.name || 'there',
+    invoiceNumber: invoice.invoiceNumber,
+    subtotal: invoice.subtotal,
+    processingFee: invoice.processingFee,
+    promoDiscountAmount: invoice.promoDiscountAmount,
+    total: invoice.total,
+    paidAt: invoice.paidAt?.toISOString(),
+    invoiceUrl,
+    items,
+  })
+
+  if (items.length > 0) {
+    await queueSendTemplatedEmail(invoice.email, 'bookingConfirmation', {
+      name: invoice.name || 'there',
+      invoiceNumber: invoice.invoiceNumber,
+      total: invoice.total,
+      invoiceUrl,
+      items,
+    })
+  }
+}
+
+const loadBookingEmailItems = async (bookingId: string): Promise<EmailLineItem[]> => {
+  const details = await db.bookingDetail.findMany({
+    where: { bookingId },
+    include: {
+      court: { select: { name: true } },
+      slot: { select: { startAt: true, endAt: true } },
+    },
+    orderBy: { slot: { startAt: 'asc' } },
+  })
+
+  return details.map((detail) => ({
+    title: detail.court?.name || 'Court',
+    startAt: detail.slot.startAt.toISOString(),
+    endAt: detail.slot.endAt.toISOString(),
+    amount: detail.discountPrice,
+  }))
 }
 
 /**
