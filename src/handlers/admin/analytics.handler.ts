@@ -15,6 +15,7 @@ import {
   exportDataToExcel,
   getBusinessAnalytics,
 } from '@/services/analytics.service'
+import { getCompletedRefundAmount } from '@/services/refund.service'
 
 // GET /admin/analytics
 // Get analytics overview with total transactions, revenue, and monthly trends
@@ -43,14 +44,21 @@ export const getAnalyticsHandler = factory.createHandlers(
           booking: true,
           classBooking: true,
           membershipUser: true,
+          payment: { select: { meta: true } },
         },
       })
 
       // Calculate total revenue
-      const totalRevenue = paidInvoices.reduce(
+      const totalGrossRevenue = paidInvoices.reduce(
         (sum, invoice) => sum + invoice.total,
         0,
       )
+      const totalRefunds = paidInvoices.reduce(
+        (sum, invoice) =>
+          sum + getCompletedRefundAmount(invoice.payment?.meta, invoice.total),
+        0,
+      )
+      const totalRevenue = totalGrossRevenue - totalRefunds
 
       // Count transactions by type
       const totalBookings = await db.booking.count({
@@ -117,7 +125,9 @@ export const getAnalyticsHandler = factory.createHandlers(
               totalTransactions: 0,
             }
           }
-          monthlyTrends[monthKey].revenue += invoice.total
+          monthlyTrends[monthKey].revenue +=
+            invoice.total -
+            getCompletedRefundAmount(invoice.payment?.meta, invoice.total)
           monthlyTrends[monthKey].totalTransactions += 1
 
           if (invoice.bookingId) {
@@ -139,13 +149,31 @@ export const getAnalyticsHandler = factory.createHandlers(
       const revenueByType = {
         bookings: paidInvoices
           .filter((inv) => inv.bookingId)
-          .reduce((sum, inv) => sum + inv.total, 0),
+          .reduce(
+            (sum, inv) =>
+              sum +
+              inv.total -
+              getCompletedRefundAmount(inv.payment?.meta, inv.total),
+            0,
+          ),
         classBookings: paidInvoices
           .filter((inv) => inv.classBookingId)
-          .reduce((sum, inv) => sum + inv.total, 0),
+          .reduce(
+            (sum, inv) =>
+              sum +
+              inv.total -
+              getCompletedRefundAmount(inv.payment?.meta, inv.total),
+            0,
+          ),
         memberships: paidInvoices
           .filter((inv) => inv.membershipUserId)
-          .reduce((sum, inv) => sum + inv.total, 0),
+          .reduce(
+            (sum, inv) =>
+              sum +
+              inv.total -
+              getCompletedRefundAmount(inv.payment?.meta, inv.total),
+            0,
+          ),
       }
 
       // Calculate average transaction value
@@ -157,6 +185,8 @@ export const getAnalyticsHandler = factory.createHandlers(
       const analytics = {
         overview: {
           totalRevenue,
+          totalGrossRevenue,
+          totalRefunds,
           totalTransactions:
             totalBookings + totalClassBookings + totalMembershipTransactions,
           totalBookings,
@@ -244,14 +274,21 @@ export const exportAnalyticsToExcelHandler = factory.createHandlers(
               },
             },
           },
+          payment: { select: { meta: true } },
         },
       })
 
       // Calculate overview
-      const totalRevenue = paidInvoices.reduce(
+      const totalGrossRevenue = paidInvoices.reduce(
         (sum, invoice) => sum + invoice.total,
         0,
       )
+      const totalRefunds = paidInvoices.reduce(
+        (sum, invoice) =>
+          sum + getCompletedRefundAmount(invoice.payment?.meta, invoice.total),
+        0,
+      )
+      const totalRevenue = totalGrossRevenue - totalRefunds
 
       const totalBookings = await db.booking.count({
         where: {
@@ -296,7 +333,9 @@ export const exportAnalyticsToExcelHandler = factory.createHandlers(
               totalTransactions: 0,
             }
           }
-          monthlyTrends[monthKey].revenue += invoice.total
+          monthlyTrends[monthKey].revenue +=
+            invoice.total -
+            getCompletedRefundAmount(invoice.payment?.meta, invoice.total)
           monthlyTrends[monthKey].totalTransactions += 1
 
           if (invoice.bookingId) {
@@ -314,7 +353,9 @@ export const exportAnalyticsToExcelHandler = factory.createHandlers(
 
       // Sheet 1: Overview
       const overviewData = [
-        { Metric: 'Total Revenue', Value: totalRevenue },
+        { Metric: 'Pendapatan Kotor', Value: totalGrossRevenue },
+        { Metric: 'Total Refund', Value: totalRefunds },
+        { Metric: 'Pendapatan Bersih', Value: totalRevenue },
         {
           Metric: 'Total Transactions',
           Value:
@@ -394,6 +435,13 @@ export const exportAnalyticsToExcelHandler = factory.createHandlers(
           Subtotal: invoice.subtotal,
           'Processing Fee': invoice.processingFee,
           Total: invoice.total,
+          Refund: getCompletedRefundAmount(
+            invoice.payment?.meta,
+            invoice.total,
+          ),
+          'Net Revenue':
+            invoice.total -
+            getCompletedRefundAmount(invoice.payment?.meta, invoice.total),
           Status: invoice.status,
           'Issued At': invoice.issuedAt
             ? dayjs(invoice.issuedAt).format('YYYY-MM-DD HH:mm:ss')
@@ -413,6 +461,8 @@ export const exportAnalyticsToExcelHandler = factory.createHandlers(
         { wch: 15 }, // Subtotal
         { wch: 15 }, // Processing Fee
         { wch: 15 }, // Total
+        { wch: 15 }, // Refund
+        { wch: 15 }, // Net Revenue
         { wch: 15 }, // Status
         { wch: 20 }, // Issued At
         { wch: 20 }, // Paid At
@@ -467,7 +517,7 @@ export const getDashboardStatsHandler = factory.createHandlers(async (c) => {
     // ============================================
     // 1. TOTAL REVENUE - Current period (this month)
     // ============================================
-    const currentRevenue = await db.invoice.aggregate({
+    const currentRevenueInvoices = await db.invoice.findMany({
       where: {
         status: PaymentStatus.PAID,
         paidAt: {
@@ -475,12 +525,10 @@ export const getDashboardStatsHandler = factory.createHandlers(async (c) => {
           lte: currentPeriodEnd,
         },
       },
-      _sum: {
-        total: true,
-      },
+      select: { total: true, payment: { select: { meta: true } } },
     })
 
-    const previousRevenue = await db.invoice.aggregate({
+    const previousRevenueInvoices = await db.invoice.findMany({
       where: {
         status: PaymentStatus.PAID,
         paidAt: {
@@ -488,13 +536,22 @@ export const getDashboardStatsHandler = factory.createHandlers(async (c) => {
           lte: previousPeriodEnd,
         },
       },
-      _sum: {
-        total: true,
-      },
+      select: { total: true, payment: { select: { meta: true } } },
     })
 
-    const currentRevenueValue = currentRevenue._sum.total || 0
-    const previousRevenueValue = previousRevenue._sum.total || 0
+    const netRevenue = (
+      invoices: Array<{ total: number; payment: { meta: unknown } | null }>,
+    ) =>
+      invoices.reduce(
+        (sum, invoice) =>
+          sum +
+          invoice.total -
+          getCompletedRefundAmount(invoice.payment?.meta, invoice.total),
+        0,
+      )
+
+    const currentRevenueValue = netRevenue(currentRevenueInvoices)
+    const previousRevenueValue = netRevenue(previousRevenueInvoices)
 
     const revenuePercentageChange =
       previousRevenueValue > 0
@@ -629,8 +686,7 @@ export const getDashboardStatsHandler = factory.createHandlers(async (c) => {
     // ============================================
     // REVENUE TREND for last 6 months
     // ============================================
-    const revenueByMonth = await db.invoice.groupBy({
-      by: ['paidAt'],
+    const revenueByMonth = await db.invoice.findMany({
       where: {
         status: PaymentStatus.PAID,
         paidAt: {
@@ -638,8 +694,10 @@ export const getDashboardStatsHandler = factory.createHandlers(async (c) => {
           lte: currentPeriodEnd,
         },
       },
-      _sum: {
+      select: {
+        paidAt: true,
         total: true,
+        payment: { select: { meta: true } },
       },
     })
 
@@ -649,7 +707,9 @@ export const getDashboardStatsHandler = factory.createHandlers(async (c) => {
       if (record.paidAt) {
         const monthKey = dayjs(record.paidAt).format('YYYY-MM')
         monthlyRevenue[monthKey] =
-          (monthlyRevenue[monthKey] || 0) + (record._sum.total || 0)
+          (monthlyRevenue[monthKey] || 0) +
+          record.total -
+          getCompletedRefundAmount(record.payment?.meta, record.total)
       }
     })
 
@@ -809,6 +869,7 @@ export const getDailyTransactionsHandler = factory.createHandlers(
           id: true,
           total: true,
           paidAt: true,
+          payment: { select: { meta: true } },
         },
         orderBy: {
           paidAt: 'asc',
@@ -838,7 +899,13 @@ export const getDailyTransactionsHandler = factory.createHandlers(
 
       // Calculate summary statistics
       const totalTransactions = invoices.length
-      const totalRevenue = invoices.reduce((sum, inv) => sum + inv.total, 0)
+      const totalRevenue = invoices.reduce(
+        (sum, invoice) =>
+          sum +
+          invoice.total -
+          getCompletedRefundAmount(invoice.payment?.meta, invoice.total),
+        0,
+      )
       const averagePerDay =
         chartData.length > 0
           ? Number((totalTransactions / chartData.length).toFixed(2))

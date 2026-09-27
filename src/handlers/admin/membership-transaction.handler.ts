@@ -11,11 +11,41 @@ import {
   searchQuerySchema,
 } from '@/lib/validation'
 import { zValidator } from '@hono/zod-validator'
-import { PaymentStatus } from '@prisma/client'
+import {
+  NotificationAudience,
+  NotificationType,
+  PaymentStatus,
+  Prisma,
+} from '@prisma/client'
 import status from 'http-status'
 import * as XLSX from 'xlsx'
 import dayjs from 'dayjs'
 import { z } from 'zod'
+import {
+  getCompletedRefund,
+  mergeRefundIntoPaymentMeta,
+} from '@/services/refund.service'
+
+const suspendMembershipSchema = z.object({
+  reason: z.string().trim().min(3).max(500),
+  endDate: z.string().datetime().optional(),
+})
+
+const terminateMembershipRefundSchema = z
+  .object({
+    reason: z.string().trim().min(3).max(500),
+    refundType: z.enum(['FULL', 'PARTIAL']),
+    refundAmount: z.number().int().positive().optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.refundType === 'PARTIAL' && !value.refundAmount) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['refundAmount'],
+        message: 'Nominal refund sebagian wajib diisi',
+      })
+    }
+  })
 
 // GET /admin/membership-transactions
 // Get all membership transactions
@@ -324,14 +354,11 @@ export const rejectMembershipTransactionHandler = factory.createHandlers(
 // Suspend membership transaction
 export const suspendMembershipTransactionHandler = factory.createHandlers(
   zValidator('param', idSchema, validateHook),
+  zValidator('json', suspendMembershipSchema, validateHook),
   async (c) => {
     try {
       const { id } = c.req.valid('param') as IdSchema
-      const body = await c.req.json().catch(() => ({}))
-      const { reason, suspensionEndDate } = body as {
-        reason?: string
-        suspensionEndDate?: string
-      }
+      const { reason, endDate } = c.req.valid('json')
 
       const membershipTransaction = await db.membershipUser.findUnique({
         where: { id },
@@ -345,19 +372,23 @@ export const suspendMembershipTransactionHandler = factory.createHandlers(
         throw new BadRequestException('Membership is already suspended')
       }
 
+      if (membershipTransaction.isExpired) {
+        throw new BadRequestException(
+          'Membership yang sudah berakhir tidak dapat ditangguhkan',
+        )
+      }
+
       const updated = await db.membershipUser.update({
         where: { id },
         data: {
           isSuspended: true,
-          suspensionReason: reason || 'Suspended by admin',
-          suspensionEndDate: suspensionEndDate
-            ? new Date(suspensionEndDate)
-            : undefined,
+          suspensionReason: reason,
+          suspensionEndDate: endDate ? new Date(endDate) : null,
         },
       })
 
       return c.json(
-        ok(updated, 'Membership transaction suspended successfully'),
+        ok(updated, 'Membership berhasil ditangguhkan sementara'),
         status.OK,
       )
     } catch (error) {
@@ -389,6 +420,12 @@ export const unsuspendMembershipTransactionHandler = factory.createHandlers(
         throw new BadRequestException('Membership is not suspended')
       }
 
+      if (membershipTransaction.isExpired) {
+        throw new BadRequestException(
+          'Membership yang telah dihentikan permanen tidak dapat diaktifkan kembali',
+        )
+      }
+
       const updated = await db.membershipUser.update({
         where: { id },
         data: {
@@ -399,12 +436,128 @@ export const unsuspendMembershipTransactionHandler = factory.createHandlers(
       })
 
       return c.json(
-        ok(updated, 'Membership transaction unsuspended successfully'),
+        ok(updated, 'Membership berhasil diaktifkan kembali'),
         status.OK,
       )
     } catch (error) {
       c.var.logger.fatal(
         `Error in unsuspendMembershipTransactionHandler: ${error}`,
+      )
+      throw error
+    }
+  },
+)
+
+// PUT /admin/membership-transactions/:id/terminate-refund
+// Permanently terminate a paid membership and record a completed refund.
+export const terminateMembershipWithRefundHandler = factory.createHandlers(
+  zValidator('param', idSchema, validateHook),
+  zValidator('json', terminateMembershipRefundSchema, validateHook),
+  async (c) => {
+    try {
+      const { id } = c.req.valid('param') as IdSchema
+      const { reason, refundType, refundAmount } = c.req.valid('json')
+      const adminId = c.var.admin?.id ?? null
+      const now = new Date()
+
+      const result = await db.$transaction(async (tx) => {
+        const membershipTransaction = await tx.membershipUser.findUnique({
+          where: { id },
+          include: {
+            membership: { select: { name: true } },
+            invoice: { include: { payment: true } },
+          },
+        })
+
+        if (!membershipTransaction) {
+          throw new NotFoundException('Membership transaction not found')
+        }
+
+        const invoice = membershipTransaction.invoice
+        const payment = invoice?.payment
+        if (
+          !invoice ||
+          !payment ||
+          invoice.status !== PaymentStatus.PAID ||
+          payment.status !== PaymentStatus.PAID
+        ) {
+          throw new BadRequestException(
+            'Hanya membership yang sudah dibayar yang dapat dihentikan dan di-refund',
+          )
+        }
+
+        if (getCompletedRefund(payment.meta)) {
+          throw new BadRequestException(
+            'Refund membership ini sudah pernah dicatat',
+          )
+        }
+
+        const amount =
+          refundType === 'FULL' ? invoice.total : (refundAmount ?? 0)
+        if (amount > invoice.total) {
+          throw new BadRequestException(
+            'Nominal refund tidak boleh melebihi total pembayaran',
+          )
+        }
+
+        const refund = {
+          type: refundType,
+          amount,
+          reason,
+          status: 'COMPLETED' as const,
+          refundedAt: now.toISOString(),
+          terminatedByAdminId: adminId,
+        }
+
+        const membership = await tx.membershipUser.update({
+          where: { id },
+          data: {
+            isExpired: true,
+            isSuspended: true,
+            suspensionReason: `Dihentikan permanen: ${reason}`,
+            suspensionEndDate: null,
+            endDate: now,
+            remainingSessions: 0,
+            remainingDuration: 0,
+          },
+        })
+
+        await tx.payment.update({
+          where: { id: payment.id },
+          data: {
+            meta: mergeRefundIntoPaymentMeta(
+              payment.meta,
+              refund,
+            ) as Prisma.InputJsonValue,
+          },
+        })
+
+        await tx.notification.create({
+          data: {
+            userId: membershipTransaction.userId,
+            audience: NotificationAudience.USER,
+            type: NotificationType.ADMIN_PUSH,
+            title: 'Membership Dihentikan',
+            message: `${membershipTransaction.membership.name} telah dihentikan permanen. Refund ${refundType === 'FULL' ? 'penuh' : 'sebagian'} sebesar Rp ${amount.toLocaleString('id-ID')} telah dicatat.`,
+            data: {
+              event: 'MEMBERSHIP_TERMINATED_REFUND',
+              membershipUserId: id,
+              invoiceNumber: invoice.number,
+              refund,
+            },
+          },
+        })
+
+        return { membership, refund }
+      })
+
+      return c.json(
+        ok(result, 'Membership berhasil dihentikan dan refund telah dicatat'),
+        status.OK,
+      )
+    } catch (error) {
+      c.var.logger.fatal(
+        `Error in terminateMembershipWithRefundHandler: ${error}`,
       )
       throw error
     }

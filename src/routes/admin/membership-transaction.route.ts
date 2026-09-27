@@ -6,6 +6,7 @@ import {
   getMembershipTransactionDetailHandler,
   rejectMembershipTransactionHandler,
   suspendMembershipTransactionHandler,
+  terminateMembershipWithRefundHandler,
   unsuspendMembershipTransactionHandler,
 } from '@/handlers/admin/membership-transaction.handler'
 
@@ -17,7 +18,7 @@ const adminMembershipTransactionRoute = createRouter()
   .put('/:id/approve', ...approveMembershipTransactionHandler)
   .put('/:id/reject', ...rejectMembershipTransactionHandler)
   .put('/:id/suspend', ...suspendMembershipTransactionHandler)
+  .put('/:id/terminate-refund', ...terminateMembershipWithRefundHandler)
   .put('/:id/unsuspend', ...unsuspendMembershipTransactionHandler)
 
 export default adminMembershipTransactionRoute
-

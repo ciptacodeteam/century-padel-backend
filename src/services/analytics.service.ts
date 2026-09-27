@@ -3,6 +3,7 @@ import { PaymentStatus, BookingStatus } from '@prisma/client'
 import dayjs from 'dayjs'
 import * as XLSX from 'xlsx'
 import { getFileUrl } from './upload.service'
+import { getCompletedRefundAmount } from './refund.service'
 
 /**
  * Get income analytics separated by source
@@ -25,6 +26,7 @@ export async function getIncomeBySourceAnalytics(
     },
     classBooking: true,
     membershipUser: true,
+    payment: { select: { meta: true } },
   }
 
   if (source === 'cashier') {
@@ -46,6 +48,7 @@ export async function getIncomeBySourceAnalytics(
   let classBookingIncome = 0
   let membershipIncome = 0
   let totalProcessingFees = 0
+  let totalRefunds = 0
   let totalGrossAmount = 0
   let totalNetAmount = 0
 
@@ -56,10 +59,12 @@ export async function getIncomeBySourceAnalytics(
   for (const invoice of invoices as any[]) {
     const gross = invoice.total || 0
     const processingFee = invoice.processingFee || 0
-    const netAmount = gross - processingFee
+    const refundAmount = getCompletedRefundAmount(invoice.payment?.meta, gross)
+    const netAmount = gross - processingFee - refundAmount
     // Accumulate overall totals once per invoice
     totalGrossAmount += gross
     totalProcessingFees += processingFee
+    totalRefunds += refundAmount
     totalNetAmount += netAmount
 
     // Court booking income
@@ -78,17 +83,20 @@ export async function getIncomeBySourceAnalytics(
           count: 0,
           total: 0,
           processingFee: 0,
+          refunds: 0,
           transactions: [],
         }
       }
       bookingIncome[src].count += 1
       bookingIncome[src].total += netAmount
       bookingIncome[src].processingFee += processingFee
+      bookingIncome[src].refunds += refundAmount
       bookingIncome[src].transactions.push({
         id: invoice.id,
         bookingId: invoice.booking.id,
         amount: invoice.total,
         processingFee,
+        refundAmount,
         netAmount,
         date: invoice.paidAt,
       })
@@ -97,24 +105,26 @@ export async function getIncomeBySourceAnalytics(
     // Class booking income
     if (invoice.classBooking) {
       const processingFee = invoice.processingFee || 0
-      const netAmount = (invoice.total || 0) - processingFee
       classBookingIncome += netAmount
       if (!classIncome['Class Bookings']) {
         classIncome['Class Bookings'] = {
           count: 0,
           total: 0,
           processingFee: 0,
+          refunds: 0,
           transactions: [],
         }
       }
       classIncome['Class Bookings'].count += 1
       classIncome['Class Bookings'].total += netAmount
       classIncome['Class Bookings'].processingFee += processingFee
+      classIncome['Class Bookings'].refunds += refundAmount
       classIncome['Class Bookings'].transactions.push({
         id: invoice.id,
         classBookingId: invoice.classBooking.id,
         amount: invoice.total,
         processingFee,
+        refundAmount,
         netAmount,
         date: invoice.paidAt,
       })
@@ -123,24 +133,26 @@ export async function getIncomeBySourceAnalytics(
     // Membership income
     if (invoice.membershipUser) {
       const processingFee = invoice.processingFee || 0
-      const netAmount = (invoice.total || 0) - processingFee
       membershipIncome += netAmount
       if (!membershipIncome_['Membership']) {
         membershipIncome_['Membership'] = {
           count: 0,
           total: 0,
           processingFee: 0,
+          refunds: 0,
           transactions: [],
         }
       }
       membershipIncome_['Membership'].count += 1
       membershipIncome_['Membership'].total += netAmount
       membershipIncome_['Membership'].processingFee += processingFee
+      membershipIncome_['Membership'].refunds += refundAmount
       membershipIncome_['Membership'].transactions.push({
         id: invoice.id,
         membershipUserId: invoice.membershipUser.id,
         amount: invoice.total,
         processingFee,
+        refundAmount,
         netAmount,
         date: invoice.paidAt,
       })
@@ -158,6 +170,7 @@ export async function getIncomeBySourceAnalytics(
       totalIncome,
       totalGrossAmount,
       totalProcessingFees,
+      totalRefunds,
       totalNetAmount,
       onlineBookingIncome,
       cashierBookingIncome,
@@ -209,12 +222,15 @@ export async function getPaymentMethodAnalytics(
 
   let totalAmount = 0
   let totalProcessingFees = 0
+  let totalRefunds = 0
 
   for (const payment of payments) {
     const amt = payment.invoice?.total || 0
     const procFee = payment.invoice?.processingFee || 0
+    const refundAmount = getCompletedRefundAmount(payment.meta, amt)
     totalAmount += amt
     totalProcessingFees += procFee
+    totalRefunds += refundAmount
 
     const methodId = payment.method?.id || 'unknown'
     if (!methodAnalytics.has(methodId)) {
@@ -229,6 +245,7 @@ export async function getPaymentMethodAnalytics(
         count: 0,
         total: 0,
         processingFee: 0,
+        refunds: 0,
         percentage: 0,
         transactions: [],
       })
@@ -238,10 +255,12 @@ export async function getPaymentMethodAnalytics(
     methodData.count += 1
     methodData.total += amt
     methodData.processingFee += procFee
+    methodData.refunds += refundAmount
     methodData.transactions.push({
       id: payment.id,
       amount: amt,
       processingFee: procFee,
+      refundAmount,
       date: payment.createdAt,
     })
   }
@@ -258,6 +277,8 @@ export async function getPaymentMethodAnalytics(
     summary: {
       totalAmount,
       totalProcessingFees,
+      totalRefunds,
+      netRevenue: totalAmount - totalProcessingFees - totalRefunds,
       totalTransactions: payments.length,
       methodCount: methodsArray.length,
     },
@@ -619,14 +640,32 @@ export async function getBusinessAnalytics(startDate: Date, endDate: Date) {
   })
 
   // Revenue
-  const invoiceData = await db.invoice.aggregate({
+  const revenueInvoices = await db.invoice.findMany({
     where: {
       status: PaymentStatus.PAID,
       paidAt: { gte: startDate, lte: endDate },
     },
-    _sum: { total: true },
-    _count: true,
+    select: {
+      total: true,
+      processingFee: true,
+      payment: { select: { meta: true } },
+    },
   })
+
+  const grossRevenue = revenueInvoices.reduce(
+    (sum, invoice) => sum + invoice.total,
+    0,
+  )
+  const processingFees = revenueInvoices.reduce(
+    (sum, invoice) => sum + invoice.processingFee,
+    0,
+  )
+  const refunds = revenueInvoices.reduce(
+    (sum, invoice) =>
+      sum + getCompletedRefundAmount(invoice.payment?.meta, invoice.total),
+    0,
+  )
+  const netRevenue = grossRevenue - processingFees - refunds
 
   // Most booked courts
   const topCourts = await db.bookingDetail.groupBy({
@@ -719,11 +758,15 @@ export async function getBusinessAnalytics(startDate: Date, endDate: Date) {
           : '0%',
     },
     revenue: {
-      total: invoiceData._sum.total || 0,
-      transactions: invoiceData._count,
+      total: netRevenue,
+      gross: grossRevenue,
+      processingFees,
+      refunds,
+      net: netRevenue,
+      transactions: revenueInvoices.length,
       avgPerTransaction:
-        invoiceData._count > 0
-          ? ((invoiceData._sum.total || 0) / invoiceData._count).toFixed(2)
+        revenueInvoices.length > 0
+          ? (netRevenue / revenueInvoices.length).toFixed(2)
           : '0',
     },
     dateRange: { startDate, endDate },
