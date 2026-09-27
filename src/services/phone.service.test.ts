@@ -88,40 +88,20 @@ describe('Fazpass phone service', () => {
     expect(postMock).toHaveBeenCalledTimes(2)
   })
 
-  it('sends SMS first when an SMS gateway is configured', async () => {
-    env.fazpassSmsGatewayKey = 'sms-gateway'
-    postMock.mockResolvedValueOnce(fazpassSend('sms-id', 'sms'))
-
-    await expect(sendPhoneOtp('+6281234567890', '123456')).resolves.toBe(
-      'sms-id',
-    )
-    expect(postMock).toHaveBeenCalledTimes(1)
-    expect(postMock.mock.calls[0]?.[1]).toMatchObject({
-      gateway_key: 'sms-gateway',
-      otp: '123456',
-    })
-  })
-
-  it('falls back to WhatsApp when SMS is rejected', async () => {
+  it('uses WhatsApp even when an SMS gateway is configured', async () => {
     env.fazpassSmsGatewayKey = 'sms-gateway'
     postMock
-      .mockResolvedValueOnce({
-        data: { status: false, message: 'Insufficient balance' },
-      })
       .mockResolvedValueOnce(fazpassSend('probe-id', 'WhatsApp'))
       .mockResolvedValueOnce(fazpassSend('sent-id', 'WhatsApp'))
 
     await expect(sendPhoneOtp('+6281234567890', '123456')).resolves.toBe(
       'sent-id',
     )
-    expect(postMock).toHaveBeenCalledTimes(3)
+    expect(postMock).toHaveBeenCalledTimes(2)
     expect(postMock.mock.calls[0]?.[1]).toMatchObject({
-      gateway_key: 'sms-gateway',
-    })
-    expect(postMock.mock.calls[1]?.[1]).toMatchObject({
       gateway_key: FAZPASS_GATEWAY_KEY,
     })
-    expect(postMock.mock.calls[1]?.[1]).toEqual(postMock.mock.calls[2]?.[1])
+    expect(postMock.mock.calls[0]?.[1]).toEqual(postMock.mock.calls[1]?.[1])
   })
 
   it('still throws a WhatsApp rejection when no SMS gateway is configured', async () => {
@@ -135,7 +115,7 @@ describe('Fazpass phone service', () => {
     expect(postMock).toHaveBeenCalledTimes(1)
   })
 
-  it('does not fall back to WhatsApp on a network error', async () => {
+  it('does not fall back to SMS on a network error', async () => {
     env.fazpassSmsGatewayKey = 'sms-gateway'
     postMock.mockRejectedValueOnce(
       Object.assign(new Error('timeout'), { isAxiosError: true }),
