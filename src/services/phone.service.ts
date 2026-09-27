@@ -49,32 +49,47 @@ async function postSendOtp(payload: Record<string, string>) {
   return SendOTPResponse.fromJson(response.data)
 }
 
+async function deliverOtp(phone: string, otp: string, gatewayKey: string) {
+  const payload = new SendOTPPayload(phone, otp, gatewayKey).toJson()
+  const first = await postSendOtp(payload)
+  const channel = first.getData().channel
+
+  // Official WhatsApp: a new number's first call only checks that WhatsApp
+  // exists, and Fazpass still returns success. The OTP is sent on the next
+  // call to the same endpoint. SMS and WhatsApp Long Number deliver on the first call.
+  if (!isOfficialWhatsAppChannel(channel)) {
+    log.info(`OTP sent channel=${channel} requestId=${first.getId()}`)
+    return first.getId()
+  }
+
+  const second = await postSendOtp(payload)
+  log.info(
+    `OTP sent channel=${channel} probeRequestId=${first.getId()} requestId=${second.getId()}`,
+  )
+
+  return second.getId()
+}
+
 export async function sendPhoneOtp(
   phone: string,
   otp: string,
 ): Promise<string> {
   try {
-    const payload = new SendOTPPayload(phone, otp, FAZPASS_GATEWAY_KEY).toJson()
-    const first = await postSendOtp(payload)
-    const channel = first.getData().channel
-
-    // Official WhatsApp: a new number's first call only checks that WhatsApp
-    // exists, and Fazpass still returns success. The OTP is sent on the next
-    // call to the same endpoint. SMS and WhatsApp Long Number deliver on the first call.
-    if (!isOfficialWhatsAppChannel(channel)) {
-      log.info(`OTP sent channel=${channel} requestId=${first.getId()}`)
-      return first.getId()
+    return await deliverOtp(phone, otp, FAZPASS_GATEWAY_KEY)
+  } catch (error) {
+    const smsKey = env.fazpassSmsGatewayKey.trim()
+    // ponytail: status:false only. Axios timeouts are not retried; a timed-out send may already have been delivered.
+    if (
+      axios.isAxiosError(error) ||
+      !smsKey ||
+      smsKey === FAZPASS_GATEWAY_KEY
+    ) {
+      log.error(`Error sending OTP: ${error}`)
+      throw error
     }
 
-    const second = await postSendOtp(payload)
-    log.info(
-      `OTP sent channel=${channel} probeRequestId=${first.getId()} requestId=${second.getId()}`,
-    )
-
-    return second.getId()
-  } catch (error) {
-    log.error(`Error sending OTP: ${error}`)
-    throw error
+    log.error(`WhatsApp OTP rejected, falling back to SMS: ${error}`)
+    return deliverOtp(phone, otp, smsKey)
   }
 }
 
