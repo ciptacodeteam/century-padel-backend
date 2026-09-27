@@ -456,12 +456,25 @@ export const updateUserHandler = factory.createHandlers(
         imageUrl = uploaded.relativePath
       }
 
+      const nextEmail = email === undefined ? user.email : email || null
+
+      if (nextEmail) {
+        const taken = await db.user.findFirst({
+          where: { email: nextEmail, id: { not: id } },
+          select: { id: true },
+        })
+        if (taken) {
+          throw new BadRequestException('Email is already registered')
+        }
+      }
+
       const updatedUser = await db.user.update({
         where: { id },
         data: {
           phone: formattedPhone,
           name,
-          email,
+          email: nextEmail,
+          emailVerified: nextEmail === user.email ? user.emailVerified : false,
           image: imageUrl,
         },
       })

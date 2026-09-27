@@ -772,7 +772,9 @@ export type UpdateCourtSlotAvailabilitySchema = z.infer<
 
 export const updateUserSchema = z.object({
   name: z.string().min(3).max(100).optional(),
-  email: z.string().email().min(5).max(100).optional(),
+  email: z
+    .union([z.string().email().min(5).max(100), z.literal('')])
+    .optional(),
   phone: z.string().min(10).max(15).optional(),
   image: z.file().optional(),
 })
