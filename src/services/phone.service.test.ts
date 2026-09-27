@@ -14,7 +14,11 @@ vi.mock('axios', () => ({
 }))
 
 import { env } from '@/env'
-import { sendPhoneOtp, verifyPhoneOtp } from './phone.service'
+import {
+  FAZPASS_GATEWAY_KEY,
+  sendPhoneOtp,
+  verifyPhoneOtp,
+} from './phone.service'
 
 const postMock = vi.mocked(axios.post)
 
@@ -84,40 +88,40 @@ describe('Fazpass phone service', () => {
     expect(postMock).toHaveBeenCalledTimes(2)
   })
 
-  it('falls back to SMS when the WhatsApp probe is rejected', async () => {
+  it('sends SMS first when an SMS gateway is configured', async () => {
     env.fazpassSmsGatewayKey = 'sms-gateway'
-    postMock
-      .mockResolvedValueOnce({
-        data: { status: false, message: 'Number not registered' },
-      })
-      .mockResolvedValueOnce(fazpassSend('sms-id', 'sms'))
+    postMock.mockResolvedValueOnce(fazpassSend('sms-id', 'sms'))
 
     await expect(sendPhoneOtp('+6281234567890', '123456')).resolves.toBe(
       'sms-id',
     )
-    expect(postMock).toHaveBeenCalledTimes(2)
-    expect(postMock.mock.calls[1]?.[1]).toMatchObject({
+    expect(postMock).toHaveBeenCalledTimes(1)
+    expect(postMock.mock.calls[0]?.[1]).toMatchObject({
       gateway_key: 'sms-gateway',
       otp: '123456',
     })
   })
 
-  it('falls back to SMS when the official WhatsApp resend is rejected', async () => {
+  it('falls back to WhatsApp when SMS is rejected', async () => {
     env.fazpassSmsGatewayKey = 'sms-gateway'
     postMock
-      .mockResolvedValueOnce(fazpassSend('probe-id', 'WhatsApp'))
       .mockResolvedValueOnce({
         data: { status: false, message: 'Insufficient balance' },
       })
-      .mockResolvedValueOnce(fazpassSend('sms-id', 'sms'))
+      .mockResolvedValueOnce(fazpassSend('probe-id', 'WhatsApp'))
+      .mockResolvedValueOnce(fazpassSend('sent-id', 'WhatsApp'))
 
     await expect(sendPhoneOtp('+6281234567890', '123456')).resolves.toBe(
-      'sms-id',
+      'sent-id',
     )
     expect(postMock).toHaveBeenCalledTimes(3)
-    expect(postMock.mock.calls[2]?.[1]).toMatchObject({
+    expect(postMock.mock.calls[0]?.[1]).toMatchObject({
       gateway_key: 'sms-gateway',
     })
+    expect(postMock.mock.calls[1]?.[1]).toMatchObject({
+      gateway_key: FAZPASS_GATEWAY_KEY,
+    })
+    expect(postMock.mock.calls[1]?.[1]).toEqual(postMock.mock.calls[2]?.[1])
   })
 
   it('still throws a WhatsApp rejection when no SMS gateway is configured', async () => {
@@ -131,7 +135,7 @@ describe('Fazpass phone service', () => {
     expect(postMock).toHaveBeenCalledTimes(1)
   })
 
-  it('does not fall back to SMS on a network error', async () => {
+  it('does not fall back to WhatsApp on a network error', async () => {
     env.fazpassSmsGatewayKey = 'sms-gateway'
     postMock.mockRejectedValueOnce(
       Object.assign(new Error('timeout'), { isAxiosError: true }),

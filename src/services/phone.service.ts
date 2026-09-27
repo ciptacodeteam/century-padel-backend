@@ -74,22 +74,24 @@ export async function sendPhoneOtp(
   phone: string,
   otp: string,
 ): Promise<string> {
+  const smsKey = env.fazpassSmsGatewayKey.trim()
+  const smsFirst = Boolean(smsKey) && smsKey !== FAZPASS_GATEWAY_KEY
+
   try {
-    return await deliverOtp(phone, otp, FAZPASS_GATEWAY_KEY)
+    return await deliverOtp(
+      phone,
+      otp,
+      smsFirst ? smsKey : FAZPASS_GATEWAY_KEY,
+    )
   } catch (error) {
-    const smsKey = env.fazpassSmsGatewayKey.trim()
     // ponytail: status:false only. Axios timeouts are not retried; a timed-out send may already have been delivered.
-    if (
-      axios.isAxiosError(error) ||
-      !smsKey ||
-      smsKey === FAZPASS_GATEWAY_KEY
-    ) {
+    if (axios.isAxiosError(error) || !smsFirst) {
       log.error(`Error sending OTP: ${error}`)
       throw error
     }
 
-    log.error(`WhatsApp OTP rejected, falling back to SMS: ${error}`)
-    return deliverOtp(phone, otp, smsKey)
+    log.error(`SMS OTP rejected, falling back to WhatsApp: ${error}`)
+    return deliverOtp(phone, otp, FAZPASS_GATEWAY_KEY)
   }
 }
 
