@@ -223,7 +223,12 @@ export const emailTemplates = {
 
   paymentReceipt: (variables: Record<string, any>) => {
     const items = asLineItems(variables.items)
-    const rows: Array<{ label: string; amount: number; emphasize?: boolean }> = [
+    const rows: Array<{
+      label: string
+      amount: number
+      emphasize?: boolean
+      deduct?: boolean
+    }> = [
       { label: 'Subtotal', amount: Number(variables.subtotal || 0) },
     ]
     if (Number(variables.processingFee) > 0) {
