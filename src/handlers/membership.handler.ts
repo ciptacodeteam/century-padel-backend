@@ -140,8 +140,8 @@ export const getMyActiveMembershipHandler = factory.createHandlers(
 
       // Find active membership
       const now = new Date()
-      const [activeMembership, scheduleVisibilityMonths] = await Promise.all([
-        db.membershipUser.findFirst({
+      const [activeMemberships, scheduleVisibilityMonths] = await Promise.all([
+        db.membershipUser.findMany({
           where: {
             userId: user.id,
             isExpired: false,
@@ -170,28 +170,31 @@ export const getMyActiveMembershipHandler = factory.createHandlers(
         getUserScheduleVisibilityMonths(user.id),
       ])
 
+      const serializedMemberships = activeMemberships.map(
+        (activeMembership) => ({
+          id: activeMembership.id,
+          startDate: activeMembership.startDate,
+          endDate: activeMembership.endDate,
+          remainingSessions: activeMembership.remainingSessions,
+          remainingDuration: activeMembership.remainingDuration,
+          isExpired: activeMembership.isExpired,
+          isSuspended: activeMembership.isSuspended,
+          membership: {
+            id: activeMembership.membership.id,
+            name: activeMembership.membership.name,
+            price: activeMembership.membership.price,
+            type: activeMembership.membership.type,
+            scheduleVisibilityMonths:
+              activeMembership.membership.scheduleVisibilityMonths,
+          },
+        }),
+      )
+
       return c.json(
         ok({
           scheduleVisibilityMonths,
-          activeMembership: activeMembership
-            ? {
-                id: activeMembership.id,
-                startDate: activeMembership.startDate,
-                endDate: activeMembership.endDate,
-                remainingSessions: activeMembership.remainingSessions,
-                remainingDuration: activeMembership.remainingDuration,
-                isExpired: activeMembership.isExpired,
-                isSuspended: activeMembership.isSuspended,
-                membership: {
-                  id: activeMembership.membership.id,
-                  name: activeMembership.membership.name,
-                  price: activeMembership.membership.price,
-                  type: activeMembership.membership.type,
-                  scheduleVisibilityMonths:
-                    activeMembership.membership.scheduleVisibilityMonths,
-                },
-              }
-            : null,
+          activeMembership: serializedMemberships[0] ?? null,
+          activeMemberships: serializedMemberships,
         }),
         status.OK,
       )

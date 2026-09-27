@@ -14,9 +14,16 @@ import { getFileUrl } from '@/services/upload.service'
 import { BadRequestException, NotFoundException } from '@/exceptions'
 import dayjs from 'dayjs'
 import { env } from '@/env'
-import { restoreMembershipHoursForBooking } from '@/services/membership-hours.service'
+import {
+  restoreMembershipHoursForBooking,
+  restoreMembershipHoursForBookingId,
+} from '@/services/membership-hours.service'
 import { restoreComplimentaryCreditsForBooking } from '@/services/complimentary-credit.service'
 import { isVirtualAccountChannel } from '@/lib/payment-channel'
+import {
+  createBookingCancellationNotification,
+  createBookingCancellationNotificationForBooking,
+} from '@/services/notification.service'
 
 // GET /invoices
 export const getUserInvoicesHandler = factory.createHandlers(
@@ -493,6 +500,8 @@ export const expireInvoiceHandler = factory.createHandlers(
 
         // Cancel booking if exists
         if (invoice.booking) {
+          const restoredMembershipHours =
+            await restoreMembershipHoursForBookingId(tx, invoice.booking.id)
           await restoreComplimentaryCreditsForBooking(tx, invoice.booking.id)
           await tx.booking.update({
             where: { id: invoice.booking.id },
@@ -501,6 +510,12 @@ export const expireInvoiceHandler = factory.createHandlers(
               cancellationReason: 'Payment expired (user timeout)',
               cancelledAt: now,
             },
+          })
+          await createBookingCancellationNotificationForBooking(tx, {
+            bookingId: invoice.booking.id,
+            invoiceNumber: invoice.number,
+            reason: 'Pembayaran kedaluwarsa',
+            restoredMembershipHours,
           })
         }
 
@@ -734,6 +749,18 @@ export const cancelUserBookingHandler = factory.createHandlers(
         }
 
         const booking = invoice.booking
+        const isPendingTransaction =
+          invoice.status === PaymentStatus.PENDING &&
+          booking.status === BookingStatus.HOLD
+
+        if (isPendingTransaction) {
+          const paymentDeadline = invoice.dueDate || invoice.payment?.dueDate
+          if (paymentDeadline && paymentDeadline <= new Date()) {
+            throw new BadRequestException(
+              'Masa pembayaran sudah berakhir. Silakan muat ulang riwayat transaksi.',
+            )
+          }
+        }
 
         // 2. Check if booking can be cancelled
         if (booking.status === BookingStatus.CANCELLED) {
@@ -741,8 +768,8 @@ export const cancelUserBookingHandler = factory.createHandlers(
         }
 
         if (
-          booking.status === BookingStatus.CONFIRMED ||
-          booking.status === BookingStatus.HOLD
+          !isPendingTransaction &&
+          [BookingStatus.CONFIRMED, BookingStatus.HOLD].includes(booking.status)
         ) {
           // Check minimal cancellation time (24 hours before booking starts)
           const firstSlot = booking.details[0]?.slot
@@ -856,7 +883,28 @@ export const cancelUserBookingHandler = factory.createHandlers(
           c.var.logger.info(
             `Refund pending for payment ${invoice.payment.id}, amount: ${invoice.total}`,
           )
+        } else if (invoice.payment) {
+          await tx.payment.update({
+            where: { id: invoice.payment.id },
+            data: {
+              status: PaymentStatus.CANCELLED,
+              cancelledAt: new Date(),
+            },
+          })
         }
+
+        await createBookingCancellationNotification(tx, {
+          userId: user.id,
+          bookingId: booking.id,
+          invoiceNumber,
+          reason: reason || 'Dibatalkan oleh pengguna',
+          restoredMembershipHours,
+          courtSlots: booking.details.map((detail) => ({
+            courtName: detail.court?.name || 'Lapangan',
+            startAt: detail.slot.startAt,
+            endAt: detail.slot.endAt,
+          })),
+        })
 
         return {
           updatedBooking,

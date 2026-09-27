@@ -25,6 +25,7 @@ import {
   restoreMembershipHoursForBooking,
 } from '@/services/membership-hours.service'
 import { restoreComplimentaryCreditsForBooking } from '@/services/complimentary-credit.service'
+import { createBookingCancellationNotification } from '@/services/notification.service'
 
 // GET /admin/booked-courts
 // Get all booked courts with comprehensive booking information
@@ -739,6 +740,11 @@ export const cancelBookingHandler = factory.createHandlers(
             details: {
               include: {
                 slot: true,
+                court: {
+                  select: {
+                    name: true,
+                  },
+                },
               },
             },
             coaches: {
@@ -865,6 +871,19 @@ export const cancelBookingHandler = factory.createHandlers(
             })
           }
         }
+
+        await createBookingCancellationNotification(tx, {
+          userId: booking.userId,
+          bookingId: booking.id,
+          invoiceNumber: booking.invoice?.number,
+          reason: reason || 'Dibatalkan oleh admin',
+          restoredMembershipHours,
+          courtSlots: booking.details.map((detail) => ({
+            courtName: detail.court?.name || 'Lapangan',
+            startAt: detail.slot.startAt,
+            endAt: detail.slot.endAt,
+          })),
+        })
 
         return {
           updatedBooking,

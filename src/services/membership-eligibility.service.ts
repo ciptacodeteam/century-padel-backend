@@ -10,6 +10,18 @@ export const PEAK_HOUR_START = 16
 type MembershipEligibleSlot = Pick<Slot, 'startAt'>
 type AllocatableSlot = Pick<Slot, 'id' | 'startAt' | 'endAt'>
 
+type MembershipCandidate = {
+  id: string
+  remainingSessions: number
+  endDate: Date
+  membership: { type: MembershipType }
+}
+
+export type MembershipSlotAllocation = {
+  slotId: string
+  membershipUserId: string
+}
+
 export function isHappyHourSlot(slot: MembershipEligibleSlot): boolean {
   // Court schedules are persisted as wall-clock values in UTC (for example,
   // the 15:00 local slot is stored as 15:00Z) and returned by the API without
@@ -54,4 +66,98 @@ export function allocateMembershipSlots(
   }
 
   return { slotIds, hours }
+}
+
+/**
+ * Allocates slots across multiple active memberships. When an explicit mapping
+ * is provided it is treated as authoritative. Otherwise the most restricted
+ * package is consumed first, then the package expiring soonest.
+ */
+export function allocateSlotsAcrossMemberships(
+  candidates: MembershipCandidate[],
+  slots: AllocatableSlot[],
+  requestedSlotIds?: Set<string>,
+  explicitAllocations?: MembershipSlotAllocation[],
+): {
+  slotMembershipIds: Map<string, string>
+  membershipHours: Map<string, number>
+} | null {
+  const typePriority: Record<MembershipType, number> = {
+    [MembershipType.HAPPY_HOUR]: 0,
+    [MembershipType.PEAK_HOUR]: 1,
+    [MembershipType.ALL_HOUR]: 2,
+  }
+  const sortedCandidates = [...candidates].sort((a, b) => {
+    const typeComparison =
+      typePriority[a.membership.type] - typePriority[b.membership.type]
+    return typeComparison || a.endDate.getTime() - b.endDate.getTime()
+  })
+  const candidatesById = new Map(
+    sortedCandidates.map((candidate) => [candidate.id, candidate]),
+  )
+  const explicitBySlotId = explicitAllocations
+    ? new Map(
+        explicitAllocations.map((allocation) => [
+          allocation.slotId,
+          allocation.membershipUserId,
+        ]),
+      )
+    : null
+  const remainingByMembershipId = new Map(
+    sortedCandidates.map((candidate) => [
+      candidate.id,
+      candidate.remainingSessions,
+    ]),
+  )
+  const slotMembershipIds = new Map<string, string>()
+  const membershipHours = new Map<string, number>()
+
+  for (const slot of [...slots].sort(
+    (a, b) => a.startAt.getTime() - b.startAt.getTime(),
+  )) {
+    if (requestedSlotIds && !requestedSlotIds.has(slot.id)) continue
+    if (explicitBySlotId && !explicitBySlotId.has(slot.id)) continue
+
+    const slotHours = Math.max(
+      1,
+      Math.ceil((slot.endAt.getTime() - slot.startAt.getTime()) / 3_600_000),
+    )
+    const explicitMembershipId = explicitBySlotId?.get(slot.id)
+    const eligibleCandidates = explicitMembershipId
+      ? [candidatesById.get(explicitMembershipId)].filter(
+          (candidate): candidate is MembershipCandidate => !!candidate,
+        )
+      : sortedCandidates
+    const candidate = eligibleCandidates.find(
+      (item) =>
+        canMembershipUseSlots(item.membership.type, [slot]) &&
+        (remainingByMembershipId.get(item.id) ?? 0) >= slotHours,
+    )
+
+    if (!candidate) {
+      if (explicitBySlotId || requestedSlotIds) return null
+      continue
+    }
+
+    slotMembershipIds.set(slot.id, candidate.id)
+    membershipHours.set(
+      candidate.id,
+      (membershipHours.get(candidate.id) ?? 0) + slotHours,
+    )
+    remainingByMembershipId.set(
+      candidate.id,
+      (remainingByMembershipId.get(candidate.id) ?? 0) - slotHours,
+    )
+  }
+
+  const requestedCount = explicitAllocations?.length ?? requestedSlotIds?.size
+  if (
+    requestedCount !== undefined &&
+    slotMembershipIds.size !== requestedCount
+  ) {
+    return null
+  }
+  if (slotMembershipIds.size === 0) return null
+
+  return { slotMembershipIds, membershipHours }
 }

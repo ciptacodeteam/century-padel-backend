@@ -2,6 +2,7 @@ import { MembershipType } from '@prisma/client'
 import { describe, expect, it } from 'vitest'
 import {
   allocateMembershipSlots,
+  allocateSlotsAcrossMemberships,
   canMembershipUseSlots,
 } from './membership-eligibility.service'
 
@@ -66,5 +67,74 @@ describe('partial membership allocation', () => {
 
     expect([...result.slotIds]).toEqual(['happy'])
     expect(result.hours).toBe(1)
+  })
+
+  it('uses happy hour first and all hour for the peak slot', () => {
+    const result = allocateSlotsAcrossMemberships(
+      [
+        {
+          id: 'all-hour',
+          remainingSessions: 10,
+          endDate: new Date('2026-12-31T00:00:00Z'),
+          membership: { type: MembershipType.ALL_HOUR },
+        },
+        {
+          id: 'happy-hour',
+          remainingSessions: 10,
+          endDate: new Date('2026-12-31T00:00:00Z'),
+          membership: { type: MembershipType.HAPPY_HOUR },
+        },
+      ],
+      [
+        {
+          id: 'slot-15',
+          ...slotAtJakartaTime(15),
+          endAt: new Date('2026-09-24T16:00:00Z'),
+        },
+        {
+          id: 'slot-16',
+          ...slotAtJakartaTime(16),
+          endAt: new Date('2026-09-24T17:00:00Z'),
+        },
+      ],
+    )
+
+    expect(result?.slotMembershipIds).toEqual(
+      new Map([
+        ['slot-15', 'happy-hour'],
+        ['slot-16', 'all-hour'],
+      ]),
+    )
+  })
+
+  it('honors an explicit membership choice per slot', () => {
+    const slots = [
+      {
+        id: 'slot-15',
+        ...slotAtJakartaTime(15),
+        endAt: new Date('2026-09-24T16:00:00Z'),
+      },
+    ]
+    const result = allocateSlotsAcrossMemberships(
+      [
+        {
+          id: 'all-hour',
+          remainingSessions: 10,
+          endDate: new Date('2026-12-31T00:00:00Z'),
+          membership: { type: MembershipType.ALL_HOUR },
+        },
+        {
+          id: 'happy-hour',
+          remainingSessions: 10,
+          endDate: new Date('2026-12-31T00:00:00Z'),
+          membership: { type: MembershipType.HAPPY_HOUR },
+        },
+      ],
+      slots,
+      undefined,
+      [{ slotId: 'slot-15', membershipUserId: 'all-hour' }],
+    )
+
+    expect(result?.slotMembershipIds.get('slot-15')).toBe('all-hour')
   })
 })

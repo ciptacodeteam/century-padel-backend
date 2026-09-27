@@ -4,6 +4,8 @@ import { restoreComplimentaryCreditsForBooking } from '@/services/complimentary-
 import { BookingStatus, PaymentStatus } from '@prisma/client'
 import { log } from '@/lib/logger'
 import { getRedisConnection } from '@/lib/redis'
+import { restoreMembershipHoursForBookingId } from '@/services/membership-hours.service'
+import { createBookingCancellationNotificationForBooking } from '@/services/notification.service'
 
 let redisConnection = getRedisConnection()
 
@@ -44,13 +46,7 @@ export async function checkExpiredTransactions() {
     // Find expired payments
     const expiredPayments = await db.payment.findMany({
       where: {
-        status: {
-          in: [
-            PaymentStatus.PENDING,
-            PaymentStatus.CANCELLED,
-            PaymentStatus.EXPIRED,
-          ],
-        },
+        status: PaymentStatus.PENDING,
         dueDate: {
           lte: now,
         },
@@ -129,6 +125,11 @@ export async function checkExpiredTransactions() {
 
           // Update booking status to CANCELLED if exists and restore inventory
           if (payment.invoice.booking) {
+            const restoredMembershipHours =
+              await restoreMembershipHoursForBookingId(
+                tx,
+                payment.invoice.booking.id,
+              )
             await restoreComplimentaryCreditsForBooking(
               tx,
               payment.invoice.booking.id,
@@ -156,6 +157,12 @@ export async function checkExpiredTransactions() {
                 cancellationReason: 'Payment expired',
                 cancelledAt: now,
               },
+            })
+            await createBookingCancellationNotificationForBooking(tx, {
+              bookingId: payment.invoice.booking.id,
+              invoiceNumber: payment.invoice.number,
+              reason: 'Pembayaran kedaluwarsa',
+              restoredMembershipHours,
             })
           }
 
@@ -262,6 +269,8 @@ export async function checkExpiredTransactions() {
         }
 
         // Update booking status to CANCELLED
+        const restoredMembershipHours =
+          await restoreMembershipHoursForBookingId(tx, booking.id)
         await restoreComplimentaryCreditsForBooking(tx, booking.id)
         await tx.booking.update({
           where: { id: booking.id },
@@ -282,6 +291,12 @@ export async function checkExpiredTransactions() {
             data: { status: PaymentStatus.EXPIRED },
           })
         }
+        await createBookingCancellationNotificationForBooking(tx, {
+          bookingId: booking.id,
+          invoiceNumber: invoice?.number,
+          reason: 'Masa penahanan booking berakhir',
+          restoredMembershipHours,
+        })
       })
     }
 

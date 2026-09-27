@@ -3,7 +3,106 @@ import {
   NotificationAudience,
   NotificationType,
   PaymentStatus,
+  type Prisma,
 } from '@prisma/client'
+import dayjs from 'dayjs'
+import utc from 'dayjs/plugin/utc.js'
+
+dayjs.extend(utc)
+
+type BookingCancellationNotificationParams = {
+  userId: string
+  bookingId: string
+  invoiceNumber?: string | null
+  reason: string
+  restoredMembershipHours: number
+  courtSlots: Array<{
+    courtName: string
+    startAt: Date
+    endAt: Date
+  }>
+}
+
+export async function createBookingCancellationNotification(
+  tx: Prisma.TransactionClient,
+  params: BookingCancellationNotificationParams,
+) {
+  const firstSlot = params.courtSlots[0]
+  const additionalSlotCount = Math.max(0, params.courtSlots.length - 1)
+  const scheduleSummary = firstSlot
+    ? `${firstSlot.courtName}, ${dayjs.utc(firstSlot.startAt).format('DD/MM/YYYY HH:mm')}–${dayjs.utc(firstSlot.endAt).format('HH:mm')}${additionalSlotCount > 0 ? ` dan ${additionalSlotCount} slot lainnya` : ''}`
+    : 'Booking lapangan'
+
+  return tx.notification.create({
+    data: {
+      userId: params.userId,
+      audience: NotificationAudience.USER,
+      type: NotificationType.ADMIN_PUSH,
+      title: 'Booking Lapangan Dibatalkan',
+      message: `${scheduleSummary} telah dibatalkan.`,
+      data: {
+        event: 'BOOKING_CANCELLED',
+        bookingId: params.bookingId,
+        invoiceNumber: params.invoiceNumber ?? null,
+        reason: params.reason,
+        restoredMembershipHours: params.restoredMembershipHours,
+        courtSlots: params.courtSlots.map((slot) => ({
+          courtName: slot.courtName,
+          startAt: slot.startAt.toISOString(),
+          endAt: slot.endAt.toISOString(),
+        })),
+      },
+    },
+  })
+}
+
+export async function createBookingCancellationNotificationForBooking(
+  tx: Prisma.TransactionClient,
+  params: {
+    bookingId: string
+    invoiceNumber?: string | null
+    reason: string
+    restoredMembershipHours: number
+  },
+) {
+  const existingNotification = await tx.notification.findFirst({
+    where: {
+      AND: [
+        { data: { path: ['event'], equals: 'BOOKING_CANCELLED' } },
+        { data: { path: ['bookingId'], equals: params.bookingId } },
+      ],
+    },
+    select: { id: true },
+  })
+  if (existingNotification) return existingNotification
+
+  const booking = await tx.booking.findUnique({
+    where: { id: params.bookingId },
+    select: {
+      userId: true,
+      details: {
+        select: {
+          court: { select: { name: true } },
+          slot: { select: { startAt: true, endAt: true } },
+        },
+      },
+    },
+  })
+  if (!booking) return null
+
+  return createBookingCancellationNotification(tx, {
+    userId: booking.userId,
+    bookingId: params.bookingId,
+    invoiceNumber: params.invoiceNumber,
+    reason: params.reason,
+    restoredMembershipHours: params.restoredMembershipHours,
+    courtSlots: booking.details.map((detail) => ({
+      courtName: detail.court?.name || 'Lapangan',
+      startAt: detail.slot.startAt,
+      endAt: detail.slot.endAt,
+    })),
+  })
+}
 
 export interface CreateNotificationInput {
   userId?: string

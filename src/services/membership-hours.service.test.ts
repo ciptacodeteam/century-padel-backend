@@ -2,6 +2,7 @@ import {
   adjustMembershipHoursForReschedule,
   calculateCourtHours,
   restoreMembershipHoursForBooking,
+  restoreMembershipHoursForBookingId,
 } from '@/services/membership-hours.service'
 import type { Prisma } from '@prisma/client'
 import { describe, expect, it, vi } from 'vitest'
@@ -103,6 +104,154 @@ describe('membership hours', () => {
         },
       ],
     })
+
+    expect(restoredHours).toBe(1)
+    expect(update).toHaveBeenCalledWith({
+      where: { id: 'membership-user-1' },
+      data: {
+        remainingSessions: { increment: 1 },
+        isExpired: false,
+      },
+    })
+  })
+
+  it('restores hours to each membership used by a booking', async () => {
+    const update = vi.fn().mockResolvedValue({})
+    const memberships = {
+      'membership-user-happy': {
+        id: 'membership-user-happy',
+        remainingSessions: 9,
+        endDate: new Date('2099-09-30T00:00:00.000Z'),
+        membership: { sessions: 10, type: 'HAPPY_HOUR' },
+      },
+      'membership-user-all': {
+        id: 'membership-user-all',
+        remainingSessions: 19,
+        endDate: new Date('2099-10-30T00:00:00.000Z'),
+        membership: { sessions: 20, type: 'ALL_HOUR' },
+      },
+    }
+    const tx = {
+      membershipUser: {
+        findUnique: vi.fn(({ where }: { where: { id: string } }) =>
+          Promise.resolve(
+            memberships[where.id as keyof typeof memberships] ?? null,
+          ),
+        ),
+        update,
+      },
+    } as unknown as Prisma.TransactionClient
+
+    const restoredHours = await restoreMembershipHoursForBooking(tx, {
+      userId: 'user-1',
+      createdAt: new Date('2026-09-13T00:00:00.000Z'),
+      courtNormalPrice: 0,
+      details: [
+        {
+          membershipUserId: 'membership-user-happy',
+          slot: oneHourSlot,
+        },
+        {
+          membershipUserId: 'membership-user-all',
+          slot: {
+            startAt: new Date('2026-09-20T16:00:00.000Z'),
+            endAt: new Date('2026-09-20T17:00:00.000Z'),
+          },
+        },
+      ],
+    })
+
+    expect(restoredHours).toBe(2)
+    expect(update).toHaveBeenCalledTimes(2)
+    expect(update).toHaveBeenCalledWith({
+      where: { id: 'membership-user-happy' },
+      data: {
+        remainingSessions: { increment: 1 },
+        isExpired: false,
+      },
+    })
+    expect(update).toHaveBeenCalledWith({
+      where: { id: 'membership-user-all' },
+      data: {
+        remainingSessions: { increment: 1 },
+        isExpired: false,
+      },
+    })
+  })
+
+  it('does not restore a cancelled booking twice when an expiry event is repeated', async () => {
+    const findUniqueMembership = vi.fn()
+    const update = vi.fn()
+    const tx = {
+      booking: {
+        findUnique: vi.fn().mockResolvedValue({
+          userId: 'user-1',
+          status: 'CANCELLED',
+          createdAt: new Date('2026-09-13T00:00:00.000Z'),
+          courtNormalPrice: 0,
+          details: [
+            {
+              membershipUserId: 'membership-user-1',
+              slot: oneHourSlot,
+            },
+          ],
+        }),
+      },
+      membershipUser: {
+        findUnique: findUniqueMembership,
+        update,
+      },
+    } as unknown as Prisma.TransactionClient
+
+    const restoredHours = await restoreMembershipHoursForBookingId(
+      tx,
+      'booking-1',
+    )
+
+    expect(restoredHours).toBe(0)
+    expect(findUniqueMembership).not.toHaveBeenCalled()
+    expect(update).not.toHaveBeenCalled()
+  })
+
+  it('restores membership hours while an expired-payment booking is still on hold', async () => {
+    const update = vi.fn().mockResolvedValue({})
+    const tx = {
+      booking: {
+        findUnique: vi.fn().mockResolvedValue({
+          userId: 'user-1',
+          status: 'HOLD',
+          createdAt: new Date('2026-09-27T02:01:00.000Z'),
+          courtNormalPrice: 270_000,
+          details: [
+            {
+              membershipUserId: 'membership-user-1',
+              slot: oneHourSlot,
+            },
+            {
+              membershipUserId: null,
+              slot: {
+                startAt: new Date('2026-09-20T16:00:00.000Z'),
+                endAt: new Date('2026-09-20T17:00:00.000Z'),
+              },
+            },
+          ],
+        }),
+      },
+      membershipUser: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: 'membership-user-1',
+          remainingSessions: 49,
+          endDate: new Date('2026-12-26T00:00:00.000Z'),
+          membership: { sessions: 50, type: 'HAPPY_HOUR' },
+        }),
+        update,
+      },
+    } as unknown as Prisma.TransactionClient
+
+    const restoredHours = await restoreMembershipHoursForBookingId(
+      tx,
+      'booking-1',
+    )
 
     expect(restoredHours).toBe(1)
     expect(update).toHaveBeenCalledWith({

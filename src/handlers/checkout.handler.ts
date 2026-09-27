@@ -29,7 +29,7 @@ import dayjs from 'dayjs'
 import status from 'http-status'
 import { z } from 'zod'
 import { validateCoachSlots } from '@/services/coach-slot.service'
-import { allocateMembershipSlots } from '@/services/membership-eligibility.service'
+import { allocateSlotsAcrossMemberships } from '@/services/membership-eligibility.service'
 
 // const PROCESSING_FEE_PERCENT = 0.02 // 2% processing fee
 
@@ -199,12 +199,49 @@ export const applyPromoCodeHandler = factory.createHandlers(
         ballboySlots: rawBallboySlots,
         inventories,
         useMembership,
+        membershipSlotIds: rawMembershipSlotIds,
+        membershipAllocations: rawMembershipAllocations,
       } = validated
 
       const promoCode = normalizePromoCode(rawPromoCode)
       const courtSlots = cleanSlotIds(rawCourtSlots)
       const coachSlots = cleanSlotIds(rawCoachSlots)
       const ballboySlots = cleanSlotIds(rawBallboySlots)
+      const membershipSlotIds = cleanSlotIds(rawMembershipSlotIds)
+      const membershipAllocations = rawMembershipAllocations?.map(
+        (allocation) => ({
+          ...allocation,
+          slotId: cleanSlotIds([allocation.slotId])![0],
+        }),
+      )
+
+      if (
+        (membershipSlotIds?.length || membershipAllocations?.length) &&
+        !useMembership
+      ) {
+        throw new BadRequestException(
+          'Membership slot selection requires membership usage',
+        )
+      }
+      if (membershipSlotIds?.some((slotId) => !courtSlots?.includes(slotId))) {
+        throw new BadRequestException(
+          'Membership slots must be included in the selected court slots',
+        )
+      }
+      if (
+        membershipAllocations?.some(
+          (allocation) => !courtSlots?.includes(allocation.slotId),
+        )
+      ) {
+        throw new BadRequestException(
+          'Membership allocations must be included in the selected court slots',
+        )
+      }
+      if (membershipSlotIds && membershipAllocations) {
+        throw new BadRequestException(
+          'Provide either membership slot IDs or membership allocations',
+        )
+      }
 
       const hasItems =
         (courtSlots && courtSlots.length > 0) ||
@@ -275,22 +312,20 @@ export const applyPromoCodeHandler = factory.createHandlers(
               include: { membership: true },
               orderBy: { endDate: 'asc' },
             })
-            const allocation = membershipCandidates
-              .map((candidate) => ({
-                candidate,
-                allocation: allocateMembershipSlots(
-                  candidate.membership.type,
-                  candidate.remainingSessions,
-                  courtSlotData,
-                ),
-              }))
-              .find((item) => item.allocation.hours > 0)
+            const allocation = allocateSlotsAcrossMemberships(
+              membershipCandidates,
+              courtSlotData,
+              membershipSlotIds ? new Set(membershipSlotIds) : undefined,
+              membershipAllocations,
+            )
             if (!allocation) {
               throw new BadRequestException(
                 'Membership cannot be used for the selected court hours',
               )
             }
-            membershipCoveredSlotIds = allocation.allocation.slotIds
+            membershipCoveredSlotIds = new Set(
+              allocation.slotMembershipIds.keys(),
+            )
           }
 
           const { horizon } = await getUserScheduleVisibilityHorizon(user.id)
@@ -472,12 +507,21 @@ export const checkoutHandler = factory.createHandlers(
         inventories,
         promoCode: rawPromoCode,
         useMembership,
+        membershipSlotIds: rawMembershipSlotIds,
+        membershipAllocations: rawMembershipAllocations,
       } = validated
 
       // Clean slot IDs to remove any accidentally appended time suffixes
       const courtSlots = cleanSlotIds(rawCourtSlots)
       const coachSlots = cleanSlotIds(rawCoachSlots)
       const ballboySlots = cleanSlotIds(rawBallboySlots)
+      const membershipSlotIds = cleanSlotIds(rawMembershipSlotIds)
+      const membershipAllocations = rawMembershipAllocations?.map(
+        (allocation) => ({
+          ...allocation,
+          slotId: cleanSlotIds([allocation.slotId])![0],
+        }),
+      )
       const promoCode = normalizePromoCode(rawPromoCode)
 
       // Validate at least one slot is provided
@@ -494,6 +538,33 @@ export const checkoutHandler = factory.createHandlers(
       if (useMembership && (!courtSlots || courtSlots.length === 0)) {
         throw new BadRequestException(
           'Membership can only be used for court bookings',
+        )
+      }
+      if (
+        (membershipSlotIds?.length || membershipAllocations?.length) &&
+        !useMembership
+      ) {
+        throw new BadRequestException(
+          'Membership slot selection requires membership usage',
+        )
+      }
+      if (membershipSlotIds?.some((slotId) => !courtSlots?.includes(slotId))) {
+        throw new BadRequestException(
+          'Membership slots must be included in the selected court slots',
+        )
+      }
+      if (
+        membershipAllocations?.some(
+          (allocation) => !courtSlots?.includes(allocation.slotId),
+        )
+      ) {
+        throw new BadRequestException(
+          'Membership allocations must be included in the selected court slots',
+        )
+      }
+      if (membershipSlotIds && membershipAllocations) {
+        throw new BadRequestException(
+          'Provide either membership slot IDs or membership allocations',
         )
       }
 
@@ -581,12 +652,13 @@ export const checkoutHandler = factory.createHandlers(
         let promoDiscountAmount = 0
         let appliedPromoCodeId: string | null = null
         let appliedPromoCodeText: string | null = null
-        let membershipToUse: {
-          id: string
-          remainingSessions: number
-        } | null = null
-        let membershipHoursUsed = 0
         let membershipCoveredSlotIds = new Set<string>()
+        let membershipBySlotId = new Map<string, string>()
+        let membershipHoursUsed = new Map<string, number>()
+        let membershipCandidatesById = new Map<
+          string,
+          { remainingSessions: number }
+        >()
         const xenditItems: Array<{
           name: string
           quantity: number
@@ -639,29 +711,27 @@ export const checkoutHandler = factory.createHandlers(
               include: { membership: true },
               orderBy: { endDate: 'asc' },
             })
-            const eligibleMembership = membershipCandidates
-              .map((candidate) => ({
-                candidate,
-                allocation: allocateMembershipSlots(
-                  candidate.membership.type,
-                  candidate.remainingSessions,
-                  courtSlotData,
-                ),
-              }))
-              .find((item) => item.allocation.hours > 0)
+            const allocation = allocateSlotsAcrossMemberships(
+              membershipCandidates,
+              courtSlotData,
+              membershipSlotIds ? new Set(membershipSlotIds) : undefined,
+              membershipAllocations,
+            )
 
-            if (!eligibleMembership) {
+            if (!allocation) {
               throw new BadRequestException(
                 'Membership is unavailable, has insufficient hours, or cannot be used for the selected court hours',
               )
             }
-
-            membershipToUse = {
-              id: eligibleMembership.candidate.id,
-              remainingSessions: eligibleMembership.candidate.remainingSessions,
-            }
-            membershipHoursUsed = eligibleMembership.allocation.hours
-            membershipCoveredSlotIds = eligibleMembership.allocation.slotIds
+            membershipBySlotId = allocation.slotMembershipIds
+            membershipHoursUsed = allocation.membershipHours
+            membershipCoveredSlotIds = new Set(membershipBySlotId.keys())
+            membershipCandidatesById = new Map(
+              membershipCandidates.map((candidate) => [
+                candidate.id,
+                { remainingSessions: candidate.remainingSessions },
+              ]),
+            )
           }
 
           const { horizon } = await getUserScheduleVisibilityHorizon(user.id)
@@ -695,9 +765,7 @@ export const checkoutHandler = factory.createHandlers(
                 price: normalPrice,
                 discountPrice: discountedPrice,
                 courtId: slot.courtId || undefined,
-                membershipUserId: coveredByMembership
-                  ? membershipToUse?.id
-                  : undefined,
+                membershipUserId: membershipBySlotId.get(slot.id),
               },
             })
             if (!coveredByMembership) {
@@ -718,11 +786,14 @@ export const checkoutHandler = factory.createHandlers(
             },
           })
 
-          if (membershipToUse && membershipHoursUsed > 0) {
+          for (const [membershipUserId, hoursUsed] of membershipHoursUsed) {
+            const membershipCandidate =
+              membershipCandidatesById.get(membershipUserId)
+            if (!membershipCandidate) continue
             const remainingSessions =
-              membershipToUse.remainingSessions - membershipHoursUsed
+              membershipCandidate.remainingSessions - hoursUsed
             await tx.membershipUser.update({
-              where: { id: membershipToUse.id },
+              where: { id: membershipUserId },
               data: {
                 remainingSessions,
                 isExpired: remainingSessions === 0,

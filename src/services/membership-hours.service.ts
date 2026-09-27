@@ -1,5 +1,5 @@
 import { BadRequestException } from '@/exceptions'
-import { PaymentStatus, Prisma, type Slot } from '@prisma/client'
+import { BookingStatus, PaymentStatus, Prisma, type Slot } from '@prisma/client'
 import { canMembershipUseSlots } from './membership-eligibility.service'
 
 type TransactionClient = Prisma.TransactionClient
@@ -76,12 +76,48 @@ export async function restoreMembershipHoursForBooking(
   const explicitlyCoveredDetails = booking.details.filter(
     (detail) => detail.membershipUserId,
   )
-  const coveredDetails =
-    explicitlyCoveredDetails.length > 0
-      ? explicitlyCoveredDetails
-      : booking.courtNormalPrice === 0
-        ? booking.details
-        : []
+
+  if (explicitlyCoveredDetails.length > 0) {
+    const detailsByMembershipId = new Map<
+      string,
+      Array<(typeof explicitlyCoveredDetails)[number]>
+    >()
+    for (const detail of explicitlyCoveredDetails) {
+      const membershipUserId = detail.membershipUserId!
+      const details = detailsByMembershipId.get(membershipUserId) ?? []
+      details.push(detail)
+      detailsByMembershipId.set(membershipUserId, details)
+    }
+
+    let totalRestoredHours = 0
+    for (const [membershipUserId, details] of detailsByMembershipId) {
+      const membershipUser = await tx.membershipUser.findUnique({
+        where: { id: membershipUserId },
+        include: { membership: true },
+      })
+      if (!membershipUser) continue
+
+      const hours = calculateCourtHours(details.map(({ slot }) => slot))
+      const restoredHours = Math.min(
+        hours,
+        membershipUser.membership.sessions - membershipUser.remainingSessions,
+      )
+      if (restoredHours <= 0) continue
+
+      await tx.membershipUser.update({
+        where: { id: membershipUser.id },
+        data: {
+          remainingSessions: { increment: restoredHours },
+          isExpired: membershipUser.endDate <= new Date(),
+        },
+      })
+      totalRestoredHours += restoredHours
+    }
+
+    return totalRestoredHours
+  }
+
+  const coveredDetails = booking.courtNormalPrice === 0 ? booking.details : []
   const hours = calculateCourtHours(coveredDetails.map(({ slot }) => slot))
   if (hours === 0) return 0
 
@@ -103,6 +139,38 @@ export async function restoreMembershipHoursForBooking(
   })
 
   return restoredHours
+}
+
+export async function restoreMembershipHoursForBookingId(
+  tx: TransactionClient,
+  bookingId: string,
+): Promise<number> {
+  const booking = await tx.booking.findUnique({
+    where: { id: bookingId },
+    select: {
+      userId: true,
+      status: true,
+      createdAt: true,
+      courtNormalPrice: true,
+      details: {
+        select: {
+          membershipUserId: true,
+          slot: {
+            select: {
+              startAt: true,
+              endAt: true,
+            },
+          },
+        },
+      },
+    },
+  })
+
+  // Every expiry/cancellation path restores before changing the booking to
+  // CANCELLED. This guard makes duplicate scheduler/webhook events idempotent.
+  if (!booking || booking.status === BookingStatus.CANCELLED) return 0
+
+  return restoreMembershipHoursForBooking(tx, booking)
 }
 
 export async function adjustMembershipHoursForReschedule(

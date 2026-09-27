@@ -12,10 +12,15 @@ import {
   NotificationAudience,
   NotificationType,
 } from '@prisma/client'
-import { notificationService } from '@/services/notification.service'
+import {
+  createBookingCancellationNotificationForBooking,
+  notificationService,
+} from '@/services/notification.service'
 import { queueSendTemplatedEmail } from '@/services/email.service'
 import { env } from '@/env'
 import { restoreComplimentaryCreditsForBooking } from '@/services/complimentary-credit.service'
+import { restoreMembershipHoursForBookingId } from '@/services/membership-hours.service'
+import { releaseBookingSlots } from '@/services/booking-resource.service'
 
 interface XenditWebhookPayload {
   id: string
@@ -254,17 +259,26 @@ async function handlePaymentWebhookV3(c: any, webhook: XenditPaymentWebhook) {
         )
       }
 
-      await db.booking.update({
-        where: { id: invoice.bookingId },
-        data: {
-          status: BookingStatus.CANCELLED,
-          cancellationReason: `Payment failed: ${data.failure_code || 'Unknown error'}`,
-          cancelledAt: new Date(),
-        },
+      await db.$transaction(async (tx) => {
+        await releaseBookingSlots(tx, invoice.bookingId!)
+        const restoredMembershipHours =
+          await restoreMembershipHoursForBookingId(tx, invoice.bookingId!)
+        await restoreComplimentaryCreditsForBooking(tx, invoice.bookingId!)
+        await tx.booking.update({
+          where: { id: invoice.bookingId! },
+          data: {
+            status: BookingStatus.CANCELLED,
+            cancellationReason: `Payment failed: ${data.failure_code || 'Unknown error'}`,
+            cancelledAt: new Date(),
+          },
+        })
+        await createBookingCancellationNotificationForBooking(tx, {
+          bookingId: invoice.bookingId!,
+          invoiceNumber: invoice.number,
+          reason: 'Pembayaran gagal',
+          restoredMembershipHours,
+        })
       })
-      await db.$transaction((tx) =>
-        restoreComplimentaryCreditsForBooking(tx, invoice.bookingId!),
-      )
       c.var.logger.info(
         `Booking cancelled due to payment failure: ${invoice.bookingId}`,
       )
@@ -561,6 +575,8 @@ async function handlePaymentSessionWebhook(
         }
 
         // Cancel booking
+        const restoredMembershipHours =
+          await restoreMembershipHoursForBookingId(tx, booking.id)
         await restoreComplimentaryCreditsForBooking(tx, booking.id)
         await tx.booking.update({
           where: { id: booking.id },
@@ -569,6 +585,12 @@ async function handlePaymentSessionWebhook(
             cancellationReason: 'Payment session expired - no payment made',
             cancelledAt: new Date(),
           },
+        })
+        await createBookingCancellationNotificationForBooking(tx, {
+          bookingId: booking.id,
+          invoiceNumber: invoice.number,
+          reason: 'Pembayaran kedaluwarsa',
+          restoredMembershipHours,
         })
 
         c.var.logger.info(
@@ -736,17 +758,26 @@ async function handleInvoiceWebhookV2(c: any, payload: XenditWebhookPayload) {
         )
       }
 
-      await db.booking.update({
-        where: { id: invoice.bookingId },
-        data: {
-          status: BookingStatus.CANCELLED,
-          cancellationReason: 'Payment expired',
-          cancelledAt: new Date(),
-        },
+      await db.$transaction(async (tx) => {
+        await releaseBookingSlots(tx, invoice.bookingId!)
+        const restoredMembershipHours =
+          await restoreMembershipHoursForBookingId(tx, invoice.bookingId!)
+        await restoreComplimentaryCreditsForBooking(tx, invoice.bookingId!)
+        await tx.booking.update({
+          where: { id: invoice.bookingId! },
+          data: {
+            status: BookingStatus.CANCELLED,
+            cancellationReason: 'Payment expired',
+            cancelledAt: new Date(),
+          },
+        })
+        await createBookingCancellationNotificationForBooking(tx, {
+          bookingId: invoice.bookingId!,
+          invoiceNumber: invoice.number,
+          reason: 'Pembayaran kedaluwarsa',
+          restoredMembershipHours,
+        })
       })
-      await db.$transaction((tx) =>
-        restoreComplimentaryCreditsForBooking(tx, invoice.bookingId!),
-      )
       c.var.logger.info(
         `Booking cancelled due to expired payment: ${invoice.bookingId}`,
       )
@@ -1150,13 +1181,25 @@ export const xenditPaymentRequestWebhookHandler = factory.createHandlers(
             )
           }
 
-          await db.booking.update({
-            where: { id: invoice.bookingId },
-            data: { status: BookingStatus.CANCELLED },
+          await db.$transaction(async (tx) => {
+            await releaseBookingSlots(tx, invoice.bookingId!)
+            const restoredMembershipHours =
+              await restoreMembershipHoursForBookingId(tx, invoice.bookingId!)
+            await restoreComplimentaryCreditsForBooking(tx, invoice.bookingId!)
+            await tx.booking.update({
+              where: { id: invoice.bookingId! },
+              data: { status: BookingStatus.CANCELLED },
+            })
+            await createBookingCancellationNotificationForBooking(tx, {
+              bookingId: invoice.bookingId!,
+              invoiceNumber: invoice.number,
+              reason:
+                payload.data.status === 'FAILED'
+                  ? 'Pembayaran gagal'
+                  : 'Pembayaran kedaluwarsa',
+              restoredMembershipHours,
+            })
           })
-          await db.$transaction((tx) =>
-            restoreComplimentaryCreditsForBooking(tx, invoice.bookingId!),
-          )
           c.var.logger.warn(`Booking cancelled: ${invoice.bookingId}`)
         }
 
@@ -1213,12 +1256,16 @@ export const xenditPaymentRequestWebhookHandler = factory.createHandlers(
           if (invoice.user?.email) {
             const invoiceUrl = `${env.frontEndUrl}/invoices/${invoice.id}`
             try {
-              await queueSendTemplatedEmail(invoice.user.email, 'paymentReceipt', {
-                name: invoice.user.name || 'User',
-                invoiceNumber: invoice.number,
-                total: invoice.total,
-                invoiceUrl,
-              })
+              await queueSendTemplatedEmail(
+                invoice.user.email,
+                'paymentReceipt',
+                {
+                  name: invoice.user.name || 'User',
+                  invoiceNumber: invoice.number,
+                  total: invoice.total,
+                  invoiceUrl,
+                },
+              )
             } catch (emailErr) {
               c.var.logger.error(
                 `Failed sending payment receipt email: ${emailErr}`,
