@@ -22,6 +22,8 @@ import * as XLSX from 'xlsx'
 import dayjs from 'dayjs'
 import { z } from 'zod'
 import {
+  canTerminatePaidMembership,
+  ensureCashierPaidPayment,
   getCompletedRefund,
   mergeRefundIntoPaymentMeta,
 } from '@/services/refund.service'
@@ -474,16 +476,15 @@ export const terminateMembershipWithRefundHandler = factory.createHandlers(
         }
 
         const invoice = membershipTransaction.invoice
-        const payment = invoice?.payment
-        if (
-          !invoice ||
-          !payment ||
-          invoice.status !== PaymentStatus.PAID ||
-          payment.status !== PaymentStatus.PAID
-        ) {
+        let payment = invoice?.payment ?? null
+        if (!invoice || !canTerminatePaidMembership(invoice, payment)) {
           throw new BadRequestException(
             'Hanya membership yang sudah dibayar yang dapat dihentikan dan di-refund',
           )
+        }
+
+        if (!payment) {
+          payment = await ensureCashierPaidPayment(tx, invoice)
         }
 
         if (getCompletedRefund(payment.meta)) {

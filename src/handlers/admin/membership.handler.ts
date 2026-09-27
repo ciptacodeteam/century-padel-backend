@@ -21,6 +21,7 @@ import dayjs from 'dayjs'
 import status from 'http-status'
 import { z } from 'zod'
 import { hashPassword } from '@/lib/password'
+import { ensureCashierPaidPayment } from '@/services/refund.service'
 
 export const getAllMembershipHandler = factory.createHandlers(
   zValidator('query', searchQuerySchema, validateHook),
@@ -299,6 +300,7 @@ export const adminMembershipCheckoutHandler = factory.createHandlers(
 
         const invoiceNumber = await generateInvoiceNumber()
 
+        const paidAt = new Date()
         const invoice = await tx.invoice.create({
           data: {
             userId: resolvedUserId!,
@@ -308,11 +310,13 @@ export const adminMembershipCheckoutHandler = factory.createHandlers(
             processingFee: 0,
             total: membership.price,
             status: PaymentStatus.PAID,
-            issuedAt: new Date(),
+            issuedAt: paidAt,
             dueDate: dayjs().add(5, 'minutes').toDate(),
-            paidAt: new Date(),
+            paidAt,
           },
         })
+
+        await ensureCashierPaidPayment(tx, invoice)
 
         return { membershipUser, invoice }
       })

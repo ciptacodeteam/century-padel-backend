@@ -1,3 +1,5 @@
+import { PaymentStatus, Prisma } from '@prisma/client'
+
 export type CompletedRefund = {
   type: 'FULL' | 'PARTIAL'
   amount: number
@@ -49,4 +51,48 @@ export function mergeRefundIntoPaymentMeta(
     ...(asRecord(currentMeta) ?? {}),
     refund,
   }
+}
+
+export function canTerminatePaidMembership(
+  invoice: { status: string } | null | undefined,
+  payment: { status: string } | null | undefined,
+) {
+  if (!invoice || invoice.status !== PaymentStatus.PAID) return false
+  if (payment && payment.status !== PaymentStatus.PAID) return false
+  return true
+}
+
+export async function ensureCashierPaidPayment(
+  tx: Prisma.TransactionClient,
+  invoice: { id: string; total: number; paidAt: Date | null },
+) {
+  const existing = await tx.paymentMethod.findFirst({
+    where: { channel: 'CASHIER' },
+    orderBy: { sequence: 'asc' },
+  })
+  const method =
+    existing ??
+    (await tx.paymentMethod.upsert({
+      where: { name: 'Kasir' },
+      update: { channel: 'CASHIER' },
+      create: { name: 'Kasir', channel: 'CASHIER', fees: 0 },
+    }))
+
+  const payment = await tx.payment.create({
+    data: {
+      paymentMethodId: method.id,
+      status: PaymentStatus.PAID,
+      amount: invoice.total,
+      fees: 0,
+      paidAt: invoice.paidAt ?? new Date(),
+      meta: { source: 'cashier' },
+    },
+  })
+
+  await tx.invoice.update({
+    where: { id: invoice.id },
+    data: { paymentId: payment.id },
+  })
+
+  return payment
 }

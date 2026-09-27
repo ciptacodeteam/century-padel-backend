@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  canTerminatePaidMembership,
   getCompletedRefund,
   getCompletedRefundAmount,
   mergeRefundIntoPaymentMeta,
@@ -39,6 +40,14 @@ describe('refund service', () => {
         1_000_000,
       ),
     ).toBe(1_000_000)
+  })
+
+  it('mengizinkan refund membership kasir yang invoice-nya sudah lunas', () => {
+    expect(canTerminatePaidMembership({ status: 'PAID' }, null)).toBe(true)
+    expect(canTerminatePaidMembership({ status: 'PENDING' }, null)).toBe(false)
+    expect(
+      canTerminatePaidMembership({ status: 'PAID' }, { status: 'PENDING' }),
+    ).toBe(false)
   })
 
   it('mempertahankan metadata pembayaran lain saat menambahkan refund', () => {
