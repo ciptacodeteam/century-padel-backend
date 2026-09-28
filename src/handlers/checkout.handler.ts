@@ -18,6 +18,7 @@ import {
 } from '@/lib/validation'
 import { requireAuth } from '@/middlewares/auth'
 import { notificationService } from '@/services/notification.service'
+import { queuePaidInvoiceEmails } from '@/services/email.service'
 import {
   getUserScheduleVisibilityHorizon,
   isDateWithinScheduleVisibility,
@@ -1337,6 +1338,35 @@ export const checkoutHandler = factory.createHandlers(
           xenditPaymentRequest: xenditInvoiceResponse,
         }
       })
+
+      // Fully membership-funded bookings are marked as paid immediately and do
+      // not receive a payment gateway webhook, so queue their confirmation here.
+      if (result.invoice.status === PaymentStatus.PAID && !result.payment) {
+        try {
+          const customer = await db.user.findUnique({
+            where: { id: user.id },
+            select: { name: true, email: true },
+          })
+
+          if (customer?.email) {
+            await queuePaidInvoiceEmails({
+              email: customer.email,
+              name: customer.name,
+              invoiceNumber: result.invoice.number,
+              subtotal: result.invoice.subtotal,
+              processingFee: result.invoice.processingFee,
+              promoDiscountAmount: result.invoice.promoDiscountAmount,
+              total: result.invoice.total,
+              paidAt: result.invoice.paidAt,
+              bookingId: result.booking.id,
+            })
+          }
+        } catch (emailErr) {
+          c.var.logger.error(
+            `Failed to queue membership booking confirmation email: ${emailErr}`,
+          )
+        }
+      }
 
       // Extract payment session or payment actions for frontend
       let paymentSessionId: string | null = null
