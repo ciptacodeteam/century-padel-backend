@@ -1348,19 +1348,17 @@ export const checkoutHandler = factory.createHandlers(
             select: { name: true, email: true },
           })
 
-          if (customer?.email) {
-            await queuePaidInvoiceEmails({
-              email: customer.email,
-              name: customer.name,
-              invoiceNumber: result.invoice.number,
-              subtotal: result.invoice.subtotal,
-              processingFee: result.invoice.processingFee,
-              promoDiscountAmount: result.invoice.promoDiscountAmount,
-              total: result.invoice.total,
-              paidAt: result.invoice.paidAt,
-              bookingId: result.booking.id,
-            })
-          }
+          await queuePaidInvoiceEmails({
+            email: customer?.email ?? null,
+            name: customer?.name ?? null,
+            invoiceNumber: result.invoice.number,
+            subtotal: result.invoice.subtotal,
+            processingFee: result.invoice.processingFee,
+            promoDiscountAmount: result.invoice.promoDiscountAmount,
+            total: result.invoice.total,
+            paidAt: result.invoice.paidAt,
+            bookingId: result.booking.id,
+          })
         } catch (emailErr) {
           c.var.logger.error(
             `Failed to queue membership booking confirmation email: ${emailErr}`,

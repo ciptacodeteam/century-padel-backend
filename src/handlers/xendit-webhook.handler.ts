@@ -366,24 +366,22 @@ async function handlePaymentWebhookV3(c: any, webhook: XenditPaymentWebhook) {
           },
         })
       }
-      if (invoice.user?.email) {
-        try {
-          await queuePaidInvoiceEmails({
-            email: invoice.user.email,
-            name: invoice.user.name,
-            invoiceNumber: invoice.number,
-            subtotal: invoice.subtotal,
-            processingFee: invoice.processingFee,
-            promoDiscountAmount: invoice.promoDiscountAmount,
-            total: invoice.total,
-            paidAt,
-            bookingId: invoice.bookingId,
-          })
-        } catch (emailErr) {
-          c.var.logger.error(
-            `Failed sending payment receipt email: ${emailErr}`,
-          )
-        }
+      try {
+        await queuePaidInvoiceEmails({
+          email: invoice.user?.email ?? null,
+          name: invoice.user?.name ?? null,
+          invoiceNumber: invoice.number,
+          subtotal: invoice.subtotal,
+          processingFee: invoice.processingFee,
+          promoDiscountAmount: invoice.promoDiscountAmount,
+          total: invoice.total,
+          paidAt,
+          bookingId: invoice.bookingId,
+        })
+      } catch (emailErr) {
+        c.var.logger.error(
+          `Failed sending payment receipt email: ${emailErr}`,
+        )
       }
     } else if (event === 'payment.failure') {
       await notificationService.create({
@@ -881,24 +879,22 @@ async function handleInvoiceWebhookV2(c: any, payload: XenditWebhookPayload) {
           },
         })
       }
-      if (invoice.user?.email) {
-        try {
-          await queuePaidInvoiceEmails({
-            email: invoice.user.email,
-            name: invoice.user.name,
-            invoiceNumber: invoice.number,
-            subtotal: invoice.subtotal,
-            processingFee: invoice.processingFee,
-            promoDiscountAmount: invoice.promoDiscountAmount,
-            total: invoice.total,
-            paidAt: payload.paid_at ? new Date(payload.paid_at) : null,
-            bookingId: invoice.bookingId,
-          })
-        } catch (emailErr) {
-          c.var.logger.error(
-            `Failed sending payment receipt email: ${emailErr}`,
-          )
-        }
+      try {
+        await queuePaidInvoiceEmails({
+          email: invoice.user?.email ?? null,
+          name: invoice.user?.name ?? null,
+          invoiceNumber: invoice.number,
+          subtotal: invoice.subtotal,
+          processingFee: invoice.processingFee,
+          promoDiscountAmount: invoice.promoDiscountAmount,
+          total: invoice.total,
+          paidAt: payload.paid_at ? new Date(payload.paid_at) : null,
+          bookingId: invoice.bookingId,
+        })
+      } catch (emailErr) {
+        c.var.logger.error(
+          `Failed sending payment receipt email: ${emailErr}`,
+        )
       }
     } else if (payload.status === 'EXPIRED') {
       await notificationService.create({
@@ -1260,27 +1256,25 @@ export const xenditPaymentRequestWebhookHandler = factory.createHandlers(
               },
             })
           }
-          if (invoice.user?.email) {
-            try {
-              await queuePaidInvoiceEmails({
-                email: invoice.user.email,
-                name: invoice.user.name,
-                invoiceNumber: invoice.number,
-                subtotal: invoice.subtotal,
-                processingFee: invoice.processingFee,
-                promoDiscountAmount: invoice.promoDiscountAmount,
-                total: invoice.total,
-                paidAt:
-                  payload.data.status === 'COMPLETED'
-                    ? new Date(payload.data.updated)
-                    : null,
-                bookingId: invoice.bookingId,
-              })
-            } catch (emailErr) {
-              c.var.logger.error(
-                `Failed sending payment receipt email: ${emailErr}`,
-              )
-            }
+          try {
+            await queuePaidInvoiceEmails({
+              email: invoice.user?.email ?? null,
+              name: invoice.user?.name ?? null,
+              invoiceNumber: invoice.number,
+              subtotal: invoice.subtotal,
+              processingFee: invoice.processingFee,
+              promoDiscountAmount: invoice.promoDiscountAmount,
+              total: invoice.total,
+              paidAt:
+                payload.data.status === 'COMPLETED'
+                  ? new Date(payload.data.updated)
+                  : null,
+              bookingId: invoice.bookingId,
+            })
+          } catch (emailErr) {
+            c.var.logger.error(
+              `Failed sending payment receipt email: ${emailErr}`,
+            )
           }
         } else if (
           payload.data.status === 'FAILED' ||
