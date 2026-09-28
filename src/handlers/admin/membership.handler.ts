@@ -22,6 +22,7 @@ import status from 'http-status'
 import { z } from 'zod'
 import { hashPassword } from '@/lib/password'
 import { ensureCashierPaidPayment } from '@/services/refund.service'
+import { queueSuperadminInvoiceEmails } from '@/services/email.service'
 
 export const getAllMembershipHandler = factory.createHandlers(
   zValidator('query', searchQuerySchema, validateHook),
@@ -324,6 +325,14 @@ export const adminMembershipCheckoutHandler = factory.createHandlers(
       c.var.logger.info(
         `Admin ${admin?.id || 'unknown'} completed membership checkout for user ${result.membershipUser.userId}`,
       )
+
+      try {
+        await queueSuperadminInvoiceEmails(result.invoice.number)
+      } catch (error) {
+        c.var.logger.warn(
+          `Failed to queue superadmin membership email: ${error}`,
+        )
+      }
 
       return c.json(
         ok(

@@ -2,6 +2,8 @@ import { JAKARTA_TZ } from '@/config'
 import { env } from '@/env'
 import { log } from '@/lib/logger'
 import { db } from '@/lib/prisma'
+import { calculateCourtHours } from '@/services/membership-hours.service'
+import { Role } from '@prisma/client'
 import { getDefaultFromAddress, getResendClient } from '@/lib/resend'
 import dayjs from 'dayjs'
 import timezone from 'dayjs/plugin/timezone.js'
@@ -16,6 +18,13 @@ type EmailLineItem = {
   startAt: string
   endAt: string
   amount: number
+  coveredByMembership?: boolean
+}
+
+type MembershipUsage = {
+  name: string
+  sessionsUsed: number
+  remainingSessions: number
 }
 
 const escapeHtml = (value: unknown) =>
@@ -91,7 +100,9 @@ const lineItemsHtml = (items: EmailLineItem[], statusLabel?: string) =>
       const date = formatWhen(item.startAt, 'dddd, D MMM YYYY')
       const trailing = statusLabel
         ? `<td align="right" valign="top" style="font-size:13px;font-weight:700;color:#e35336;white-space:nowrap;">${escapeHtml(statusLabel)}</td>`
-        : `<td align="right" valign="top" style="font-size:14px;font-weight:700;white-space:nowrap;">${formatRp(item.amount)}</td>`
+        : item.coveredByMembership
+          ? `<td align="right" valign="top" style="font-size:13px;font-weight:700;color:#111111;white-space:nowrap;">Membership</td>`
+          : `<td align="right" valign="top" style="font-size:14px;font-weight:700;white-space:nowrap;">${formatRp(item.amount)}</td>`
       return `<tr>
         <td style="padding-bottom:16px;">
           <div style="font-size:15px;font-weight:700;">${escapeHtml(item.title)}</div>
@@ -126,6 +137,33 @@ const costRows = (
 
 const asLineItems = (value: unknown): EmailLineItem[] =>
   Array.isArray(value) ? (value as EmailLineItem[]) : []
+
+const asMembershipUsage = (value: unknown): MembershipUsage[] =>
+  Array.isArray(value) ? (value as MembershipUsage[]) : []
+
+const membershipSummary = (usages: MembershipUsage[]) => {
+  if (usages.length === 0) return ''
+
+  const blocks = usages
+    .map(
+      (usage) => `<div style="padding:12px 0 4px;border-top:1px solid #ececee;">
+        <div style="font-size:14px;font-weight:700;">${escapeHtml(usage.name)}</div>
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:8px;font-size:14px;">
+          <tr>
+            <td style="padding:4px 0;color:#71717a;">Sessions used</td>
+            <td align="right" style="padding:4px 0;font-weight:700;">${Number(usage.sessionsUsed) || 0}</td>
+          </tr>
+          <tr>
+            <td style="padding:4px 0;color:#71717a;">Remaining sessions</td>
+            <td align="right" style="padding:4px 0;font-weight:700;color:#e35336;">${Number(usage.remainingSessions) || 0}</td>
+          </tr>
+        </table>
+      </div>`,
+    )
+    .join('')
+
+  return `<div style="font-size:15px;font-weight:700;padding:8px 0 4px;">Membership</div>${blocks}`
+}
 
 /**
  * Email templates
@@ -202,6 +240,7 @@ export const emailTemplates = {
 
   bookingConfirmation: (variables: Record<string, any>) => {
     const items = asLineItems(variables.items)
+    const memberships = asMembershipUsage(variables.memberships)
     const courtLabel = items[0]?.title || 'Court'
     return {
       subject: `Booking Confirmed — ${courtLabel}`,
@@ -211,6 +250,7 @@ export const emailTemplates = {
         ${detailCard(
           `<div style="font-size:14px;font-weight:700;">Booking ID: #${escapeHtml(variables.invoiceNumber)}</div>`,
           `<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${lineItemsHtml(items)}</table>
+           ${membershipSummary(memberships)}
            <div style="font-size:15px;font-weight:700;padding:8px 0 12px;">Rincian Biaya</div>
            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${costRows([
              { label: 'Total', amount: Number(variables.total || 0), emphasize: true },
@@ -223,6 +263,7 @@ export const emailTemplates = {
 
   paymentReceipt: (variables: Record<string, any>) => {
     const items = asLineItems(variables.items)
+    const memberships = asMembershipUsage(variables.memberships)
     const rows: Array<{
       label: string
       amount: number
@@ -267,6 +308,7 @@ export const emailTemplates = {
           `<div style="font-size:14px;font-weight:700;">Order ID: #${escapeHtml(variables.invoiceNumber)}</div>
            ${paidAtLabel ? `<div style="margin-top:4px;font-size:13px;color:#71717a;">Payment Time: ${escapeHtml(paidAtLabel)}</div>` : ''}`,
           `${items.length ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${lineItemsHtml(items)}</table>` : ''}
+           ${membershipSummary(memberships)}
            <div style="font-size:15px;font-weight:700;padding:8px 0 12px;">Rincian Biaya</div>
            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${costRows(rows)}</table>`,
         )}
@@ -299,6 +341,56 @@ export const emailTemplates = {
       `),
     }
   },
+
+  adminCourtBooking: (variables: Record<string, any>) => {
+    const items = asLineItems(variables.items)
+    const memberships = asMembershipUsage(variables.memberships)
+    const courtLabel = items[0]?.title || 'Court'
+    return {
+      subject: `New court booking — ${courtLabel}`,
+      html: emailShell(`
+        <p style="margin:0 0 14px;font-size:16px;line-height:1.5;">New court booking</p>
+        <p style="margin:0;font-size:15px;line-height:1.6;">A customer just booked a court.</p>
+        ${detailCard(
+          `<div style="font-size:14px;font-weight:700;">${escapeHtml(variables.customerName || 'Customer')}</div>
+           <div style="margin-top:4px;font-size:13px;color:#71717a;">${escapeHtml(variables.customerEmail || '')}${variables.customerPhone ? ` · ${escapeHtml(variables.customerPhone)}` : ''}</div>
+           <div style="margin-top:4px;font-size:13px;color:#71717a;">Invoice #${escapeHtml(variables.invoiceNumber)}</div>`,
+          `<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${lineItemsHtml(items)}</table>
+           ${membershipSummary(memberships)}
+           <div style="font-size:15px;font-weight:700;padding:8px 0 12px;">Rincian Biaya</div>
+           <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${costRows([
+             { label: 'Total', amount: Number(variables.total || 0), emphasize: true },
+           ])}</table>`,
+        )}
+        ${emailButton('Open bookings', variables.adminUrl)}
+      `),
+    }
+  },
+
+  adminMembershipPurchase: (variables: Record<string, any>) => ({
+    subject: `New membership — ${variables.membershipName || 'Membership'}`,
+    html: emailShell(`
+      <p style="margin:0 0 14px;font-size:16px;line-height:1.5;">New membership purchase</p>
+      <p style="margin:0;font-size:15px;line-height:1.6;">A customer just bought a membership.</p>
+      ${detailCard(
+        `<div style="font-size:14px;font-weight:700;">${escapeHtml(variables.customerName || 'Customer')}</div>
+         <div style="margin-top:4px;font-size:13px;color:#71717a;">${escapeHtml(variables.customerEmail || '')}${variables.customerPhone ? ` · ${escapeHtml(variables.customerPhone)}` : ''}</div>
+         <div style="margin-top:4px;font-size:13px;color:#71717a;">Invoice #${escapeHtml(variables.invoiceNumber)}</div>`,
+        `<div style="font-size:15px;font-weight:700;padding-bottom:8px;">${escapeHtml(variables.membershipName || 'Membership')}</div>
+         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;">
+           <tr>
+             <td style="padding:8px 0;color:#71717a;border-top:1px solid #ececee;">Sessions included</td>
+             <td align="right" style="padding:8px 0;font-weight:700;border-top:1px solid #ececee;">${Number(variables.sessions) || 0}</td>
+           </tr>
+           <tr>
+             <td style="padding:12px 0 8px;border-top:1px dashed #d4d4d8;font-weight:700;">Total</td>
+             <td align="right" style="padding:12px 0 8px;border-top:1px dashed #d4d4d8;font-weight:700;color:#e35336;">${formatRp(Number(variables.total || 0))}</td>
+           </tr>
+         </table>`,
+      )}
+      ${emailButton('Open memberships', variables.adminUrl)}
+    `),
+  }),
 
   emailVerification: (variables: Record<string, any>) => ({
     subject: 'Verify Your Email Address',
@@ -454,34 +546,118 @@ type PaidInvoiceEmailInput = {
 }
 
 export const queuePaidInvoiceEmails = async (invoice: PaidInvoiceEmailInput) => {
-  if (!invoice.email) return
-
   const invoiceUrl = `${env.frontEndUrl.replace(/\/$/, '')}/invoice/${invoice.invoiceNumber}`
   const items = invoice.bookingId
     ? await loadBookingEmailItems(invoice.bookingId)
     : []
+  const memberships = invoice.bookingId
+    ? await loadMembershipUsage(invoice.bookingId)
+    : []
 
-  await queueSendTemplatedEmail(invoice.email, 'paymentReceipt', {
-    name: invoice.name || 'there',
-    invoiceNumber: invoice.invoiceNumber,
-    subtotal: invoice.subtotal,
-    processingFee: invoice.processingFee,
-    promoDiscountAmount: invoice.promoDiscountAmount,
-    total: invoice.total,
-    paidAt: invoice.paidAt?.toISOString(),
-    invoiceUrl,
-    items,
+  if (invoice.email) {
+    const recipient = await db.user.findFirst({
+      where: { email: { equals: invoice.email, mode: 'insensitive' } },
+      select: { emailVerified: true },
+    })
+    if (!recipient?.emailVerified) {
+      log.info(
+        { email: invoice.email, invoiceNumber: invoice.invoiceNumber },
+        'Skipping customer email because the address is not verified',
+      )
+    } else {
+      await queueSendTemplatedEmail(invoice.email, 'paymentReceipt', {
+        name: invoice.name || 'there',
+        invoiceNumber: invoice.invoiceNumber,
+        subtotal: invoice.subtotal,
+        processingFee: invoice.processingFee,
+        promoDiscountAmount: invoice.promoDiscountAmount,
+        total: invoice.total,
+        paidAt: invoice.paidAt?.toISOString(),
+        invoiceUrl,
+        items,
+        memberships,
+      })
+
+      if (items.length > 0) {
+        await queueSendTemplatedEmail(invoice.email, 'bookingConfirmation', {
+          name: invoice.name || 'there',
+          invoiceNumber: invoice.invoiceNumber,
+          total: invoice.total,
+          invoiceUrl,
+          items,
+          memberships,
+        })
+      }
+    }
+  }
+
+  await queueSuperadminInvoiceEmails(invoice.invoiceNumber)
+}
+
+export const queueSuperadminInvoiceEmails = async (invoiceNumber: string) => {
+  const record = await db.invoice.findUnique({
+    where: { number: invoiceNumber },
+    select: {
+      number: true,
+      total: true,
+      bookingId: true,
+      user: { select: { name: true, email: true, phone: true } },
+      membershipUser: {
+        select: { membership: { select: { name: true, sessions: true } } },
+      },
+    },
+  })
+  if (!record) return
+
+  const adminBase = env.frontEndUrl.replace(/\/$/, '')
+  const customer = record.user
+
+  if (record.bookingId) {
+    const items = await loadBookingEmailItems(record.bookingId)
+    if (items.length === 0) return
+    const memberships = await loadMembershipUsage(record.bookingId)
+    await queueSuperadminEmails('adminCourtBooking', {
+      customerName: customer?.name,
+      customerEmail: customer?.email,
+      customerPhone: customer?.phone,
+      invoiceNumber: record.number,
+      total: record.total,
+      items,
+      memberships,
+      adminUrl: `${adminBase}/admin/kelola-pemesanan/lapangan`,
+    })
+    return
+  }
+
+  const membership = record.membershipUser?.membership
+  if (!membership) return
+
+  await queueSuperadminEmails('adminMembershipPurchase', {
+    customerName: customer?.name,
+    customerEmail: customer?.email,
+    customerPhone: customer?.phone,
+    invoiceNumber: record.number,
+    membershipName: membership.name,
+    sessions: membership.sessions,
+    total: record.total,
+    adminUrl: `${adminBase}/admin/kelola-pemesanan/membership`,
+  })
+}
+
+const queueSuperadminEmails = async (
+  template: 'adminCourtBooking' | 'adminMembershipPurchase',
+  variables: Record<string, any>,
+) => {
+  const admins = await db.staff.findMany({
+    where: { role: Role.ADMIN, isActive: true },
+    select: { email: true },
   })
 
-  if (items.length > 0) {
-    await queueSendTemplatedEmail(invoice.email, 'bookingConfirmation', {
-      name: invoice.name || 'there',
-      invoiceNumber: invoice.invoiceNumber,
-      total: invoice.total,
-      invoiceUrl,
-      items,
-    })
-  }
+  await Promise.all(
+    admins.map((admin) =>
+      queueSendTemplatedEmail(admin.email, template, variables),
+    ),
+  )
 }
 
 const loadBookingEmailItems = async (bookingId: string): Promise<EmailLineItem[]> => {
@@ -498,7 +674,51 @@ const loadBookingEmailItems = async (bookingId: string): Promise<EmailLineItem[]
     title: detail.court?.name || 'Court',
     startAt: detail.slot.startAt.toISOString(),
     endAt: detail.slot.endAt.toISOString(),
-    amount: detail.discountPrice,
+    amount: detail.membershipUserId ? 0 : detail.discountPrice,
+    coveredByMembership: Boolean(detail.membershipUserId),
+  }))
+}
+
+const loadMembershipUsage = async (
+  bookingId: string,
+): Promise<MembershipUsage[]> => {
+  const details = await db.bookingDetail.findMany({
+    where: { bookingId, membershipUserId: { not: null } },
+    include: {
+      slot: { select: { startAt: true, endAt: true } },
+      membershipUser: {
+        include: { membership: { select: { name: true } } },
+      },
+    },
+  })
+
+  const grouped = new Map<
+    string,
+    {
+      name: string
+      remainingSessions: number
+      slots: Array<{ startAt: Date; endAt: Date }>
+    }
+  >()
+
+  for (const detail of details) {
+    if (!detail.membershipUserId || !detail.membershipUser) continue
+    const current = grouped.get(detail.membershipUserId) ?? {
+      name: detail.membershipUser.membership.name,
+      remainingSessions: detail.membershipUser.remainingSessions,
+      slots: [] as Array<{ startAt: Date; endAt: Date }>,
+    }
+    current.slots.push({
+      startAt: detail.slot.startAt,
+      endAt: detail.slot.endAt,
+    })
+    grouped.set(detail.membershipUserId, current)
+  }
+
+  return [...grouped.values()].map((usage) => ({
+    name: usage.name,
+    sessionsUsed: calculateCourtHours(usage.slots),
+    remainingSessions: usage.remainingSessions,
   }))
 }
 

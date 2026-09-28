@@ -904,6 +904,7 @@ export const cancelBookingHandler = factory.createHandlers(
               id: true,
               name: true,
               email: true,
+              emailVerified: true,
               phone: true,
             },
           },
@@ -935,7 +936,7 @@ export const cancelBookingHandler = factory.createHandlers(
         },
       })
 
-      if (cancelledBooking?.user.email) {
+      if (cancelledBooking?.user.email && cancelledBooking.user.emailVerified) {
         try {
           const invoiceUrl = cancelledBooking.invoice
             ? `${env.frontEndUrl.replace(/\/$/, '')}/invoice/${cancelledBooking.invoice.number}`

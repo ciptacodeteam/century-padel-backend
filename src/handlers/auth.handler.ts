@@ -797,8 +797,8 @@ export const requestEmailChangeHandler = factory.createHandlers(
         code,
       })
 
-      // Send alert to old email if exists
-      if (existingUser.email) {
+      // Alert the previous address only when it is already verified
+      if (existingUser.email && existingUser.emailVerified) {
         await queueSendTemplatedEmail(existingUser.email, 'emailChangeAlert', {
           name: existingUser.name,
           oldEmail: existingUser.email,
@@ -1017,7 +1017,13 @@ export const changeUserPasswordHandler = factory.createHandlers(
       // Get user with password
       const userData = await db.user.findUnique({
         where: { id: user.id },
-        select: { id: true, password: true, name: true, email: true },
+        select: {
+          id: true,
+          password: true,
+          name: true,
+          email: true,
+          emailVerified: true,
+        },
       })
 
       if (!userData || !userData.password) {
@@ -1049,8 +1055,8 @@ export const changeUserPasswordHandler = factory.createHandlers(
         data: { password: hashedPassword },
       })
 
-      // Send confirmation email if user has email
-      if (userData.email) {
+      // Send confirmation email only when the address is verified
+      if (userData.email && userData.emailVerified) {
         await queueSendTemplatedEmail(userData.email, 'passwordResetSuccess', {
           name: userData.name,
         })

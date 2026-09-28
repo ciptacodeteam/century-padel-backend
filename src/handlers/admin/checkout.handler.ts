@@ -18,6 +18,7 @@ import {
   getSlotDurationMinutes,
   getTotalSlotDurationMinutes,
 } from '@/services/complimentary-credit.service'
+import { queueSuperadminInvoiceEmails } from '@/services/email.service'
 
 const adminCheckoutSchema = z
   .object({
@@ -532,12 +533,21 @@ export const adminCheckoutHandler = factory.createHandlers(
         return {
           bookingId: booking.id,
           invoiceId: invoice.id,
+          invoiceNumber: invoice.number,
           totalPrice,
           processingFee,
           totalHours: membershipHoursUsed,
           bookedItems,
         }
       })
+
+      if (result.bookedItems.courtSlots.length > 0) {
+        try {
+          await queueSuperadminInvoiceEmails(result.invoiceNumber)
+        } catch (error) {
+          c.var.logger.warn(`Failed to queue superadmin booking email: ${error}`)
+        }
+      }
 
       return c.json(
         ok(
