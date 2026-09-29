@@ -44,6 +44,19 @@ const formatWhen = (value: string | Date | null | undefined, pattern: string) =>
   return parsed.tz(JAKARTA_TZ).locale('id').format(pattern)
 }
 
+// Court slots are stored as Jakarta wall-clock values with a UTC label
+// (19:00 WIB is 19:00Z). Convert those with `.tz('Asia/Jakarta')` and the
+// email shows 02:00 the next day. Payment timestamps are real UTC instants.
+const formatSlotWhen = (
+  value: string | Date | null | undefined,
+  pattern: string,
+) => {
+  if (!value) return ''
+  const parsed = dayjs.utc(value)
+  if (!parsed.isValid()) return ''
+  return parsed.locale('id').format(pattern)
+}
+
 const bannerSrc = () =>
   `${env.frontEndUrl.replace(/\/$/, '')}/email/century-padel-banner.png`
 
@@ -96,8 +109,8 @@ const detailCard = (headHtml: string, bodyHtml: string) => `
 const lineItemsHtml = (items: EmailLineItem[], statusLabel?: string) =>
   items
     .map((item) => {
-      const time = `${formatWhen(item.startAt, 'HH:mm')} – ${formatWhen(item.endAt, 'HH:mm')}`
-      const date = formatWhen(item.startAt, 'dddd, D MMM YYYY')
+      const time = `${formatSlotWhen(item.startAt, 'HH:mm')} – ${formatSlotWhen(item.endAt, 'HH:mm')}`
+      const date = formatSlotWhen(item.startAt, 'dddd, D MMM YYYY')
       const trailing = statusLabel
         ? `<td align="right" valign="top" style="font-size:13px;font-weight:700;color:#e35336;white-space:nowrap;">${escapeHtml(statusLabel)}</td>`
         : item.coveredByMembership
