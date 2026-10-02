@@ -11,7 +11,11 @@ import { z } from 'zod'
 import { PaymentStatus, BookingStatus } from '@prisma/client'
 import xenditService from '@/services/xendit.service'
 import { getFileUrl } from '@/services/upload.service'
-import { BadRequestException, NotFoundException } from '@/exceptions'
+import {
+  BadRequestException,
+  NotFoundException,
+  UnauthorizedException,
+} from '@/exceptions'
 import dayjs from 'dayjs'
 import { env } from '@/env'
 import {
@@ -20,6 +24,10 @@ import {
 } from '@/services/membership-hours.service'
 import { restoreComplimentaryCreditsForBooking } from '@/services/complimentary-credit.service'
 import { isVirtualAccountChannel } from '@/lib/payment-channel'
+import {
+  createInvoiceShareToken,
+  verifyInvoiceShareToken,
+} from '@/lib/invoice-share'
 import {
   createBookingCancellationNotification,
   createBookingCancellationNotificationForBooking,
@@ -109,19 +117,24 @@ export const getUserInvoicesHandler = factory.createHandlers(
 
 // GET /invoices/:id (detail)
 export const getInvoiceDetailHandler = factory.createHandlers(
-  requireAuth,
   zValidator('param', z.object({ id: z.string().min(1) }), validateHook),
   async (c) => {
     try {
       const user = c.get('user')
-      if (!user || !user.id) {
-        throw new Error('Unauthorized')
+      const { id } = c.req.valid('param') as { id: string }
+      const hasValidShareToken = verifyInvoiceShareToken(
+        id,
+        c.req.query('share'),
+      )
+
+      if ((!user || !user.id) && !hasValidShareToken) {
+        throw new UnauthorizedException()
       }
 
-      const { id } = c.req.valid('param') as { id: string }
-
       const invoice: any = await db.invoice.findFirst({
-        where: { number: id, userId: user.id },
+        where: hasValidShareToken
+          ? { number: id }
+          : { number: id, userId: user!.id },
         include: {
           user: { select: { id: true, name: true, email: true, phone: true } },
           booking: {
@@ -339,6 +352,21 @@ export const getInvoiceDetailHandler = factory.createHandlers(
         resolvedPaymentMeta?.invoiceUrl ||
         null
 
+      const paymentForResponse = invoice.payment
+        ? {
+            ...invoice.payment,
+            ...(hasValidShareToken
+              ? { externalRef: undefined, meta: undefined }
+              : {}),
+            method: invoice.payment.method
+              ? {
+                  ...invoice.payment.method,
+                  logo: await getFileUrl(invoice.payment.method.logo),
+                }
+              : null,
+          }
+        : null
+
       const responsePayload = {
         id: invoice.id,
         number: invoice.number,
@@ -351,22 +379,17 @@ export const getInvoiceDetailHandler = factory.createHandlers(
         issuedAt: invoice.issuedAt,
         dueDate: invoice.dueDate,
         paidAt: invoice.paidAt,
-        user: invoice.user,
+        user: hasValidShareToken
+          ? { name: invoice.user.name, phone: invoice.user.phone }
+          : invoice.user,
         booking: invoice.booking,
         classBooking: invoice.classBooking,
         membershipUser: invoice.membershipUser,
-        payment: {
-          ...invoice.payment,
-          method: invoice.payment?.method
-            ? {
-                ...invoice.payment.method,
-                logo: await getFileUrl(invoice.payment.method.logo),
-              }
-            : null,
-        },
-        paymentMeta: resolvedPaymentMeta,
-        paymentInstructions,
-        paymentUrl,
+        payment: paymentForResponse,
+        paymentMeta: hasValidShareToken ? null : resolvedPaymentMeta,
+        paymentInstructions: hasValidShareToken ? null : paymentInstructions,
+        paymentUrl: hasValidShareToken ? null : paymentUrl,
+        shareToken: createInvoiceShareToken(invoice.number),
       }
 
       return c.json(
