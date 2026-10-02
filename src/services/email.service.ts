@@ -106,23 +106,94 @@ const detailCard = (headHtml: string, bodyHtml: string) => `
     </tr>
   </table>`
 
+type CourtGroup = {
+  title: string
+  dateKey: string
+  dateLabel: string
+  amount: number
+  coveredByMembership: boolean
+  slots: Array<{ startAt: string; endAt: string }>
+}
+
+const mergeConsecutiveSlots = (
+  slots: Array<{ startAt: string; endAt: string }>,
+) => {
+  const sorted = [...slots].sort(
+    (a, b) => dayjs.utc(a.startAt).valueOf() - dayjs.utc(b.startAt).valueOf(),
+  )
+
+  return sorted.reduce<Array<{ startAt: string; endAt: string }>>(
+    (ranges, slot) => {
+      const previous = ranges[ranges.length - 1]
+      if (previous && dayjs.utc(previous.endAt).isSame(dayjs.utc(slot.startAt))) {
+        previous.endAt = slot.endAt
+        return ranges
+      }
+      ranges.push({ ...slot })
+      return ranges
+    },
+    [],
+  )
+}
+
+const groupCourtItems = (items: EmailLineItem[]): CourtGroup[] => {
+  const grouped = new Map<string, CourtGroup>()
+
+  for (const item of items) {
+    const dateKey = formatSlotWhen(item.startAt, 'YYYY-MM-DD')
+    const key = `${item.title}::${dateKey}`
+    const current = grouped.get(key) ?? {
+      title: item.title,
+      dateKey,
+      dateLabel: formatSlotWhen(item.startAt, 'dddd, D MMM YYYY'),
+      amount: 0,
+      coveredByMembership: true,
+      slots: [],
+    }
+
+    current.amount += Number(item.amount || 0)
+    current.coveredByMembership =
+      current.coveredByMembership && Boolean(item.coveredByMembership)
+    current.slots.push({ startAt: item.startAt, endAt: item.endAt })
+    grouped.set(key, current)
+  }
+
+  return [...grouped.values()].sort((a, b) => {
+    const dateCompare = a.dateKey.localeCompare(b.dateKey)
+    if (dateCompare !== 0) return dateCompare
+    return a.title.localeCompare(b.title, 'id')
+  })
+}
+
 const lineItemsHtml = (items: EmailLineItem[], statusLabel?: string) =>
-  items
-    .map((item) => {
-      const time = `${formatSlotWhen(item.startAt, 'HH:mm')} – ${formatSlotWhen(item.endAt, 'HH:mm')}`
-      const date = formatSlotWhen(item.startAt, 'dddd, D MMM YYYY')
+  groupCourtItems(items)
+    .map((group, index) => {
+      const ranges = mergeConsecutiveSlots(group.slots)
       const trailing = statusLabel
-        ? `<td align="right" valign="top" style="font-size:13px;font-weight:700;color:#e35336;white-space:nowrap;">${escapeHtml(statusLabel)}</td>`
-        : item.coveredByMembership
-          ? `<td align="right" valign="top" style="font-size:13px;font-weight:700;color:#111111;white-space:nowrap;">Membership</td>`
-          : `<td align="right" valign="top" style="font-size:14px;font-weight:700;white-space:nowrap;">${formatRp(item.amount)}</td>`
+        ? `<td align="right" valign="top" style="padding-top:2px;font-size:13px;font-weight:700;color:#e35336;white-space:nowrap;">${escapeHtml(statusLabel)}</td>`
+        : group.coveredByMembership
+          ? `<td align="right" valign="top" style="padding-top:2px;font-size:13px;font-weight:700;color:#111111;white-space:nowrap;">Membership</td>`
+          : `<td align="right" valign="top" style="padding-top:2px;font-size:14px;font-weight:700;white-space:nowrap;">${formatRp(group.amount)}</td>`
+      const times = ranges
+        .map(
+          (range) =>
+            `<div style="margin-top:4px;font-size:13px;line-height:1.45;color:#71717a;">${escapeHtml(`${formatSlotWhen(range.startAt, 'HH:mm')} – ${formatSlotWhen(range.endAt, 'HH:mm')}`)}</div>`,
+        )
+        .join('')
+
       return `<tr>
-        <td style="padding-bottom:16px;">
-          <div style="font-size:15px;font-weight:700;">${escapeHtml(item.title)}</div>
-          <div style="margin-top:4px;font-size:13px;color:#71717a;">${escapeHtml(time)}</div>
-          <div style="margin-top:2px;font-size:13px;color:#71717a;">${escapeHtml(date)}</div>
+        <td colspan="2" style="padding:${index === 0 ? '0' : '16px'} 0 0;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+            <tr>
+              <td valign="top" style="padding-bottom:2px;">
+                <div style="font-size:15px;font-weight:700;">${escapeHtml(group.title)}</div>
+                <div style="margin-top:2px;font-size:13px;color:#71717a;">${escapeHtml(group.dateLabel)}</div>
+                ${times}
+              </td>
+              ${trailing}
+            </tr>
+          </table>
         </td>
-        ${trailing}
       </tr>`
     })
     .join('')
@@ -254,7 +325,13 @@ export const emailTemplates = {
   bookingConfirmation: (variables: Record<string, any>) => {
     const items = asLineItems(variables.items)
     const memberships = asMembershipUsage(variables.memberships)
-    const courtLabel = items[0]?.title || 'Court'
+    const courts = [...new Set(items.map((item) => item.title).filter(Boolean))]
+    const courtLabel =
+      courts.length === 0
+        ? 'Court'
+        : courts.length === 1
+          ? courts[0]
+          : `${courts.length} courts`
     return {
       subject: `Booking Confirmed — ${courtLabel}`,
       html: emailShell(`
@@ -358,7 +435,13 @@ export const emailTemplates = {
   adminCourtBooking: (variables: Record<string, any>) => {
     const items = asLineItems(variables.items)
     const memberships = asMembershipUsage(variables.memberships)
-    const courtLabel = items[0]?.title || 'Court'
+    const courts = [...new Set(items.map((item) => item.title).filter(Boolean))]
+    const courtLabel =
+      courts.length === 0
+        ? 'Court'
+        : courts.length === 1
+          ? courts[0]
+          : `${courts.length} courts`
     return {
       subject: `New court booking — ${courtLabel}`,
       html: emailShell(`
