@@ -5,6 +5,12 @@ import { BookingStatus, SlotType } from '@prisma/client'
 import dayjs from 'dayjs'
 import timezone from 'dayjs/plugin/timezone.js'
 import utc from 'dayjs/plugin/utc.js'
+import {
+  COURT_DAY_END,
+  getCourtPriceBand,
+  HAPPY_HOUR_START,
+  PEAK_HOUR_START,
+} from './court-time-policy.service'
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -22,13 +28,27 @@ type SetCourtPricingPayload = {
   replaceFutureSchedule?: boolean
 }
 
-const HAPPY_START = 6
-const HAPPY_END = 16 // exclusive
-const PEAK_START = 16
-const PEAK_END = 24 // exclusive
-
 function hoursForBand(start: number, end: number) {
   return Array.from({ length: end - start }, (_, i) => start + i)
+}
+
+function courtPricingPlan(
+  day: number,
+  happyHourPrice: number,
+  happyHourDiscountPrice: number,
+  peakHourPrice: number,
+  peakHourDiscountPrice: number,
+) {
+  return hoursForBand(HAPPY_HOUR_START, COURT_DAY_END).map((hour) => {
+    const isHappyHour = getCourtPriceBand(day, hour) === 'HAPPY_HOUR'
+    return {
+      hour,
+      price: isHappyHour ? happyHourPrice : peakHourPrice,
+      discountPrice: isHappyHour
+        ? happyHourDiscountPrice
+        : peakHourDiscountPrice,
+    }
+  })
 }
 
 function toUtcRange(dateISO: string, hour: number) {
@@ -93,25 +113,17 @@ export async function setCourtPricing({
       ) {
         if (!days.includes(dayNumber(d))) continue
 
-        const hours = [
-          ...hoursForBand(HAPPY_START, HAPPY_END).map((hour) => ({
-            hour,
-            price: happyHourPrice,
-            discountPrice: happyHourDiscountPrice,
-          })),
-          ...hoursForBand(PEAK_START, PEAK_END).map((hour) => ({
-            hour,
-            price: peakHourPrice,
-            discountPrice: peakHourDiscountPrice,
-          })),
-        ].filter(({ hour }) => !closedHours.includes(hour))
+        const hours = courtPricingPlan(
+          d.day(),
+          happyHourPrice,
+          happyHourDiscountPrice,
+          peakHourPrice,
+          peakHourDiscountPrice,
+        ).filter(({ hour }) => !closedHours.includes(hour))
 
         replacementSlots.push(
           ...hours.map(({ hour, price, discountPrice }) => {
-            const { startAt, endAt } = toUtcRange(
-              d.format('YYYY-MM-DD'),
-              hour,
-            )
+            const { startAt, endAt } = toUtcRange(d.format('YYYY-MM-DD'), hour)
             return {
               type: SlotType.COURT,
               courtId,
@@ -268,21 +280,13 @@ export async function setCourtPricing({
       })
 
       const slots: any[] = []
-      const happyHours = hoursForBand(HAPPY_START, HAPPY_END) // 06–15
-      const peakHours = hoursForBand(PEAK_START, PEAK_END) // 16–23
-
-      const allHours = [
-        ...happyHours.map((h) => ({
-          hour: h,
-          price: happyHourPrice,
-          discountPrice: happyHourDiscountPrice,
-        })),
-        ...peakHours.map((h) => ({
-          hour: h,
-          price: peakHourPrice,
-          discountPrice: peakHourDiscountPrice,
-        })),
-      ].filter((r) => !closedHours.includes(r.hour))
+      const allHours = courtPricingPlan(
+        d.day(),
+        happyHourPrice,
+        happyHourDiscountPrice,
+        peakHourPrice,
+        peakHourDiscountPrice,
+      ).filter((r) => !closedHours.includes(r.hour))
 
       for (const { hour, price, discountPrice } of allHours) {
         const startAt = d.hour(hour).minute(0).second(0).toDate()
@@ -365,19 +369,16 @@ export async function updateCourtPricing({
   try {
     {
       // 1) Build target hour → price map for the day
-      const happy = hoursForBand(HAPPY_START, HAPPY_END).map((h) => ({
-        h,
-        price: happyHourPrice,
-        discountPrice: happyHourDiscountPrice,
-      }))
-      const peak = hoursForBand(PEAK_START, PEAK_END).map((h) => ({
-        h,
-        price: peakHourPrice,
-        discountPrice: peakHourDiscountPrice,
-      }))
-
       const closed = new Set<number>(closedHours)
-      const target = [...happy, ...peak].filter((x) => !closed.has(x.h)) // final intended open hours
+      const target = courtPricingPlan(
+        dayjs(date).day(),
+        happyHourPrice,
+        happyHourDiscountPrice,
+        peakHourPrice,
+        peakHourDiscountPrice,
+      )
+        .map(({ hour, ...prices }) => ({ h: hour, ...prices }))
+        .filter((x) => !closed.has(x.h)) // final intended open hours
 
       // 2) Compute UTC window of the day
       const dayStart = dayjs(date).startOf('day').toDate()
@@ -785,11 +786,13 @@ export async function setStaffPricingRange(p: SetStaffPricingRangePayload) {
           })
         }
 
-        const happy = hoursForBand(HAPPY_START, HAPPY_END).map((h) => ({
-          h,
-          price: p.happyHourPrice,
-        }))
-        const peak = hoursForBand(PEAK_START, PEAK_END).map((h) => ({
+        const happy = hoursForBand(HAPPY_HOUR_START, PEAK_HOUR_START).map(
+          (h) => ({
+            h,
+            price: p.happyHourPrice,
+          }),
+        )
+        const peak = hoursForBand(PEAK_HOUR_START, COURT_DAY_END).map((h) => ({
           h,
           price: p.peakHourPrice,
         }))
@@ -837,11 +840,11 @@ export async function updateStaffPricing(p: UpdateStaffPricingPayload) {
     const dayEnd = d.endOf('day').toDate()
     const closed = new Set(p.closedHours ?? [])
 
-    const happy = hoursForBand(HAPPY_START, HAPPY_END).map((h) => ({
+    const happy = hoursForBand(HAPPY_HOUR_START, PEAK_HOUR_START).map((h) => ({
       h,
       price: p.happyHourPrice,
     }))
-    const peak = hoursForBand(PEAK_START, PEAK_END).map((h) => ({
+    const peak = hoursForBand(PEAK_HOUR_START, COURT_DAY_END).map((h) => ({
       h,
       price: p.peakHourPrice,
     }))

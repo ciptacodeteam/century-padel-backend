@@ -13,6 +13,13 @@ const slotAtJakartaTime = (hour: number, minute = 0) => ({
   ),
 })
 
+const weekendSlotAtJakartaTime = (
+  date: '2026-09-26' | '2026-09-27',
+  hour: number,
+) => ({
+  startAt: new Date(`${date}T${String(hour).padStart(2, '0')}:00:00Z`),
+})
+
 describe('membership slot eligibility', () => {
   it('allows all-hour memberships at happy and peak hours', () => {
     expect(
@@ -45,6 +52,15 @@ describe('membership slot eligibility', () => {
     expect(
       canMembershipUseSlots(MembershipType.HAPPY_HOUR, [
         slotAtJakartaTime(15, 59),
+      ]),
+    ).toBe(true)
+  })
+
+  it('allows happy-hour memberships at every operating hour on weekends', () => {
+    expect(
+      canMembershipUseSlots(MembershipType.HAPPY_HOUR, [
+        weekendSlotAtJakartaTime('2026-09-26', 0),
+        weekendSlotAtJakartaTime('2026-09-27', 23),
       ]),
     ).toBe(true)
   })
