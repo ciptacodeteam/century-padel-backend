@@ -1,6 +1,12 @@
 import { BadRequestException } from '@/exceptions'
-import { BookingStatus, PaymentStatus, Prisma, type Slot } from '@prisma/client'
+import {
+  BookingStatus,
+  MembershipAcquisitionType,
+  Prisma,
+  type Slot,
+} from '@prisma/client'
 import { canMembershipUseSlots } from './membership-eligibility.service'
+import { fundedMembershipWhere } from './membership-entitlement.service'
 
 type TransactionClient = Prisma.TransactionClient
 
@@ -39,7 +45,10 @@ async function findMembershipUsedByBooking(
   if (explicitMembershipUserId) {
     return tx.membershipUser.findUnique({
       where: { id: explicitMembershipUserId },
-      include: { membership: true },
+      include: {
+        membership: true,
+        incomingTransfer: { select: { transferredHours: true } },
+      },
     })
   }
 
@@ -52,12 +61,16 @@ async function findMembershipUsedByBooking(
   const candidates = await tx.membershipUser.findMany({
     where: {
       userId: booking.userId,
+      acquisitionType: MembershipAcquisitionType.PURCHASE,
       startDate: { lte: booking.createdAt },
       endDate: { gt: booking.createdAt },
       updatedAt: { gte: booking.createdAt },
-      invoice: { is: { status: PaymentStatus.PAID } },
+      ...fundedMembershipWhere(),
     },
-    include: { membership: true },
+    include: {
+      membership: true,
+      incomingTransfer: { select: { transferredHours: true } },
+    },
     orderBy: { endDate: 'asc' },
   })
 
@@ -66,6 +79,16 @@ async function findMembershipUsedByBooking(
       (candidate) =>
         candidate.remainingSessions < candidate.membership.sessions,
     ) ?? null
+  )
+}
+
+function maximumRestorableHours(membershipUser: {
+  membership: { sessions: number }
+  incomingTransfer: { transferredHours: number } | null
+}): number {
+  return (
+    membershipUser.incomingTransfer?.transferredHours ??
+    membershipUser.membership.sessions
   )
 }
 
@@ -93,14 +116,18 @@ export async function restoreMembershipHoursForBooking(
     for (const [membershipUserId, details] of detailsByMembershipId) {
       const membershipUser = await tx.membershipUser.findUnique({
         where: { id: membershipUserId },
-        include: { membership: true },
+        include: {
+          membership: true,
+          incomingTransfer: { select: { transferredHours: true } },
+        },
       })
       if (!membershipUser) continue
 
       const hours = calculateCourtHours(details.map(({ slot }) => slot))
       const restoredHours = Math.min(
         hours,
-        membershipUser.membership.sessions - membershipUser.remainingSessions,
+        maximumRestorableHours(membershipUser) -
+          membershipUser.remainingSessions,
       )
       if (restoredHours <= 0) continue
 
@@ -126,7 +153,7 @@ export async function restoreMembershipHoursForBooking(
 
   const restoredHours = Math.min(
     hours,
-    membershipUser.membership.sessions - membershipUser.remainingSessions,
+    maximumRestorableHours(membershipUser) - membershipUser.remainingSessions,
   )
   if (restoredHours <= 0) return 0
 
@@ -204,24 +231,36 @@ export async function adjustMembershipHoursForReschedule(
   if (hourDifference === 0) return 0
 
   if (hourDifference > 0) {
-    if (membershipUser.remainingSessions < hourDifference) {
+    const deduction = await tx.membershipUser.updateMany({
+      where: {
+        id: membershipUser.id,
+        remainingSessions: { gte: hourDifference },
+        isExpired: false,
+        isSuspended: false,
+        ...fundedMembershipWhere(),
+      },
+      data: { remainingSessions: { decrement: hourDifference } },
+    })
+    if (deduction.count !== 1) {
       throw new BadRequestException(
-        `Membership does not have enough remaining hours for this reschedule`,
+        'Membership balance changed during reschedule. Please try again.',
       )
     }
 
-    const remainingHours = membershipUser.remainingSessions - hourDifference
-    await tx.membershipUser.update({
+    const updatedMembership = await tx.membershipUser.findUniqueOrThrow({
       where: { id: membershipUser.id },
-      data: {
-        remainingSessions: remainingHours,
-        isExpired: remainingHours === 0,
-      },
+      select: { remainingSessions: true },
     })
+    if (updatedMembership.remainingSessions === 0) {
+      await tx.membershipUser.update({
+        where: { id: membershipUser.id },
+        data: { isExpired: true },
+      })
+    }
   } else {
     const hoursToRestore = Math.min(
       Math.abs(hourDifference),
-      membershipUser.membership.sessions - membershipUser.remainingSessions,
+      maximumRestorableHours(membershipUser) - membershipUser.remainingSessions,
     )
     await tx.membershipUser.update({
       where: { id: membershipUser.id },

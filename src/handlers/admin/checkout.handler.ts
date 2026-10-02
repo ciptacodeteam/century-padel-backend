@@ -19,6 +19,7 @@ import {
   getTotalSlotDurationMinutes,
 } from '@/services/complimentary-credit.service'
 import { queueSuperadminInvoiceEmails } from '@/services/email.service'
+import { fundedMembershipWhere } from '@/services/membership-entitlement.service'
 
 const adminCheckoutSchema = z
   .object({
@@ -173,7 +174,7 @@ export const adminCheckoutHandler = factory.createHandlers(
               startDate: { lte: now }, // Membership must have started
               endDate: { gt: now }, // Membership must not have expired
               remainingSessions: { gt: 0 },
-              invoice: { is: { status: PaymentStatus.PAID } },
+              ...fundedMembershipWhere(),
             },
             include: { membership: true },
             orderBy: {
@@ -472,25 +473,36 @@ export const adminCheckoutHandler = factory.createHandlers(
         // Always derive this from persisted slots instead of trusting the client.
         // (Membership was already checked earlier if it exists)
         if (activeMembership && membershipHoursUsed > 0) {
-          const newRemainingSessions = Math.max(
-            0,
-            activeMembership.remainingSessions - membershipHoursUsed,
-          )
-
-          await tx.membershipUser.update({
-            where: { id: activeMembership.id },
-            data: {
-              remainingSessions: newRemainingSessions,
-              // Mark as expired if no sessions left
-              isExpired: newRemainingSessions === 0,
+          const deduction = await tx.membershipUser.updateMany({
+            where: {
+              id: activeMembership.id,
+              isExpired: false,
+              isSuspended: false,
+              remainingSessions: { gte: membershipHoursUsed },
             },
+            data: { remainingSessions: { decrement: membershipHoursUsed } },
           })
+          if (deduction.count !== 1) {
+            throw new BadRequestException(
+              'Membership balance changed during checkout. Please try again.',
+            )
+          }
+          const updatedMembership = await tx.membershipUser.findUniqueOrThrow({
+            where: { id: activeMembership.id },
+            select: { remainingSessions: true },
+          })
+          if (updatedMembership.remainingSessions === 0) {
+            await tx.membershipUser.update({
+              where: { id: activeMembership.id },
+              data: { isExpired: true },
+            })
+          }
 
           // Log for tracking
           c.var.logger.info(
             `Deducted ${membershipHoursUsed} hours from membership ${activeMembership.id}. ` +
               `Court cost covered: ${courtCostCoveredByMembership}. ` +
-              `Remaining: ${newRemainingSessions} hours`,
+              `Remaining: ${updatedMembership.remainingSessions} hours`,
           )
         } else if (membershipHoursUsed > 0) {
           // No active membership with enough remaining hours

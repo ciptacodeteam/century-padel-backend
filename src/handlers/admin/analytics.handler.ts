@@ -4,7 +4,11 @@ import { db } from '@/lib/prisma'
 import { ok } from '@/lib/response'
 import { searchQuerySchema, SearchQuerySchema } from '@/lib/validation'
 import { zValidator } from '@hono/zod-validator'
-import { BookingStatus, PaymentStatus } from '@prisma/client'
+import {
+  BookingStatus,
+  MembershipAcquisitionType,
+  PaymentStatus,
+} from '@prisma/client'
 import status from 'http-status'
 import * as XLSX from 'xlsx'
 import dayjs from 'dayjs'
@@ -81,6 +85,7 @@ export const getAnalyticsHandler = factory.createHandlers(
 
       const totalMembershipTransactions = await db.membershipUser.count({
         where: {
+          acquisitionType: MembershipAcquisitionType.PURCHASE,
           createdAt: {
             gte: startDate,
             lte: endDate,
@@ -310,6 +315,7 @@ export const exportAnalyticsToExcelHandler = factory.createHandlers(
 
       const totalMembershipTransactions = await db.membershipUser.count({
         where: {
+          acquisitionType: MembershipAcquisitionType.PURCHASE,
           createdAt: {
             gte: startDate,
             lte: endDate,

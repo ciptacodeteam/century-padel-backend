@@ -30,6 +30,7 @@ import dayjs from 'dayjs'
 import status from 'http-status'
 import z from 'zod'
 import { env } from '@/env'
+import { fundedMembershipWhere } from '@/services/membership-entitlement.service'
 
 // Validation schema for customer search (Select2)
 const customerSearchSchema = z.object({
@@ -98,7 +99,7 @@ function normalizePhoneSearch(query: string): string[] {
     }
   }
 
-  return [...new Set(patterns.filter(p => p.length > 0))] // Remove duplicates and empty strings
+  return [...new Set(patterns.filter((p) => p.length > 0))] // Remove duplicates and empty strings
 }
 
 // GET /admin/customers/search
@@ -145,6 +146,8 @@ export const searchCustomersHandler = factory.createHandlers(
           isSuspended: false,
           startDate: { lte: now }, // Membership must have started
           endDate: { gt: now }, // Membership must not have expired
+          remainingSessions: { gt: 0 },
+          ...fundedMembershipWhere(),
         },
         include: {
           membership: {
@@ -162,7 +165,7 @@ export const searchCustomersHandler = factory.createHandlers(
       })
 
       // Group memberships by userId and get the first one (earliest endDate)
-      const membershipMap = new Map<string, typeof activeMemberships[0]>()
+      const membershipMap = new Map<string, (typeof activeMemberships)[0]>()
       for (const membership of activeMemberships) {
         if (!membershipMap.has(membership.userId)) {
           membershipMap.set(membership.userId, membership)
@@ -185,6 +188,7 @@ export const searchCustomersHandler = factory.createHandlers(
                 remainingDuration: activeMembership.remainingDuration,
                 isExpired: activeMembership.isExpired,
                 isSuspended: activeMembership.isSuspended,
+                acquisitionType: activeMembership.acquisitionType,
                 membership: {
                   id: activeMembership.membership.id,
                   name: activeMembership.membership.name,
@@ -795,6 +799,8 @@ export const getCustomerMembershipDetailsHandler = factory.createHandlers(
           isSuspended: false,
           startDate: { lte: now }, // Membership must have started
           endDate: { gt: now }, // Membership must not have expired
+          remainingSessions: { gt: 0 },
+          ...fundedMembershipWhere(),
         },
         orderBy: {
           endDate: 'asc', // Get the one that expires first
@@ -823,6 +829,7 @@ export const getCustomerMembershipDetailsHandler = factory.createHandlers(
                 remainingDuration: activeMembership.remainingDuration,
                 isExpired: activeMembership.isExpired,
                 isSuspended: activeMembership.isSuspended,
+                acquisitionType: activeMembership.acquisitionType,
                 membership: {
                   id: activeMembership.membership.id,
                   name: activeMembership.membership.name,
@@ -835,7 +842,9 @@ export const getCustomerMembershipDetailsHandler = factory.createHandlers(
         status.OK,
       )
     } catch (error) {
-      c.var.logger.fatal(`Error in getCustomerMembershipDetailsHandler: ${error}`)
+      c.var.logger.fatal(
+        `Error in getCustomerMembershipDetailsHandler: ${error}`,
+      )
       throw error
     }
   },

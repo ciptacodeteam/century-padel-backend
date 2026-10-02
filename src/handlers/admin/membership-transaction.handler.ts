@@ -12,6 +12,7 @@ import {
 } from '@/lib/validation'
 import { zValidator } from '@hono/zod-validator'
 import {
+  MembershipAcquisitionType,
   NotificationAudience,
   NotificationType,
   PaymentStatus,
@@ -27,6 +28,7 @@ import {
   getCompletedRefund,
   mergeRefundIntoPaymentMeta,
 } from '@/services/refund.service'
+import { transferMembershipBalance } from '@/services/membership-transfer.service'
 
 const suspendMembershipSchema = z.object({
   reason: z.string().trim().min(3).max(500),
@@ -48,6 +50,12 @@ const terminateMembershipRefundSchema = z
       })
     }
   })
+
+const transferMembershipBalanceSchema = z.object({
+  toUserId: z.string().min(1),
+  hours: z.number().int().positive(),
+  reason: z.string().trim().min(3).max(500),
+})
 
 // GET /admin/membership-transactions
 // Get all membership transactions
@@ -124,6 +132,19 @@ export const getAllMembershipTransactionsHandler = factory.createHandlers(
               },
             },
           },
+          incomingTransfer: {
+            include: {
+              fromUser: { select: { id: true, name: true, phone: true } },
+              transferredByAdmin: { select: { id: true, name: true } },
+            },
+          },
+          outgoingTransfers: {
+            include: {
+              toUser: { select: { id: true, name: true, phone: true } },
+              transferredByAdmin: { select: { id: true, name: true } },
+            },
+            orderBy: { createdAt: 'desc' },
+          },
         },
       })
 
@@ -191,6 +212,19 @@ export const getMembershipTransactionDetailHandler = factory.createHandlers(
               },
             },
           },
+          incomingTransfer: {
+            include: {
+              fromUser: { select: { id: true, name: true, phone: true } },
+              transferredByAdmin: { select: { id: true, name: true } },
+            },
+          },
+          outgoingTransfers: {
+            include: {
+              toUser: { select: { id: true, name: true, phone: true } },
+              transferredByAdmin: { select: { id: true, name: true } },
+            },
+            orderBy: { createdAt: 'desc' },
+          },
         },
       })
 
@@ -203,6 +237,41 @@ export const getMembershipTransactionDetailHandler = factory.createHandlers(
       c.var.logger.fatal(
         `Error in getMembershipTransactionDetailHandler: ${error}`,
       )
+      throw error
+    }
+  },
+)
+
+// POST /admin/membership-transactions/:id/transfer
+// Transfer purchased balance into a separate, audited entitlement.
+export const transferMembershipBalanceHandler = factory.createHandlers(
+  zValidator('param', idSchema, validateHook),
+  zValidator('json', transferMembershipBalanceSchema, validateHook),
+  async (c) => {
+    try {
+      const { id } = c.req.valid('param') as IdSchema
+      const { toUserId, hours, reason } = c.req.valid('json')
+      const adminId = c.var.admin?.id
+      if (!adminId) {
+        throw new BadRequestException('Super Admin tidak teridentifikasi')
+      }
+
+      const result = await db.$transaction((tx) =>
+        transferMembershipBalance(tx, {
+          sourceMembershipUserId: id,
+          toUserId,
+          hours,
+          reason,
+          adminId,
+        }),
+      )
+
+      return c.json(
+        ok(result, 'Saldo membership berhasil ditransfer'),
+        status.OK,
+      )
+    } catch (error) {
+      c.var.logger.fatal(`Error in transferMembershipBalanceHandler: ${error}`)
       throw error
     }
   },
@@ -230,6 +299,16 @@ export const approveMembershipTransactionHandler = factory.createHandlers(
 
         if (!membershipTransaction) {
           throw new NotFoundException('Membership transaction not found')
+        }
+
+        if (
+          membershipTransaction.acquisitionType !==
+            MembershipAcquisitionType.PURCHASE ||
+          !membershipTransaction.invoice
+        ) {
+          throw new BadRequestException(
+            'Saldo transfer tidak memiliki transaksi pembelian untuk disetujui',
+          )
         }
 
         // Check if already paid
@@ -302,6 +381,16 @@ export const rejectMembershipTransactionHandler = factory.createHandlers(
 
         if (!membershipTransaction) {
           throw new NotFoundException('Membership transaction not found')
+        }
+
+        if (
+          membershipTransaction.acquisitionType !==
+            MembershipAcquisitionType.PURCHASE ||
+          !membershipTransaction.invoice
+        ) {
+          throw new BadRequestException(
+            'Saldo transfer tidak memiliki transaksi pembelian untuk ditolak',
+          )
         }
 
         // Check if already cancelled
@@ -463,16 +552,34 @@ export const terminateMembershipWithRefundHandler = factory.createHandlers(
       const now = new Date()
 
       const result = await db.$transaction(async (tx) => {
+        await tx.$queryRaw(
+          Prisma.sql`SELECT id FROM membership_users WHERE id = ${id} FOR UPDATE`,
+        )
         const membershipTransaction = await tx.membershipUser.findUnique({
           where: { id },
           include: {
             membership: { select: { name: true } },
             invoice: { include: { payment: true } },
+            outgoingTransfers: { select: { id: true }, take: 1 },
           },
         })
 
         if (!membershipTransaction) {
           throw new NotFoundException('Membership transaction not found')
+        }
+
+        if (
+          membershipTransaction.acquisitionType !==
+          MembershipAcquisitionType.PURCHASE
+        ) {
+          throw new BadRequestException(
+            'Saldo hasil transfer tidak dapat dihentikan dengan refund',
+          )
+        }
+        if (membershipTransaction.outgoingTransfers.length > 0) {
+          throw new BadRequestException(
+            'Membership yang pernah mentransfer saldo tidak dapat di-refund',
+          )
         }
 
         const invoice = membershipTransaction.invoice
@@ -605,6 +712,12 @@ export const exportMembershipTransactionsToExcelHandler =
                 },
               },
             },
+            incomingTransfer: {
+              include: {
+                fromUser: { select: { name: true } },
+                transferredByAdmin: { select: { name: true } },
+              },
+            },
             invoice: {
               include: {
                 payment: {
@@ -631,6 +744,7 @@ export const exportMembershipTransactionsToExcelHandler =
 
           return {
             'Transaction ID': transaction.id,
+            'Acquisition Type': transaction.acquisitionType,
             'Invoice Number': transaction.invoice?.number || 'N/A',
             'Customer Name': transaction.user.name,
             'Customer Email': transaction.user.email || 'N/A',
@@ -655,8 +769,14 @@ export const exportMembershipTransactionsToExcelHandler =
             'Payment Status': transaction.invoice?.status || 'N/A',
             'Payment Method':
               transaction.invoice?.payment?.method.name || 'N/A',
-            'Total Paid':
-              transaction.invoice?.total || transaction.membership.price,
+            'Total Paid': transaction.invoice?.total || 0,
+            'Transferred Hours':
+              transaction.incomingTransfer?.transferredHours || 0,
+            'Transferred From':
+              transaction.incomingTransfer?.fromUser.name || 'N/A',
+            'Transfer Reason': transaction.incomingTransfer?.reason || 'N/A',
+            'Transferred By':
+              transaction.incomingTransfer?.transferredByAdmin.name || 'N/A',
             'Created At': dayjs(transaction.createdAt).format(
               'YYYY-MM-DD HH:mm:ss',
             ),

@@ -31,6 +31,7 @@ import status from 'http-status'
 import { z } from 'zod'
 import { validateCoachSlots } from '@/services/coach-slot.service'
 import { allocateSlotsAcrossMemberships } from '@/services/membership-eligibility.service'
+import { fundedMembershipWhere } from '@/services/membership-entitlement.service'
 
 // const PROCESSING_FEE_PERCENT = 0.02 // 2% processing fee
 
@@ -309,7 +310,7 @@ export const applyPromoCodeHandler = factory.createHandlers(
                 startDate: { lte: now },
                 endDate: { gt: now },
                 remainingSessions: { gt: 0 },
-                invoice: { is: { status: PaymentStatus.PAID } },
+                ...fundedMembershipWhere(),
               },
               include: { membership: true },
               orderBy: { endDate: 'asc' },
@@ -657,10 +658,6 @@ export const checkoutHandler = factory.createHandlers(
         let membershipCoveredSlotIds = new Set<string>()
         let membershipBySlotId = new Map<string, string>()
         let membershipHoursUsed = new Map<string, number>()
-        let membershipCandidatesById = new Map<
-          string,
-          { remainingSessions: number }
-        >()
         const xenditItems: Array<{
           name: string
           quantity: number
@@ -709,7 +706,7 @@ export const checkoutHandler = factory.createHandlers(
                 startDate: { lte: now },
                 endDate: { gt: now },
                 remainingSessions: { gt: 0 },
-                invoice: { is: { status: PaymentStatus.PAID } },
+                ...fundedMembershipWhere(),
               },
               include: { membership: true },
               orderBy: { endDate: 'asc' },
@@ -729,12 +726,6 @@ export const checkoutHandler = factory.createHandlers(
             membershipBySlotId = allocation.slotMembershipIds
             membershipHoursUsed = allocation.membershipHours
             membershipCoveredSlotIds = new Set(membershipBySlotId.keys())
-            membershipCandidatesById = new Map(
-              membershipCandidates.map((candidate) => [
-                candidate.id,
-                { remainingSessions: candidate.remainingSessions },
-              ]),
-            )
           }
 
           const { horizon } = await getUserScheduleVisibilityHorizon(user.id)
@@ -790,18 +781,32 @@ export const checkoutHandler = factory.createHandlers(
           })
 
           for (const [membershipUserId, hoursUsed] of membershipHoursUsed) {
-            const membershipCandidate =
-              membershipCandidatesById.get(membershipUserId)
-            if (!membershipCandidate) continue
-            const remainingSessions =
-              membershipCandidate.remainingSessions - hoursUsed
-            await tx.membershipUser.update({
-              where: { id: membershipUserId },
-              data: {
-                remainingSessions,
-                isExpired: remainingSessions === 0,
+            const deduction = await tx.membershipUser.updateMany({
+              where: {
+                id: membershipUserId,
+                isExpired: false,
+                isSuspended: false,
+                remainingSessions: { gte: hoursUsed },
               },
+              data: { remainingSessions: { decrement: hoursUsed } },
             })
+            if (deduction.count !== 1) {
+              throw new BadRequestException(
+                'Membership balance changed during checkout. Please try again.',
+              )
+            }
+            const updatedMembership = await tx.membershipUser.findUniqueOrThrow(
+              {
+                where: { id: membershipUserId },
+                select: { remainingSessions: true },
+              },
+            )
+            if (updatedMembership.remainingSessions === 0) {
+              await tx.membershipUser.update({
+                where: { id: membershipUserId },
+                data: { isExpired: true },
+              })
+            }
           }
         }
 

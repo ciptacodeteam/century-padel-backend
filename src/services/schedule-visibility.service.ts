@@ -1,9 +1,9 @@
 import { JAKARTA_TZ } from '@/config'
 import { db } from '@/lib/prisma'
-import { PaymentStatus } from '@prisma/client'
 import dayjs from 'dayjs'
 import timezone from 'dayjs/plugin/timezone.js'
 import utc from 'dayjs/plugin/utc.js'
+import { fundedMembershipWhere } from './membership-entitlement.service'
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -46,9 +46,7 @@ export async function getUserScheduleVisibilityMonths(
       isSuspended: false,
       startDate: { lte: now },
       endDate: { gt: now },
-      invoice: {
-        status: PaymentStatus.PAID,
-      },
+      ...fundedMembershipWhere(),
     },
     select: {
       membership: {

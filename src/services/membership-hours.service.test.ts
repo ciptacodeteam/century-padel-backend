@@ -115,6 +115,34 @@ describe('membership hours', () => {
     })
   })
 
+  it('never restores a transferred entitlement above the received hours', async () => {
+    const update = vi.fn()
+    const tx = {
+      membershipUser: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: 'membership-transfer-1',
+          remainingSessions: 4,
+          endDate: new Date('2099-09-30T00:00:00.000Z'),
+          membership: { sessions: 20, type: 'ALL_HOUR' },
+          incomingTransfer: { transferredHours: 4 },
+        }),
+        update,
+      },
+    } as unknown as Prisma.TransactionClient
+
+    const restoredHours = await restoreMembershipHoursForBooking(tx, {
+      userId: 'user-2',
+      createdAt: new Date('2026-09-13T00:00:00.000Z'),
+      courtNormalPrice: 0,
+      details: [
+        { membershipUserId: 'membership-transfer-1', slot: oneHourSlot },
+      ],
+    })
+
+    expect(restoredHours).toBe(0)
+    expect(update).not.toHaveBeenCalled()
+  })
+
   it('restores hours to each membership used by a booking', async () => {
     const update = vi.fn().mockResolvedValue({})
     const memberships = {
@@ -265,6 +293,7 @@ describe('membership hours', () => {
 
   it('deducts only the extra hour when rescheduled to a longer slot', async () => {
     const update = vi.fn().mockResolvedValue({})
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 })
     const tx = {
       membershipUser: {
         findMany: vi.fn().mockResolvedValue([
@@ -275,6 +304,8 @@ describe('membership hours', () => {
             membership: { sessions: 20 },
           },
         ]),
+        updateMany,
+        findUniqueOrThrow: vi.fn().mockResolvedValue({ remainingSessions: 17 }),
         update,
       },
     } as unknown as Prisma.TransactionClient
@@ -295,9 +326,13 @@ describe('membership hours', () => {
     )
 
     expect(difference).toBe(1)
-    expect(update).toHaveBeenCalledWith({
-      where: { id: 'membership-user-1' },
-      data: { remainingSessions: 17, isExpired: false },
+    expect(updateMany).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        id: 'membership-user-1',
+        remainingSessions: { gte: 1 },
+      }),
+      data: { remainingSessions: { decrement: 1 } },
     })
+    expect(update).not.toHaveBeenCalled()
   })
 })

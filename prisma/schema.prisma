@@ -84,6 +84,11 @@ enum MembershipType {
   HAPPY_HOUR
 }
 
+enum MembershipAcquisitionType {
+  PURCHASE
+  TRANSFER
+}
+
 enum ComplimentaryCreditPurpose {
   TRIAL
   COACHING
@@ -149,6 +154,8 @@ model User {
   notifications        Notification[]
   creditCards          UserCreditCard[]
   complimentaryCredits ComplimentaryCredit[]
+  membershipTransfersSent     MembershipTransfer[] @relation("MembershipTransferFromUser")
+  membershipTransfersReceived MembershipTransfer[] @relation("MembershipTransferToUser")
 
   @@map("user")
 }
@@ -203,6 +210,7 @@ model Staff {
   bookingCashier                  Booking[]
   complimentaryCreditsGranted     ComplimentaryCredit[]            @relation("ComplimentaryCreditGrantedBy")
   complimentaryCreditTransactions ComplimentaryCreditTransaction[]
+  membershipTransfersPerformed    MembershipTransfer[]             @relation("MembershipTransferAdmin")
 
   @@index([isActive, role])
   @@map("staff")
@@ -694,6 +702,7 @@ model MembershipUser {
   endDate           DateTime
   remainingSessions Int
   remainingDuration Int
+  acquisitionType  MembershipAcquisitionType @default(PURCHASE)
   isExpired         Boolean   @default(false)
   isSuspended       Boolean   @default(false)
   suspensionReason  String?
@@ -701,13 +710,38 @@ model MembershipUser {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @default(now()) @updatedAt
 
-  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  membership Membership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
-  invoice    Invoice?
-  bookingDetails BookingDetail[]
+  user              User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  membership        Membership           @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  invoice           Invoice?
+  bookingDetails    BookingDetail[]
+  outgoingTransfers MembershipTransfer[] @relation("MembershipTransferSource")
+  incomingTransfer  MembershipTransfer?  @relation("MembershipTransferDestination")
 
   @@index([userId, isExpired, isSuspended])
   @@map("membership_users")
+}
+
+model MembershipTransfer {
+  id                          String   @id @default(cuid())
+  sourceMembershipUserId      String
+  destinationMembershipUserId String   @unique
+  fromUserId                  String
+  toUserId                    String
+  transferredHours            Int
+  reason                      String
+  transferredByAdminId        String
+  createdAt                   DateTime @default(now())
+
+  sourceMembership      MembershipUser @relation("MembershipTransferSource", fields: [sourceMembershipUserId], references: [id], onDelete: Restrict)
+  destinationMembership MembershipUser @relation("MembershipTransferDestination", fields: [destinationMembershipUserId], references: [id], onDelete: Restrict)
+  fromUser              User           @relation("MembershipTransferFromUser", fields: [fromUserId], references: [id], onDelete: Restrict)
+  toUser                User           @relation("MembershipTransferToUser", fields: [toUserId], references: [id], onDelete: Restrict)
+  transferredByAdmin    Staff          @relation("MembershipTransferAdmin", fields: [transferredByAdminId], references: [id], onDelete: Restrict)
+
+  @@index([sourceMembershipUserId, createdAt])
+  @@index([fromUserId, createdAt])
+  @@index([toUserId, createdAt])
+  @@map("membership_transfers")
 }
 
 // ------------------------------

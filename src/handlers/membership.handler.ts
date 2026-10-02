@@ -11,9 +11,9 @@ import {
   SearchQuerySchema,
 } from '@/lib/validation'
 import { getUserScheduleVisibilityMonths } from '@/services/schedule-visibility.service'
+import { fundedMembershipWhere } from '@/services/membership-entitlement.service'
 import { zValidator } from '@hono/zod-validator'
 import status from 'http-status'
-import { InvoiceStatus } from 'xendit-node/invoice/models'
 
 export const getAllMembershipHandler = factory.createHandlers(
   zValidator('query', searchQuerySchema, validateHook),
@@ -85,6 +85,14 @@ export const getUserMembershipsHandler = factory.createHandlers(async (c) => {
             benefits: true,
           },
         },
+        incomingTransfer: {
+          select: {
+            id: true,
+            transferredHours: true,
+            createdAt: true,
+            fromUser: { select: { name: true } },
+          },
+        },
       },
       orderBy: {
         createdAt: 'desc',
@@ -148,9 +156,8 @@ export const getMyActiveMembershipHandler = factory.createHandlers(
             isSuspended: false,
             startDate: { lte: now }, // Membership must have started
             endDate: { gt: now }, // Membership must not have expired
-            invoice: {
-              status: InvoiceStatus.Paid, // Only paid memberships
-            },
+            remainingSessions: { gt: 0 },
+            ...fundedMembershipWhere(),
           },
           orderBy: {
             endDate: 'asc', // Get the one that expires first
@@ -163,6 +170,14 @@ export const getMyActiveMembershipHandler = factory.createHandlers(
                 price: true,
                 type: true,
                 scheduleVisibilityMonths: true,
+              },
+            },
+            incomingTransfer: {
+              select: {
+                id: true,
+                transferredHours: true,
+                createdAt: true,
+                fromUser: { select: { name: true } },
               },
             },
           },
@@ -179,6 +194,8 @@ export const getMyActiveMembershipHandler = factory.createHandlers(
           remainingDuration: activeMembership.remainingDuration,
           isExpired: activeMembership.isExpired,
           isSuspended: activeMembership.isSuspended,
+          acquisitionType: activeMembership.acquisitionType,
+          transfer: activeMembership.incomingTransfer,
           membership: {
             id: activeMembership.membership.id,
             name: activeMembership.membership.name,
