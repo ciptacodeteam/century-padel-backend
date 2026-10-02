@@ -4,6 +4,10 @@ import dayjs from 'dayjs'
 import * as XLSX from 'xlsx'
 import { getFileUrl } from './upload.service'
 import { getCompletedRefundAmount } from './refund.service'
+import {
+  bookingPaymentTypeWhere,
+  type BookingPaymentType,
+} from './booking-payment-type.service'
 
 /**
  * Get income analytics separated by source
@@ -296,6 +300,7 @@ export async function exportDataToExcel(
   startDate?: Date,
   endDate?: Date,
   source?: 'cashier' | 'online',
+  paymentType?: BookingPaymentType,
 ): Promise<Buffer> {
   const workbook = XLSX.utils.book_new()
 
@@ -406,6 +411,9 @@ export async function exportDataToExcel(
     } else if (source === 'online') {
       where.cashierId = null
     }
+    if (paymentType) {
+      Object.assign(where, bookingPaymentTypeWhere(paymentType))
+    }
 
     const bookings = await db.booking.findMany({
       where,
@@ -457,6 +465,9 @@ export async function exportDataToExcel(
         .map((i) => i.inventory?.name)
         .filter(Boolean)
       const source = b.cashier ? 'Cashier' : 'Online'
+      const usesMembership =
+        b.details.some((detail) => detail.membershipUserId) ||
+        (b.details.length > 0 && b.courtNormalPrice === 0)
 
       const netAmount =
         (b.invoice?.total || 0) - (b.invoice?.processingFee || 0)
@@ -464,6 +475,7 @@ export async function exportDataToExcel(
         'Booking ID': b.id,
         'Customer ID': b.user?.id || 'N/A',
         Source: source,
+        'Payment Type': usesMembership ? 'Membership' : 'Regular',
         Status: b.status,
         'Customer Name': b.user?.name || 'N/A',
         'Customer Email': b.user?.email || 'N/A',
@@ -495,6 +507,7 @@ export async function exportDataToExcel(
       { wch: 24 }, // Booking ID
       { wch: 18 }, // Customer ID
       { wch: 10 }, // Source
+      { wch: 14 }, // Payment Type
       { wch: 12 }, // Status
       { wch: 20 }, // Customer Name
       { wch: 24 }, // Customer Email

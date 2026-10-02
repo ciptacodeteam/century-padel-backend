@@ -20,6 +20,7 @@ import dayjs from 'dayjs'
 import { z } from 'zod'
 
 import { exportDataToExcel } from '@/services/analytics.service'
+import { bookingPaymentTypeWhere } from '@/services/booking-payment-type.service'
 
 // GET /admin/bookings
 // Get all booking transactions
@@ -28,6 +29,10 @@ const bookingsQuerySchema = searchQuerySchema.extend({
     .enum(['cashier', 'online'])
     .optional()
     .describe('Filter by booking source: cashier or online'),
+  paymentType: z
+    .enum(['membership', 'regular'])
+    .optional()
+    .describe('Filter by court payment type: membership or regular'),
 })
 
 export const getAllBookingTransactionsHandler = factory.createHandlers(
@@ -47,6 +52,9 @@ export const getAllBookingTransactionsHandler = factory.createHandlers(
         } else if (query.source === 'online') {
           where = { ...where, cashierId: null }
         }
+      }
+      if (query.paymentType) {
+        where = { ...where, ...bookingPaymentTypeWhere(query.paymentType) }
       }
 
       const bookings = await db.booking.findMany({
@@ -992,6 +1000,7 @@ const bookingsExportQuerySchema = z.object({
   startDate: z.string().optional(),
   endDate: z.string().optional(),
   source: z.enum(['cashier', 'online']).optional(),
+  paymentType: z.enum(['membership', 'regular']).optional(),
 })
 
 export const exportBookingsHandler = factory.createHandlers(
@@ -1011,6 +1020,7 @@ export const exportBookingsHandler = factory.createHandlers(
         startDate,
         endDate,
         query.source,
+        query.paymentType,
       )
       const filename = `bookings-export-${dayjs().format('YYYY-MM-DD')}.xlsx`
 
