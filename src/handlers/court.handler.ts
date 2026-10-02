@@ -5,8 +5,8 @@ import { factory } from '@/lib/create-app'
 import { db } from '@/lib/prisma'
 import { getBookableSlotEndThreshold } from '@/lib/booking-slot-cutoff'
 import {
-  heldBookingDetailsInclude,
-  openOrHeldCourtSlotWhere,
+  visibleBookingDetailsInclude,
+  visibleCourtSlotWhereForUser,
   withSlotBookingStatus,
 } from '@/lib/court-slot-availability'
 import buildFindManyOptions from '@/lib/query'
@@ -193,6 +193,7 @@ export const getCourtSlotsHandler = factory.createHandlers(
   zValidator('query', availableCourtSlotsQuerySchema, validateHook),
   async (c) => {
     try {
+      const userId = c.get('user')?.id
       const { id: courtId } = c.req.valid('param') as IdSchema
       const query = c.req.valid('query') as AvailableCourtSlotsQuerySchema
 
@@ -211,7 +212,7 @@ export const getCourtSlotsHandler = factory.createHandlers(
         courtId,
         price: { gt: 0 },
         endAt: { gt: getBookableSlotEndThreshold() },
-        AND: [openOrHeldCourtSlotWhere()],
+        AND: [visibleCourtSlotWhereForUser(userId)],
       }
 
       // Add date range filter if provided
@@ -244,13 +245,13 @@ export const getCourtSlotsHandler = factory.createHandlers(
           startAt: 'asc',
         },
         include: {
-          bookingDetails: heldBookingDetailsInclude,
+          bookingDetails: visibleBookingDetailsInclude(userId),
         },
       })
 
       // Format datetime fields
       const formattedSlots = slots.map((slot) => ({
-        ...withSlotBookingStatus(slot),
+        ...withSlotBookingStatus(slot, userId),
         normalPrice: slot.price,
         discountPrice: slot.discountPrice,
         startAt: dayjs(slot.startAt).format(DATETIME_FORMAT),
@@ -271,6 +272,7 @@ export const getAvailableCourtSlotsHandler = factory.createHandlers(
   zValidator('query', availableCourtSlotsQuerySchema, validateHook),
   async (c) => {
     try {
+      const userId = c.get('user')?.id
       const query = c.req.valid('query') as AvailableCourtSlotsQuerySchema & {
         courtId?: string
       }
@@ -279,7 +281,7 @@ export const getAvailableCourtSlotsHandler = factory.createHandlers(
         type: SlotType.COURT,
         price: { gt: 0 },
         endAt: { gt: getBookableSlotEndThreshold() },
-        AND: [openOrHeldCourtSlotWhere()],
+        AND: [visibleCourtSlotWhereForUser(userId)],
         court: {
           isActive: true,
         },
@@ -316,7 +318,7 @@ export const getAvailableCourtSlotsHandler = factory.createHandlers(
         },
         include: {
           court: true,
-          bookingDetails: heldBookingDetailsInclude,
+          bookingDetails: visibleBookingDetailsInclude(userId),
         },
       })
 
@@ -328,7 +330,7 @@ export const getAvailableCourtSlotsHandler = factory.createHandlers(
       }
 
       const formattedSlots = slots.map((slot) => ({
-        ...withSlotBookingStatus(slot),
+        ...withSlotBookingStatus(slot, userId),
         normalPrice: slot.price,
         discountPrice: slot.discountPrice,
         startAt: dayjs(slot.startAt).format(DATETIME_FORMAT),
