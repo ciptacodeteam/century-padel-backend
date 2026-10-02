@@ -157,11 +157,14 @@ jobs:
 
       # deploy-registry.sh already verifies /health and rolls back on failure.
       # This step is a second check before we mark the workflow green.
+      # Keep this on the same SSH session retries: a second immediate SSH often
+      # hits MaxStartups / connection reset right after the deploy session closes.
       - name: Verify deployment health
         run: |
           SSH_OPTS="-i $HOME/.ssh/deploy_key -o IdentitiesOnly=yes -o PreferredAuthentications=publickey -o StrictHostKeyChecking=yes"
-          ssh $SSH_OPTS -p ${{ secrets.DO_SSH_PORT }} ${{ secrets.DO_USERNAME }}@${{ secrets.DO_HOST }} \
-            "PROJECT_PATH='${{ secrets.DO_PROJECT_PATH }}' bash -s" << 'EOF'
+          for attempt in 1 2 3 4 5 6; do
+            if ssh $SSH_OPTS -p ${{ secrets.DO_SSH_PORT }} ${{ secrets.DO_USERNAME }}@${{ secrets.DO_HOST }} \
+              "PROJECT_PATH='${{ secrets.DO_PROJECT_PATH }}' bash -s" << 'EOF'
           set -e
           cd "$PROJECT_PATH"
           PORT="$(grep -E '^PORT=' .env.production 2>/dev/null | head -n1 | cut -d= -f2 | tr -d '\r' || true)"
@@ -206,6 +209,16 @@ jobs:
           fi
           exit 1
           EOF
+            then
+              break
+            fi
+            if [ "$attempt" -eq 6 ]; then
+              echo "❌ SSH health check failed after ${attempt} attempts"
+              exit 1
+            fi
+            echo "SSH attempt ${attempt} failed (connection reset). Retrying in 8s..."
+            sleep 8
+          done
 
       - name: Deployment Status
         if: success()
