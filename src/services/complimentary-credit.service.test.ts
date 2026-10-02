@@ -3,6 +3,7 @@ import {
   consumeComplimentaryCredits,
   getSlotDurationMinutes,
   getTotalSlotDurationMinutes,
+  restoreComplimentaryCreditMinutesForBooking,
   restoreComplimentaryCreditsForBooking,
 } from '@/services/complimentary-credit.service'
 import type { Prisma } from '@prisma/client'
@@ -140,5 +141,43 @@ describe('complimentary credit', () => {
     ).resolves.toBe(0)
     expect(update).toHaveBeenCalledTimes(1)
     expect(create).toHaveBeenCalledTimes(1)
+  })
+
+  it('restores only the credit minutes assigned to one cancelled court', async () => {
+    const update = vi.fn().mockResolvedValue({})
+    const create = vi.fn().mockResolvedValue({})
+    const tx = {
+      complimentaryCredit: { update },
+      complimentaryCreditTransaction: {
+        findMany: vi.fn().mockResolvedValue([
+          { creditId: 'credit-1', type: 'REDEEM', minutes: 120 },
+          { creditId: 'credit-1', type: 'REFUND', minutes: 30 },
+        ]),
+        create,
+      },
+    } as unknown as Prisma.TransactionClient
+
+    await expect(
+      restoreComplimentaryCreditMinutesForBooking(
+        tx,
+        'booking-1',
+        60,
+        'admin-1',
+      ),
+    ).resolves.toBe(60)
+    expect(update).toHaveBeenCalledWith({
+      where: { id: 'credit-1' },
+      data: { remainingMinutes: { increment: 60 } },
+    })
+    expect(create).toHaveBeenCalledWith({
+      data: {
+        creditId: 'credit-1',
+        bookingId: 'booking-1',
+        type: 'REFUND',
+        minutes: 60,
+        staffId: 'admin-1',
+        note: 'Restored after court cancellation',
+      },
+    })
   })
 })

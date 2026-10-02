@@ -383,6 +383,7 @@ export const updateCourtSlotAvailabilityHandler = factory.createHandlers(
         include: {
           bookingDetails: {
             where: {
+              cancelledAt: null,
               booking: {
                 status: {
                   not: BookingStatus.CANCELLED,
@@ -530,6 +531,7 @@ export const bulkUpdateSlotPricingHandler = factory.createHandlers(
         include: {
           bookingDetails: {
             where: {
+              cancelledAt: null,
               booking: {
                 status: { not: BookingStatus.CANCELLED },
               },

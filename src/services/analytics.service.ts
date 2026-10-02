@@ -534,6 +534,7 @@ export async function getBusinessAnalytics(startDate: Date, endDate: Date) {
   const totalCourts = await db.court.count()
   const bookedCourts = await db.bookingDetail.findMany({
     where: {
+      cancelledAt: null,
       createdAt: { gte: startDate, lte: endDate },
     },
     distinct: ['courtId'],
@@ -544,6 +545,7 @@ export async function getBusinessAnalytics(startDate: Date, endDate: Date) {
   // Get all booking slots in the period
   const bookingSlots = await db.bookingDetail.findMany({
     where: {
+      cancelledAt: null,
       createdAt: { gte: startDate, lte: endDate },
     },
     select: {
@@ -671,6 +673,7 @@ export async function getBusinessAnalytics(startDate: Date, endDate: Date) {
   const topCourts = await db.bookingDetail.groupBy({
     by: ['courtId'],
     where: {
+      cancelledAt: null,
       createdAt: { gte: startDate, lte: endDate },
     },
     _count: { id: true },

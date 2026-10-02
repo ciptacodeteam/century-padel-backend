@@ -244,6 +244,7 @@ export const adminCheckoutHandler = factory.createHandlers(
             include: {
               bookingDetails: {
                 where: {
+                  cancelledAt: null,
                   booking: {
                     status: {
                       not: BookingStatus.CANCELLED,
@@ -545,7 +546,9 @@ export const adminCheckoutHandler = factory.createHandlers(
         try {
           await queueSuperadminInvoiceEmails(result.invoiceNumber)
         } catch (error) {
-          c.var.logger.warn(`Failed to queue superadmin booking email: ${error}`)
+          c.var.logger.warn(
+            `Failed to queue superadmin booking email: ${error}`,
+          )
         }
       }
 

@@ -178,3 +178,59 @@ export async function restoreComplimentaryCreditsForBooking(
 
   return restoredMinutes
 }
+
+export async function restoreComplimentaryCreditMinutesForBooking(
+  tx: TransactionClient,
+  bookingId: string,
+  requestedMinutes: number,
+  staffId?: string | null,
+) {
+  if (requestedMinutes <= 0) return 0
+
+  const transactions = await tx.complimentaryCreditTransaction.findMany({
+    where: {
+      bookingId,
+      type: { in: ['REDEEM', 'REFUND'] },
+    },
+    orderBy: { createdAt: 'asc' },
+  })
+
+  const redeemedByCredit = new Map<string, number>()
+  const refundedByCredit = new Map<string, number>()
+  for (const transaction of transactions) {
+    const target =
+      transaction.type === 'REDEEM' ? redeemedByCredit : refundedByCredit
+    target.set(
+      transaction.creditId,
+      (target.get(transaction.creditId) || 0) + transaction.minutes,
+    )
+  }
+
+  let remaining = requestedMinutes
+  let restoredMinutes = 0
+  for (const [creditId, redeemedMinutes] of redeemedByCredit) {
+    const available = redeemedMinutes - (refundedByCredit.get(creditId) || 0)
+    const minutes = Math.min(remaining, Math.max(0, available))
+    if (minutes <= 0) continue
+
+    await tx.complimentaryCredit.update({
+      where: { id: creditId },
+      data: { remainingMinutes: { increment: minutes } },
+    })
+    await tx.complimentaryCreditTransaction.create({
+      data: {
+        creditId,
+        bookingId,
+        type: 'REFUND',
+        minutes,
+        staffId: staffId || undefined,
+        note: 'Restored after court cancellation',
+      },
+    })
+    remaining -= minutes
+    restoredMinutes += minutes
+    if (remaining === 0) break
+  }
+
+  return restoredMinutes
+}

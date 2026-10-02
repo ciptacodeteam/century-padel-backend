@@ -141,6 +141,17 @@ export async function restoreMembershipHoursForBooking(
   return restoredHours
 }
 
+export async function restoreMembershipHoursForBookingDetail(
+  tx: TransactionClient,
+  booking: Omit<BookingForMembershipHours, 'details'>,
+  detail: BookingForMembershipHours['details'][number],
+): Promise<number> {
+  return restoreMembershipHoursForBooking(tx, {
+    ...booking,
+    details: [detail],
+  })
+}
+
 export async function restoreMembershipHoursForBookingId(
   tx: TransactionClient,
   bookingId: string,

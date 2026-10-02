@@ -177,6 +177,7 @@ export async function setCourtPricing({
             startAt: { gte: todayStart },
             bookingDetails: {
               none: {
+                cancelledAt: null,
                 booking: {
                   status: { not: BookingStatus.CANCELLED },
                 },
@@ -401,6 +402,7 @@ export async function updateCourtPricing({
             isAvailable: true,
             bookingDetails: {
               where: {
+                cancelledAt: null,
                 booking: {
                   status: {
                     not: BookingStatus.CANCELLED,
@@ -588,6 +590,7 @@ export async function overrideSingleCourtHourPrice({
         include: {
           bookingDetails: {
             where: {
+              cancelledAt: null,
               booking: {
                 status: {
                   not: BookingStatus.CANCELLED,
@@ -666,6 +669,7 @@ export async function updateSlotPricing({
       include: {
         bookingDetails: {
           where: {
+            cancelledAt: null,
             booking: {
               status: {
                 not: BookingStatus.CANCELLED,

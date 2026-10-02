@@ -100,6 +100,7 @@ export const getAllCourtHandler = factory.createHandlers(
         endAt: { gt: getBookableSlotEndThreshold() },
         bookingDetails: {
           none: {
+            cancelledAt: null,
             booking: {
               status: {
                 not: BookingStatus.CANCELLED,

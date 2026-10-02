@@ -12,6 +12,7 @@ export function openOrHeldCourtSlotWhere() {
         isAvailable: true,
         bookingDetails: {
           none: {
+            cancelledAt: null,
             booking: {
               status: {
                 not: BookingStatus.CANCELLED,
@@ -23,11 +24,13 @@ export function openOrHeldCourtSlotWhere() {
       {
         bookingDetails: {
           some: {
+            cancelledAt: null,
             booking: {
               status: BookingStatus.HOLD,
             },
           },
           none: {
+            cancelledAt: null,
             booking: {
               status: BookingStatus.CONFIRMED,
             },
@@ -40,6 +43,7 @@ export function openOrHeldCourtSlotWhere() {
 
 export const heldBookingDetailsInclude = {
   where: {
+    cancelledAt: null,
     booking: {
       status: BookingStatus.HOLD,
     },

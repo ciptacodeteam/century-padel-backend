@@ -14,7 +14,14 @@ import {
   searchQuerySchema,
 } from '@/lib/validation'
 import { zValidator } from '@hono/zod-validator'
-import { BookingStatus, PaymentStatus, SlotType } from '@prisma/client'
+import {
+  BookingStatus,
+  NotificationAudience,
+  NotificationType,
+  PaymentStatus,
+  Prisma,
+  SlotType,
+} from '@prisma/client'
 import status from 'http-status'
 import dayjs from 'dayjs'
 import { z } from 'zod'
@@ -22,12 +29,21 @@ import { BadRequestException, NotFoundException } from '@/exceptions'
 import { validateCoachSlots } from '@/services/coach-slot.service'
 import {
   adjustMembershipHoursForReschedule,
+  restoreMembershipHoursForBookingDetail,
   restoreMembershipHoursForBooking,
 } from '@/services/membership-hours.service'
-import { restoreComplimentaryCreditsForBooking } from '@/services/complimentary-credit.service'
+import {
+  restoreComplimentaryCreditMinutesForBooking,
+  restoreComplimentaryCreditsForBooking,
+} from '@/services/complimentary-credit.service'
 import { env } from '@/env'
 import { queueSendTemplatedEmail } from '@/services/email.service'
 import { createBookingCancellationNotification } from '@/services/notification.service'
+import {
+  ensureCashierPaidPayment,
+  getCompletedRefundAmount,
+  mergeRefundIntoPaymentMeta,
+} from '@/services/refund.service'
 
 // GET /admin/booked-courts
 // Get all booked courts with comprehensive booking information
@@ -230,6 +246,9 @@ export const getAllBookedCourtsHandler = factory.createHandlers(
           price: inv.price,
         })),
         price: detail.price,
+        cancelledAt: detail.cancelledAt,
+        cancellationReason: detail.cancellationReason,
+        refundAmount: detail.refundAmount,
         createdAt: detail.createdAt,
         updatedAt: detail.updatedAt,
       }))
@@ -434,6 +453,9 @@ export const getBookedCourtDetailHandler = factory.createHandlers(
           price: inv.price,
         })),
         price: bookingDetail.price,
+        cancelledAt: bookingDetail.cancelledAt,
+        cancellationReason: bookingDetail.cancellationReason,
+        refundAmount: bookingDetail.refundAmount,
         createdAt: bookingDetail.createdAt,
         updatedAt: bookingDetail.updatedAt,
       }
@@ -698,6 +720,9 @@ export const getBookingsByCourtHandler = factory.createHandlers(
             customer: booking.booking.user,
             invoice: booking.booking.invoice,
             price: booking.price,
+            cancelledAt: booking.cancelledAt,
+            cancellationReason: booking.cancellationReason,
+            refundAmount: booking.refundAmount,
             createdAt: booking.createdAt,
           })),
           totalBookings: bookings.length,
@@ -718,6 +743,11 @@ const cancelBookingSchema = z.object({
 
 type CancelBookingSchema = z.infer<typeof cancelBookingSchema>
 
+const cancelBookedCourtSchema = z.object({
+  reason: z.string().trim().min(3).max(500),
+  refundAmount: z.number().int().min(0),
+})
+
 const rescheduleCourtSchema = z.object({
   newSlotId: z.string().min(1, 'Target slot is required'),
 })
@@ -725,7 +755,164 @@ const rescheduleCourtSchema = z.object({
 type RescheduleCourtSchema = z.infer<typeof rescheduleCourtSchema>
 
 // PUT /admin/booked-courts/:id/cancel
-// Cancel a specific booking and update all related records
+// Cancel one court slot while preserving the rest of the booking and invoice.
+export const cancelBookedCourtHandler = factory.createHandlers(
+  zValidator('param', idSchema, validateHook),
+  zValidator('json', cancelBookedCourtSchema, validateHook),
+  async (c) => {
+    try {
+      const { id: bookingDetailId } = c.req.valid('param') as IdSchema
+      const { reason, refundAmount } = c.req.valid('json')
+      const adminId = c.var.admin?.id ?? null
+      const now = new Date()
+
+      const result = await db.$transaction(async (tx) => {
+        const detail = await tx.bookingDetail.findUnique({
+          where: { id: bookingDetailId },
+          include: {
+            court: { select: { name: true } },
+            slot: true,
+            booking: {
+              include: {
+                invoice: { include: { payment: true } },
+              },
+            },
+          },
+        })
+
+        if (!detail) throw new NotFoundException('Booked court not found')
+        if (detail.cancelledAt) {
+          throw new BadRequestException('Lapangan ini sudah dibatalkan')
+        }
+        if (detail.booking.status === BookingStatus.CANCELLED) {
+          throw new BadRequestException('Booking ini sudah dibatalkan')
+        }
+
+        const invoice = detail.booking.invoice
+        let payment = invoice?.payment ?? null
+        if (!invoice || invoice.status !== PaymentStatus.PAID) {
+          throw new BadRequestException(
+            'Hanya booking yang sudah dibayar yang dapat dibatalkan dengan refund',
+          )
+        }
+        if (payment && payment.status !== PaymentStatus.PAID) {
+          throw new BadRequestException('Pembayaran booking belum selesai')
+        }
+        if (!payment) payment = await ensureCashierPaidPayment(tx, invoice)
+
+        const refundedBefore = getCompletedRefundAmount(
+          payment.meta,
+          invoice.total,
+        )
+        const remainingRefundable = Math.max(0, invoice.total - refundedBefore)
+        if (refundAmount > remainingRefundable) {
+          throw new BadRequestException(
+            `Nominal refund maksimal Rp ${remainingRefundable.toLocaleString('id-ID')}`,
+          )
+        }
+
+        const cancellationClaim = await tx.bookingDetail.updateMany({
+          where: { id: detail.id, cancelledAt: null },
+          data: {
+            cancelledAt: now,
+            cancellationReason: reason,
+            refundAmount,
+            cancelledByAdminId: adminId,
+          },
+        })
+        if (cancellationClaim.count === 0) {
+          throw new BadRequestException('Lapangan ini sudah dibatalkan')
+        }
+
+        const restoredMembershipHours =
+          await restoreMembershipHoursForBookingDetail(
+            tx,
+            {
+              userId: detail.booking.userId,
+              createdAt: detail.booking.createdAt,
+              courtNormalPrice: detail.booking.courtNormalPrice,
+            },
+            {
+              membershipUserId: detail.membershipUserId,
+              slot: detail.slot,
+            },
+          )
+        const restoredComplimentaryCreditMinutes =
+          await restoreComplimentaryCreditMinutesForBooking(
+            tx,
+            detail.bookingId,
+            detail.complimentaryCreditMinutes,
+            adminId,
+          )
+
+        const updatedDetail = await tx.bookingDetail.findUniqueOrThrow({
+          where: { id: detail.id },
+          include: { court: true, slot: true },
+        })
+
+        await tx.slot.update({
+          where: { id: detail.slotId },
+          data: { isAvailable: true },
+        })
+
+        if (refundAmount > 0) {
+          const cumulativeAmount = refundedBefore + refundAmount
+          await tx.payment.update({
+            where: { id: payment.id },
+            data: {
+              meta: mergeRefundIntoPaymentMeta(payment.meta, {
+                type: cumulativeAmount >= invoice.total ? 'FULL' : 'PARTIAL',
+                amount: cumulativeAmount,
+                reason: `Pembatalan lapangan force majeure: ${reason}`,
+                status: 'COMPLETED',
+                refundedAt: now.toISOString(),
+                terminatedByAdminId: adminId,
+              }) as Prisma.InputJsonValue,
+            },
+          })
+        }
+
+        await tx.notification.create({
+          data: {
+            userId: detail.booking.userId,
+            audience: NotificationAudience.USER,
+            type: NotificationType.ADMIN_PUSH,
+            title: 'Lapangan Dibatalkan',
+            message: `${detail.court?.name || 'Lapangan'} pada ${dayjs(detail.slot.startAt).format('DD MMM YYYY HH:mm')} dibatalkan. Refund tercatat sebesar Rp ${refundAmount.toLocaleString('id-ID')}.`,
+            data: {
+              event: 'BOOKED_COURT_CANCELLED',
+              bookingId: detail.bookingId,
+              bookingDetailId: detail.id,
+              reason,
+              refundAmount,
+              restoredMembershipHours,
+              restoredComplimentaryCreditMinutes,
+            },
+          },
+        })
+
+        return {
+          detail: updatedDetail,
+          refundAmount,
+          totalRefunded: refundedBefore + refundAmount,
+          restoredMembershipHours,
+          restoredComplimentaryCreditMinutes,
+        }
+      })
+
+      return c.json(
+        ok(result, 'Lapangan berhasil dibatalkan dan refund telah dicatat'),
+        status.OK,
+      )
+    } catch (error) {
+      c.var.logger.fatal(`Error in cancelBookedCourtHandler: ${error}`)
+      throw error
+    }
+  },
+)
+
+// PUT /admin/bookings/:id/cancel
+// Cancel an entire booking and update all related records.
 export const cancelBookingHandler = factory.createHandlers(
   zValidator('param', idSchema, validateHook),
   zValidator('json', cancelBookingSchema, validateHook),
@@ -740,6 +927,7 @@ export const cancelBookingHandler = factory.createHandlers(
           where: { id: bookingId },
           include: {
             details: {
+              where: { cancelledAt: null },
               include: {
                 slot: true,
                 court: {
@@ -1025,6 +1213,10 @@ export const rescheduleCourtBookingHandler = factory.createHandlers(
 
         if (bookingDetail.booking.status === BookingStatus.CANCELLED) {
           throw new BadRequestException('Cannot reschedule a cancelled booking')
+        }
+
+        if (bookingDetail.cancelledAt) {
+          throw new BadRequestException('Cannot reschedule a cancelled court')
         }
 
         if (!canCustomerReschedule(bookingDetail.slot.startAt)) {

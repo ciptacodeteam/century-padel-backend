@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { withSlotBookingStatus } from './court-slot-availability'
+import {
+  openOrHeldCourtSlotWhere,
+  withSlotBookingStatus,
+} from './court-slot-availability'
 
 describe('withSlotBookingStatus', () => {
   it('marks a slot held by an unpaid booking as on hold', () => {
@@ -27,6 +30,16 @@ describe('withSlotBookingStatus', () => {
       id: 'slot-2',
       isAvailable: true,
       bookingStatus: null,
+    })
+  })
+
+  it('ignores cancelled court details when checking availability', () => {
+    const where = openOrHeldCourtSlotWhere()
+    expect(where.OR[0].bookingDetails.none).toMatchObject({
+      cancelledAt: null,
+    })
+    expect(where.OR[1].bookingDetails.some).toMatchObject({
+      cancelledAt: null,
     })
   })
 })

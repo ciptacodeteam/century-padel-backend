@@ -502,12 +502,16 @@ model Booking {
  */
 
 model BookingDetail {
-  id                         String @id @default(cuid())
+  id                         String    @id @default(cuid())
   bookingId                  String
   slotId                     String // COURT slot
-  price                      Int    @db.Integer
-  discountPrice              Int    @default(0) @db.Integer
-  complimentaryCreditMinutes Int    @default(0)
+  price                      Int       @db.Integer
+  discountPrice              Int       @default(0) @db.Integer
+  complimentaryCreditMinutes Int       @default(0)
+  cancelledAt                DateTime?
+  cancellationReason         String?
+  refundAmount               Int       @default(0) @db.Integer
+  cancelledByAdminId         String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now()) @updatedAt
@@ -520,6 +524,7 @@ model BookingDetail {
   membershipUser   MembershipUser? @relation(fields: [membershipUserId], references: [id])
 
   @@index([membershipUserId])
+  @@index([cancelledAt])
   @@map("booking_details")
 }
 
