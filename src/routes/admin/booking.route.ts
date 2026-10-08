@@ -6,10 +6,12 @@ import {
   getAllBookingTransactionsHandler,
   getAllBookingScheduleHandler,
   getBookingTransactionDetailHandler,
+  correctComplimentaryPaymentHandler,
   rejectBookingTransactionHandler,
   getOngoingBookingScheduleHandler,
 } from '@/handlers/admin/booking.handler'
 import { cancelBookingHandler } from '@/handlers/admin/booked-court.handler'
+import { requireAdminWriteAccess } from '@/middlewares/auth'
 
 const adminBookingRoute = createRouter()
   .basePath('/bookings')
@@ -19,6 +21,11 @@ const adminBookingRoute = createRouter()
   .get('/export', ...exportBookingsHandler)
   .get('/export/excel', ...exportBookingTransactionsToExcelHandler)
   .get('/:id', ...getBookingTransactionDetailHandler)
+  .put(
+    '/:id/correct-complimentary-payment',
+    requireAdminWriteAccess,
+    ...correctComplimentaryPaymentHandler,
+  )
   .put('/:id/approve', ...approveBookingTransactionHandler)
   .put('/:id/cancel', ...cancelBookingHandler)
   .put('/:id/reject', ...rejectBookingTransactionHandler)

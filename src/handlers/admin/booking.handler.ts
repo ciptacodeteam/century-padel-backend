@@ -22,6 +22,12 @@ import { z } from 'zod'
 
 import { exportDataToExcel } from '@/services/analytics.service'
 import { bookingPaymentTypeWhere } from '@/services/booking-payment-type.service'
+import { correctComplimentaryBookingToCashier } from '@/services/complimentary-payment-correction.service'
+import utc from 'dayjs/plugin/utc.js'
+import timezone from 'dayjs/plugin/timezone.js'
+
+dayjs.extend(utc)
+dayjs.extend(timezone)
 
 // GET /admin/bookings
 // Get all booking transactions
@@ -545,6 +551,45 @@ export const getBookingTransactionDetailHandler = factory.createHandlers(
       )
       throw error
     }
+  },
+)
+
+const correctComplimentaryPaymentSchema = z.object({
+  paymentDate: z.string().date(),
+  reason: z.string().trim().min(5).max(500),
+})
+
+// PUT /admin/bookings/:id/correct-complimentary-payment
+// Owner-only correction from complimentary balance to an audited cashier sale.
+export const correctComplimentaryPaymentHandler = factory.createHandlers(
+  zValidator('param', idSchema, validateHook),
+  zValidator('json', correctComplimentaryPaymentSchema, validateHook),
+  async (c) => {
+    const { id } = c.req.valid('param') as IdSchema
+    const input = c.req.valid('json')
+    const admin = c.get('admin')!
+    const paidAt = dayjs
+      .tz(input.paymentDate, 'Asia/Jakarta')
+      .startOf('day')
+      .toDate()
+
+    if (paidAt > new Date()) {
+      throw new BadRequestException('Payment date cannot be in the future')
+    }
+
+    const result = await db.$transaction((tx) =>
+      correctComplimentaryBookingToCashier(tx, {
+        bookingId: id,
+        staffId: admin.id,
+        paidAt,
+        reason: input.reason,
+      }),
+    )
+
+    return c.json(
+      ok(result, 'Payment corrected to cashier successfully'),
+      status.OK,
+    )
   },
 )
 

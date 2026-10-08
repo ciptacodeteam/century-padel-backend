@@ -124,6 +124,7 @@ export async function restoreComplimentaryCreditsForBooking(
   tx: TransactionClient,
   bookingId: string,
   staffId?: string | null,
+  note = 'Restored after booking cancellation',
 ) {
   const claim = await tx.booking.updateMany({
     where: {
@@ -170,7 +171,7 @@ export async function restoreComplimentaryCreditsForBooking(
         type: 'REFUND',
         minutes,
         staffId: staffId || undefined,
-        note: 'Restored after booking cancellation',
+        note,
       },
     })
     restoredMinutes += minutes
