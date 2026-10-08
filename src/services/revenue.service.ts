@@ -136,10 +136,11 @@ export function invoiceSource(invoice: {
     invoice.booking?.cashierId
   )
     return 'cashier'
-  // The old admin membership checkout wrote paid invoices without payments.
+  // Older dashboard checkouts (cashier, admin, and super admin) wrote paid
+  // invoices without Payment rows. Online checkout always creates a Payment,
+  // so a paid legacy invoice without one is a dashboard/Kasir transaction.
   if (
     !invoice.payment &&
-    invoice.membershipUserId &&
     (['PAID', 'REFUNDED'].includes(invoice.status) || invoice.paidAt)
   )
     return 'cashier'

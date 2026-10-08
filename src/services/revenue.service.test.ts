@@ -219,7 +219,7 @@ describe('invoice-based revenue', () => {
     expect(income.summary.membershipIncome).toBe(50_000_000)
     expect(income.summary.cashierIncome).toBe(50_000_000)
   })
-  it('counts regular courts/add-ons and classes and preserves unknown paid purchases', async () => {
+  it('counts courts, add-ons, classes, and legacy dashboard purchases by channel', async () => {
     const court = {
       ...invoice('court', 500_000),
       membershipUserId: null,
@@ -238,15 +238,19 @@ describe('invoice-based revenue', () => {
       classBookingId: 'class',
       payment: payment('VA'),
     }
-    const unknown = { ...invoice('unknown', 100_000), membershipUserId: null }
-    findMany.mockResolvedValue([court, lesson, unknown])
+    const legacyDashboard = {
+      ...invoice('legacy-dashboard', 100_000),
+      membershipUserId: null,
+    }
+    findMany.mockResolvedValue([court, lesson, legacyDashboard])
     const income = await getIncomeBySourceAnalytics(start, end)
     const methods = await getPaymentMethodAnalytics(start, end)
     expect(income.summary.totalIncome).toBe(800_000)
     expect(methods.summary.netRevenue).toBe(income.summary.totalIncome)
-    expect(income.summary.otherIncome).toBe(100_000)
-    expect(methods.methods.find((m) => m.method.id === 'unknown')?.total).toBe(
-      100_000,
+    expect(income.summary.otherIncome).toBe(0)
+    expect(income.summary.cashierIncome).toBe(600_000)
+    expect(methods.methods.find((m) => m.method.id === 'cashier')?.total).toBe(
+      600_000,
     )
   })
   it('subtracts only completed refunds and does not produce negative revenue for full refunds with fees', async () => {
@@ -335,6 +339,23 @@ describe('invoice-based revenue', () => {
       invoiceSource({
         ...invoice('cashier', 100),
         payment: payment('QRIS', { source: 'cashier' }),
+      }),
+    ).toBe('cashier')
+  })
+  it.each([
+    ['legacy court booking', { membershipUserId: null, bookingId: 'booking' }],
+    [
+      'legacy class booking',
+      { membershipUserId: null, classBookingId: 'class' },
+    ],
+    ['legacy membership purchase', { membershipUserId: 'membership' }],
+  ])('classifies %s without a payment row as Kasir', (_, relation) => {
+    expect(
+      invoiceSource({
+        ...invoice('legacy-dashboard', 500_000),
+        ...relation,
+        booking: null,
+        payment: null,
       }),
     ).toBe('cashier')
   })

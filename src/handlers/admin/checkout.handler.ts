@@ -76,7 +76,8 @@ export const adminCheckoutHandler = factory.createHandlers(
       useComplimentaryCredit,
     } = c.req.valid('json') as AdminCheckoutSchema
 
-    // Get the admin (cashier) creating this booking
+    // Every checkout created from the admin dashboard—cashier, admin, or super
+    // admin—is reported under the Kasir channel.
     const admin = c.get('admin')
     const cashierId = admin?.id || null
 
