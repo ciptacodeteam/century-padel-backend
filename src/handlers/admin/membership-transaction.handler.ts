@@ -340,6 +340,11 @@ export const approveMembershipTransactionHandler = factory.createHandlers(
                 paidAt: new Date(),
               },
             })
+          } else {
+            await ensureCashierPaidPayment(tx, {
+              ...membershipTransaction.invoice,
+              paidAt: new Date(),
+            })
           }
         }
 

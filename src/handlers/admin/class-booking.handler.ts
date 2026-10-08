@@ -1,3 +1,4 @@
+import { ensureCashierPaidPayment } from '@/services/refund.service'
 import { BadRequestException, NotFoundException } from '@/exceptions'
 import { validateHook } from '@/helpers/validate-hook'
 import { factory } from '@/lib/create-app'
@@ -236,6 +237,11 @@ export const approveClassBookingTransactionHandler = factory.createHandlers(
                 status: PaymentStatus.PAID,
                 paidAt: new Date(),
               },
+            })
+          } else {
+            await ensureCashierPaidPayment(tx, {
+              ...classBooking.invoice,
+              paidAt: new Date(),
             })
           }
         }
@@ -505,4 +511,3 @@ export const exportClassBookingTransactionsToExcelHandler =
       }
     },
   )
-

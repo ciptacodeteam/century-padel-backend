@@ -4,11 +4,7 @@ import { db } from '@/lib/prisma'
 import { ok } from '@/lib/response'
 import { searchQuerySchema, SearchQuerySchema } from '@/lib/validation'
 import { zValidator } from '@hono/zod-validator'
-import {
-  BookingStatus,
-  MembershipAcquisitionType,
-  PaymentStatus,
-} from '@prisma/client'
+import { BookingStatus, MembershipAcquisitionType } from '@prisma/client'
 import status from 'http-status'
 import * as XLSX from 'xlsx'
 import dayjs from 'dayjs'
@@ -19,7 +15,16 @@ import {
   exportDataToExcel,
   getBusinessAnalytics,
 } from '@/services/analytics.service'
-import { getCompletedRefundAmount } from '@/services/refund.service'
+import {
+  invoiceRevenue,
+  revenueBooking,
+  revenueInvoiceWhere,
+  revenuePaidAt,
+} from '@/services/revenue.service'
+import utc from 'dayjs/plugin/utc.js'
+import timezone from 'dayjs/plugin/timezone.js'
+dayjs.extend(utc)
+dayjs.extend(timezone)
 
 // GET /admin/analytics
 // Get analytics overview with total transactions, revenue, and monthly trends
@@ -31,24 +36,24 @@ export const getAnalyticsHandler = factory.createHandlers(
 
       // Get date range from query (optional)
       const startDate = query.search
-        ? dayjs(query.search).startOf('day').toDate()
-        : dayjs().subtract(12, 'months').startOf('day').toDate()
-      const endDate = dayjs().endOf('day').toDate()
+        ? dayjs.tz(query.search, 'Asia/Jakarta').startOf('day').toDate()
+        : dayjs()
+            .tz('Asia/Jakarta')
+            .subtract(12, 'months')
+            .startOf('day')
+            .toDate()
+      const endDate = dayjs().tz('Asia/Jakarta').endOf('day').toDate()
 
       // Get all paid invoices
       const paidInvoices = await db.invoice.findMany({
         where: {
-          status: PaymentStatus.PAID,
-          paidAt: {
-            gte: startDate,
-            lte: endDate,
-          },
+          ...revenueInvoiceWhere(startDate, endDate),
         },
         include: {
-          booking: true,
+          booking: revenueBooking,
           classBooking: true,
           membershipUser: true,
-          payment: { select: { meta: true } },
+          payment: { select: { meta: true, paidAt: true, status: true } },
         },
       })
 
@@ -58,11 +63,13 @@ export const getAnalyticsHandler = factory.createHandlers(
         0,
       )
       const totalRefunds = paidInvoices.reduce(
-        (sum, invoice) =>
-          sum + getCompletedRefundAmount(invoice.payment?.meta, invoice.total),
+        (sum, invoice) => sum + invoiceRevenue(invoice).refund,
         0,
       )
-      const totalRevenue = totalGrossRevenue - totalRefunds
+      const totalRevenue = paidInvoices.reduce(
+        (sum, invoice) => sum + invoiceRevenue(invoice).net,
+        0,
+      )
 
       // Count transactions by type
       const totalBookings = await db.booking.count({
@@ -118,8 +125,10 @@ export const getAnalyticsHandler = factory.createHandlers(
       const monthlyTrends: Record<string, any> = {}
 
       paidInvoices.forEach((invoice) => {
-        if (invoice.paidAt) {
-          const monthKey = dayjs(invoice.paidAt).format('YYYY-MM')
+        if (revenuePaidAt(invoice)) {
+          const monthKey = dayjs(revenuePaidAt(invoice))
+            .tz('Asia/Jakarta')
+            .format('YYYY-MM')
           if (!monthlyTrends[monthKey]) {
             monthlyTrends[monthKey] = {
               month: monthKey,
@@ -130,9 +139,7 @@ export const getAnalyticsHandler = factory.createHandlers(
               totalTransactions: 0,
             }
           }
-          monthlyTrends[monthKey].revenue +=
-            invoice.total -
-            getCompletedRefundAmount(invoice.payment?.meta, invoice.total)
+          monthlyTrends[monthKey].revenue += invoiceRevenue(invoice).net
           monthlyTrends[monthKey].totalTransactions += 1
 
           if (invoice.bookingId) {
@@ -154,31 +161,13 @@ export const getAnalyticsHandler = factory.createHandlers(
       const revenueByType = {
         bookings: paidInvoices
           .filter((inv) => inv.bookingId)
-          .reduce(
-            (sum, inv) =>
-              sum +
-              inv.total -
-              getCompletedRefundAmount(inv.payment?.meta, inv.total),
-            0,
-          ),
+          .reduce((sum, inv) => sum + invoiceRevenue(inv).net, 0),
         classBookings: paidInvoices
           .filter((inv) => inv.classBookingId)
-          .reduce(
-            (sum, inv) =>
-              sum +
-              inv.total -
-              getCompletedRefundAmount(inv.payment?.meta, inv.total),
-            0,
-          ),
+          .reduce((sum, inv) => sum + invoiceRevenue(inv).net, 0),
         memberships: paidInvoices
           .filter((inv) => inv.membershipUserId)
-          .reduce(
-            (sum, inv) =>
-              sum +
-              inv.total -
-              getCompletedRefundAmount(inv.payment?.meta, inv.total),
-            0,
-          ),
+          .reduce((sum, inv) => sum + invoiceRevenue(inv).net, 0),
       }
 
       // Calculate average transaction value
@@ -228,22 +217,23 @@ export const exportAnalyticsToExcelHandler = factory.createHandlers(
 
       // Get date range from query (optional)
       const startDate = query.search
-        ? dayjs(query.search).startOf('day').toDate()
-        : dayjs().subtract(12, 'months').startOf('day').toDate()
-      const endDate = dayjs().endOf('day').toDate()
+        ? dayjs.tz(query.search, 'Asia/Jakarta').startOf('day').toDate()
+        : dayjs()
+            .tz('Asia/Jakarta')
+            .subtract(12, 'months')
+            .startOf('day')
+            .toDate()
+      const endDate = dayjs().tz('Asia/Jakarta').endOf('day').toDate()
 
       // Get all paid invoices
       const paidInvoices = await db.invoice.findMany({
         where: {
-          status: PaymentStatus.PAID,
-          paidAt: {
-            gte: startDate,
-            lte: endDate,
-          },
+          ...revenueInvoiceWhere(startDate, endDate),
         },
         include: {
           booking: {
             include: {
+              details: true,
               user: {
                 select: {
                   name: true,
@@ -279,7 +269,7 @@ export const exportAnalyticsToExcelHandler = factory.createHandlers(
               },
             },
           },
-          payment: { select: { meta: true } },
+          payment: { select: { meta: true, paidAt: true, status: true } },
         },
       })
 
@@ -289,11 +279,13 @@ export const exportAnalyticsToExcelHandler = factory.createHandlers(
         0,
       )
       const totalRefunds = paidInvoices.reduce(
-        (sum, invoice) =>
-          sum + getCompletedRefundAmount(invoice.payment?.meta, invoice.total),
+        (sum, invoice) => sum + invoiceRevenue(invoice).refund,
         0,
       )
-      const totalRevenue = totalGrossRevenue - totalRefunds
+      const totalRevenue = paidInvoices.reduce(
+        (sum, invoice) => sum + invoiceRevenue(invoice).net,
+        0,
+      )
 
       const totalBookings = await db.booking.count({
         where: {
@@ -327,8 +319,10 @@ export const exportAnalyticsToExcelHandler = factory.createHandlers(
       const monthlyTrends: Record<string, any> = {}
 
       paidInvoices.forEach((invoice) => {
-        if (invoice.paidAt) {
-          const monthKey = dayjs(invoice.paidAt).format('YYYY-MM')
+        if (revenuePaidAt(invoice)) {
+          const monthKey = dayjs(revenuePaidAt(invoice))
+            .tz('Asia/Jakarta')
+            .format('YYYY-MM')
           if (!monthlyTrends[monthKey]) {
             monthlyTrends[monthKey] = {
               month: monthKey,
@@ -339,9 +333,7 @@ export const exportAnalyticsToExcelHandler = factory.createHandlers(
               totalTransactions: 0,
             }
           }
-          monthlyTrends[monthKey].revenue +=
-            invoice.total -
-            getCompletedRefundAmount(invoice.payment?.meta, invoice.total)
+          monthlyTrends[monthKey].revenue += invoiceRevenue(invoice).net
           monthlyTrends[monthKey].totalTransactions += 1
 
           if (invoice.bookingId) {
@@ -441,19 +433,17 @@ export const exportAnalyticsToExcelHandler = factory.createHandlers(
           Subtotal: invoice.subtotal,
           'Processing Fee': invoice.processingFee,
           Total: invoice.total,
-          Refund: getCompletedRefundAmount(
-            invoice.payment?.meta,
-            invoice.total,
-          ),
-          'Net Revenue':
-            invoice.total -
-            getCompletedRefundAmount(invoice.payment?.meta, invoice.total),
+          Refund: invoiceRevenue(invoice).refund,
+          'Pembatalan di luar refund': invoiceRevenue(invoice).cancellation,
+          'Net Revenue': invoiceRevenue(invoice).net,
           Status: invoice.status,
           'Issued At': invoice.issuedAt
             ? dayjs(invoice.issuedAt).format('YYYY-MM-DD HH:mm:ss')
             : 'N/A',
           'Paid At': invoice.paidAt
-            ? dayjs(invoice.paidAt).format('YYYY-MM-DD HH:mm:ss')
+            ? dayjs(revenuePaidAt(invoice))
+                .tz('Asia/Jakarta')
+                .format('YYYY-MM-DD HH:mm:ss')
             : 'N/A',
         }
       })
@@ -486,7 +476,7 @@ export const exportAnalyticsToExcelHandler = factory.createHandlers(
       })
 
       // Generate filename with timestamp
-      const filename = `analytics-${dayjs().format('YYYY-MM-DD-HHmmss')}.xlsx`
+      const filename = `analytics-${dayjs().tz('Asia/Jakarta').format('YYYY-MM-DD-HHmmss')}.xlsx`
 
       // Set headers for file download
       c.header(
@@ -508,7 +498,7 @@ export const exportAnalyticsToExcelHandler = factory.createHandlers(
 export const getDashboardStatsHandler = factory.createHandlers(async (c) => {
   try {
     // Define time periods for comparison
-    const now = dayjs()
+    const now = dayjs().tz('Asia/Jakarta')
     const currentPeriodStart = now.startOf('month').toDate()
     const currentPeriodEnd = now.endOf('day').toDate()
 
@@ -525,36 +515,40 @@ export const getDashboardStatsHandler = factory.createHandlers(async (c) => {
     // ============================================
     const currentRevenueInvoices = await db.invoice.findMany({
       where: {
-        status: PaymentStatus.PAID,
-        paidAt: {
-          gte: currentPeriodStart,
-          lte: currentPeriodEnd,
-        },
+        ...revenueInvoiceWhere(currentPeriodStart, currentPeriodEnd),
       },
-      select: { total: true, payment: { select: { meta: true } } },
+      select: {
+        total: true,
+        processingFee: true,
+        status: true,
+        booking: revenueBooking,
+        promoDiscountAmount: true,
+        payment: { select: { meta: true, paidAt: true, status: true } },
+      },
     })
 
     const previousRevenueInvoices = await db.invoice.findMany({
       where: {
-        status: PaymentStatus.PAID,
-        paidAt: {
-          gte: previousPeriodStart,
-          lte: previousPeriodEnd,
-        },
+        ...revenueInvoiceWhere(previousPeriodStart, previousPeriodEnd),
       },
-      select: { total: true, payment: { select: { meta: true } } },
+      select: {
+        total: true,
+        processingFee: true,
+        status: true,
+        booking: revenueBooking,
+        promoDiscountAmount: true,
+        payment: { select: { meta: true, paidAt: true, status: true } },
+      },
     })
 
     const netRevenue = (
-      invoices: Array<{ total: number; payment: { meta: unknown } | null }>,
-    ) =>
-      invoices.reduce(
-        (sum, invoice) =>
-          sum +
-          invoice.total -
-          getCompletedRefundAmount(invoice.payment?.meta, invoice.total),
-        0,
-      )
+      invoices: Array<{
+        total: number
+        processingFee: number
+        status: string
+        payment: { meta: unknown } | null
+      }>,
+    ) => invoices.reduce((sum, invoice) => sum + invoiceRevenue(invoice).net, 0)
 
     const currentRevenueValue = netRevenue(currentRevenueInvoices)
     const previousRevenueValue = netRevenue(previousRevenueInvoices)
@@ -577,21 +571,13 @@ export const getDashboardStatsHandler = factory.createHandlers(async (c) => {
     // ============================================
     const currentSales = await db.invoice.count({
       where: {
-        status: PaymentStatus.PAID,
-        paidAt: {
-          gte: currentPeriodStart,
-          lte: currentPeriodEnd,
-        },
+        ...revenueInvoiceWhere(currentPeriodStart, currentPeriodEnd),
       },
     })
 
     const previousSales = await db.invoice.count({
       where: {
-        status: PaymentStatus.PAID,
-        paidAt: {
-          gte: previousPeriodStart,
-          lte: previousPeriodEnd,
-        },
+        ...revenueInvoiceWhere(previousPeriodStart, previousPeriodEnd),
       },
     })
 
@@ -644,11 +630,7 @@ export const getDashboardStatsHandler = factory.createHandlers(async (c) => {
     // Get unique user IDs from all paid invoices this month
     const currentActiveInvoices = await db.invoice.findMany({
       where: {
-        status: PaymentStatus.PAID,
-        paidAt: {
-          gte: currentPeriodStart,
-          lte: currentPeriodEnd,
-        },
+        ...revenueInvoiceWhere(currentPeriodStart, currentPeriodEnd),
       },
       select: {
         userId: true,
@@ -657,11 +639,7 @@ export const getDashboardStatsHandler = factory.createHandlers(async (c) => {
 
     const previousActiveInvoices = await db.invoice.findMany({
       where: {
-        status: PaymentStatus.PAID,
-        paidAt: {
-          gte: previousPeriodStart,
-          lte: previousPeriodEnd,
-        },
+        ...revenueInvoiceWhere(previousPeriodStart, previousPeriodEnd),
       },
       select: {
         userId: true,
@@ -694,28 +672,29 @@ export const getDashboardStatsHandler = factory.createHandlers(async (c) => {
     // ============================================
     const revenueByMonth = await db.invoice.findMany({
       where: {
-        status: PaymentStatus.PAID,
-        paidAt: {
-          gte: last6MonthsStart,
-          lte: currentPeriodEnd,
-        },
+        ...revenueInvoiceWhere(last6MonthsStart, currentPeriodEnd),
       },
       select: {
         paidAt: true,
+        issuedAt: true,
         total: true,
-        payment: { select: { meta: true } },
+        processingFee: true,
+        status: true,
+        booking: revenueBooking,
+        promoDiscountAmount: true,
+        payment: { select: { meta: true, paidAt: true, status: true } },
       },
     })
 
     // Process monthly data
     const monthlyRevenue: { [key: string]: number } = {}
     revenueByMonth.forEach((record) => {
-      if (record.paidAt) {
-        const monthKey = dayjs(record.paidAt).format('YYYY-MM')
+      if (revenuePaidAt(record)) {
+        const monthKey = dayjs(revenuePaidAt(record))
+          .tz('Asia/Jakarta')
+          .format('YYYY-MM')
         monthlyRevenue[monthKey] =
-          (monthlyRevenue[monthKey] || 0) +
-          record.total -
-          getCompletedRefundAmount(record.payment?.meta, record.total)
+          (monthlyRevenue[monthKey] || 0) + invoiceRevenue(record).net
       }
     })
 
@@ -838,7 +817,7 @@ export const getDailyTransactionsHandler = factory.createHandlers(
       const { period } = c.req.valid('query') as DailyTransactionsQuery
 
       // Calculate date range based on period
-      const now = dayjs()
+      const now = dayjs().tz('Asia/Jakarta')
       let startDate: Date
       let daysToShow: number
 
@@ -865,17 +844,18 @@ export const getDailyTransactionsHandler = factory.createHandlers(
       // Fetch all paid invoices in the date range
       const invoices = await db.invoice.findMany({
         where: {
-          status: PaymentStatus.PAID,
-          paidAt: {
-            gte: startDate,
-            lte: endDate,
-          },
+          ...revenueInvoiceWhere(startDate, endDate),
         },
         select: {
           id: true,
           total: true,
+          processingFee: true,
+          status: true,
           paidAt: true,
-          payment: { select: { meta: true } },
+          issuedAt: true,
+          booking: revenueBooking,
+          promoDiscountAmount: true,
+          payment: { select: { meta: true, paidAt: true, status: true } },
         },
         orderBy: {
           paidAt: 'asc',
@@ -886,8 +866,10 @@ export const getDailyTransactionsHandler = factory.createHandlers(
       const transactionsByDate: { [key: string]: number } = {}
 
       invoices.forEach((invoice) => {
-        if (invoice.paidAt) {
-          const dateKey = dayjs(invoice.paidAt).format('YYYY-MM-DD')
+        if (revenuePaidAt(invoice)) {
+          const dateKey = dayjs(revenuePaidAt(invoice))
+            .tz('Asia/Jakarta')
+            .format('YYYY-MM-DD')
           transactionsByDate[dateKey] = (transactionsByDate[dateKey] || 0) + 1
         }
       })
@@ -906,10 +888,7 @@ export const getDailyTransactionsHandler = factory.createHandlers(
       // Calculate summary statistics
       const totalTransactions = invoices.length
       const totalRevenue = invoices.reduce(
-        (sum, invoice) =>
-          sum +
-          invoice.total -
-          getCompletedRefundAmount(invoice.payment?.meta, invoice.total),
+        (sum, invoice) => sum + invoiceRevenue(invoice).net,
         0,
       )
       const averagePerDay =
@@ -957,10 +936,14 @@ export const getIncomeBySourceHandler = factory.createHandlers(
 
       const startDate = query.startDate
         ? new Date(query.startDate)
-        : dayjs().subtract(1, 'month').startOf('day').toDate()
+        : dayjs()
+            .tz('Asia/Jakarta')
+            .subtract(1, 'month')
+            .startOf('day')
+            .toDate()
       const endDate = query.endDate
         ? new Date(query.endDate)
-        : dayjs().endOf('day').toDate()
+        : dayjs().tz('Asia/Jakarta').endOf('day').toDate()
 
       const source = (query.source as 'cashier' | 'online') || undefined
       const data = await getIncomeBySourceAnalytics(startDate, endDate, source)
@@ -983,10 +966,14 @@ export const getPaymentMethodsHandler = factory.createHandlers(
 
       const startDate = query.startDate
         ? new Date(query.startDate)
-        : dayjs().subtract(1, 'month').startOf('day').toDate()
+        : dayjs()
+            .tz('Asia/Jakarta')
+            .subtract(1, 'month')
+            .startOf('day')
+            .toDate()
       const endDate = query.endDate
         ? new Date(query.endDate)
-        : dayjs().endOf('day').toDate()
+        : dayjs().tz('Asia/Jakarta').endOf('day').toDate()
 
       const source = (query.source as 'cashier' | 'online') || undefined
       const data = await getPaymentMethodAnalytics(startDate, endDate, source)
@@ -1009,10 +996,14 @@ export const getBusinessInsightsHandler = factory.createHandlers(
 
       const startDate = query.startDate
         ? new Date(query.startDate)
-        : dayjs().subtract(1, 'month').startOf('day').toDate()
+        : dayjs()
+            .tz('Asia/Jakarta')
+            .subtract(1, 'month')
+            .startOf('day')
+            .toDate()
       const endDate = query.endDate
         ? new Date(query.endDate)
-        : dayjs().endOf('day').toDate()
+        : dayjs().tz('Asia/Jakarta').endOf('day').toDate()
 
       const data = await getBusinessAnalytics(startDate, endDate)
 
@@ -1047,7 +1038,7 @@ export const exportBulkDataHandler = factory.createHandlers(
 
       const buffer = await exportDataToExcel(query.type, startDate, endDate)
 
-      const filename = `${query.type}-export-${dayjs().format('YYYY-MM-DD')}.xlsx`
+      const filename = `${query.type}-export-${dayjs().tz('Asia/Jakarta').format('YYYY-MM-DD')}.xlsx`
 
       c.header(
         'Content-Type',

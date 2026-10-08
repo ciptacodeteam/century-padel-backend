@@ -20,6 +20,7 @@ import {
 } from '@/services/complimentary-credit.service'
 import { queueSuperadminInvoiceEmails } from '@/services/email.service'
 import { fundedMembershipWhere } from '@/services/membership-entitlement.service'
+import { ensureCashierPaidPayment } from '@/services/refund.service'
 
 const adminCheckoutSchema = z
   .object({
@@ -542,6 +543,8 @@ export const adminCheckoutHandler = factory.createHandlers(
             paidAt: new Date(),
           },
         })
+
+        await ensureCashierPaidPayment(tx, invoice)
 
         return {
           bookingId: booking.id,

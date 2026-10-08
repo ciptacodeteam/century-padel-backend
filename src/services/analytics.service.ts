@@ -1,292 +1,221 @@
 import { db } from '@/lib/prisma'
-import { PaymentStatus, BookingStatus } from '@prisma/client'
+import { BookingStatus } from '@prisma/client'
 import dayjs from 'dayjs'
 import * as XLSX from 'xlsx'
 import { getFileUrl } from './upload.service'
-import { getCompletedRefundAmount } from './refund.service'
+import {
+  getRevenueInvoices,
+  invoiceRevenue,
+  revenueBooking,
+  invoiceSource,
+  revenuePaidAt,
+  revenueInvoiceWhere,
+} from './revenue.service'
 import {
   bookingPaymentTypeWhere,
   type BookingPaymentType,
 } from './booking-payment-type.service'
 
-/**
- * Get income analytics separated by source
- * Sources: Online bookings, Cashier bookings, Class bookings, Memberships
- */
+/** All paid purchases are counted once by invoice, even without a Payment row. */
 export async function getIncomeBySourceAnalytics(
   startDate: Date,
   endDate: Date,
   source?: 'cashier' | 'online',
 ) {
-  // Build where clause with optional source filter
-  const invoiceWhere: any = {
-    status: PaymentStatus.PAID,
-    paidAt: { gte: startDate, lte: endDate },
-  }
-
-  const includeClause: any = {
-    booking: {
-      include: { cashier: { select: { id: true, name: true, email: true } } },
-    },
-    classBooking: true,
-    membershipUser: true,
-    payment: { select: { meta: true } },
-  }
-
-  if (source === 'cashier') {
-    // invoices where booking exists and was paid via cashier (cashierId not null)
-    invoiceWhere.booking = { isNot: null, cashierId: { not: null } }
-  } else if (source === 'online') {
-    // invoices where booking exists and cashierId is null (online)
-    invoiceWhere.booking = { isNot: null, cashierId: null }
-  }
-
-  const invoices = await db.invoice.findMany({
-    where: invoiceWhere,
-    include: includeClause,
-  })
-
-  // Separate by source and account for processing fees
-  let onlineBookingIncome = 0
-  let cashierBookingIncome = 0
-  let classBookingIncome = 0
-  let membershipIncome = 0
-  let totalProcessingFees = 0
-  let totalRefunds = 0
-  let totalGrossAmount = 0
-  let totalNetAmount = 0
-
-  const bookingIncome: Record<string, any> = {}
-  const classIncome: Record<string, any> = {}
-  const membershipIncome_: Record<string, any> = {}
-
-  for (const invoice of invoices as any[]) {
-    const gross = invoice.total || 0
-    const processingFee = invoice.processingFee || 0
-    const refundAmount = getCompletedRefundAmount(invoice.payment?.meta, gross)
-    const netAmount = gross - processingFee - refundAmount
-    // Accumulate overall totals once per invoice
-    totalGrossAmount += gross
-    totalProcessingFees += processingFee
-    totalRefunds += refundAmount
-    totalNetAmount += netAmount
-
-    // Court booking income
-    if (invoice.booking) {
-      const src = invoice.booking.cashier ? 'Cashier' : 'Online'
-      // processingFee and netAmount already computed above
-
-      if (src === 'Cashier') {
-        cashierBookingIncome += netAmount
-      } else {
-        onlineBookingIncome += netAmount
-      }
-
-      if (!bookingIncome[src]) {
-        bookingIncome[src] = {
-          count: 0,
-          total: 0,
-          processingFee: 0,
-          refunds: 0,
-          transactions: [],
-        }
-      }
-      bookingIncome[src].count += 1
-      bookingIncome[src].total += netAmount
-      bookingIncome[src].processingFee += processingFee
-      bookingIncome[src].refunds += refundAmount
-      bookingIncome[src].transactions.push({
-        id: invoice.id,
-        bookingId: invoice.booking.id,
-        amount: invoice.total,
-        processingFee,
-        refundAmount,
-        netAmount,
-        date: invoice.paidAt,
-      })
+  const invoices = await getRevenueInvoices(startDate, endDate, source)
+  const bySource: Record<
+    string,
+    {
+      count: number
+      total: number
+      processingFee: number
+      refunds: number
+      cancellations: number
+      transactions: unknown[]
     }
-
-    // Class booking income
-    if (invoice.classBooking) {
-      const processingFee = invoice.processingFee || 0
-      classBookingIncome += netAmount
-      if (!classIncome['Class Bookings']) {
-        classIncome['Class Bookings'] = {
-          count: 0,
-          total: 0,
-          processingFee: 0,
-          refunds: 0,
-          transactions: [],
-        }
-      }
-      classIncome['Class Bookings'].count += 1
-      classIncome['Class Bookings'].total += netAmount
-      classIncome['Class Bookings'].processingFee += processingFee
-      classIncome['Class Bookings'].refunds += refundAmount
-      classIncome['Class Bookings'].transactions.push({
-        id: invoice.id,
-        classBookingId: invoice.classBooking.id,
-        amount: invoice.total,
-        processingFee,
-        refundAmount,
-        netAmount,
-        date: invoice.paidAt,
-      })
-    }
-
-    // Membership income
-    if (invoice.membershipUser) {
-      const processingFee = invoice.processingFee || 0
-      membershipIncome += netAmount
-      if (!membershipIncome_['Membership']) {
-        membershipIncome_['Membership'] = {
-          count: 0,
-          total: 0,
-          processingFee: 0,
-          refunds: 0,
-          transactions: [],
-        }
-      }
-      membershipIncome_['Membership'].count += 1
-      membershipIncome_['Membership'].total += netAmount
-      membershipIncome_['Membership'].processingFee += processingFee
-      membershipIncome_['Membership'].refunds += refundAmount
-      membershipIncome_['Membership'].transactions.push({
-        id: invoice.id,
-        membershipUserId: invoice.membershipUser.id,
-        amount: invoice.total,
-        processingFee,
-        refundAmount,
-        netAmount,
-        date: invoice.paidAt,
-      })
-    }
+  > = {}
+  let totalGrossAmount = 0,
+    totalProcessingFees = 0,
+    totalRefunds = 0,
+    totalCancellations = 0,
+    totalNetAmount = 0
+  let cashierIncome = 0,
+    onlineIncome = 0,
+    unknownIncome = 0
+  for (const invoice of invoices) {
+    const amounts = invoiceRevenue(invoice)
+    const channel = invoiceSource(invoice)
+    // Product breakdown stays mutually exclusive; the channel totals below
+    // include membership, court/add-on and class purchases alike.
+    const key = invoice.membershipUserId
+      ? 'Membership'
+      : invoice.classBookingId
+        ? 'Class Bookings'
+        : channel === 'cashier'
+          ? 'Cashier'
+          : channel === 'online'
+            ? 'Online'
+            : 'Unknown'
+    const group = (bySource[key] ??= {
+      count: 0,
+      total: 0,
+      processingFee: 0,
+      refunds: 0,
+      cancellations: 0,
+      transactions: [],
+    })
+    group.count++
+    group.total += amounts.net
+    group.processingFee += amounts.fees
+    group.refunds += amounts.refund
+    group.cancellations += amounts.cancellation
+    group.transactions.push({
+      id: invoice.id,
+      invoiceNumber: invoice.number,
+      customerName: invoice.user.name,
+      bookingId: invoice.bookingId,
+      membershipUserId: invoice.membershipUserId,
+      classBookingId: invoice.classBookingId,
+      amount: amounts.gross,
+      processingFee: amounts.fees,
+      refundAmount: amounts.refund,
+      cancellationAmount: amounts.cancellation,
+      netAmount: amounts.net,
+      date: revenuePaidAt(invoice),
+      source: channel,
+    })
+    totalGrossAmount += amounts.gross
+    totalProcessingFees += amounts.fees
+    totalRefunds += amounts.refund
+    totalCancellations += amounts.cancellation
+    totalNetAmount += amounts.net
+    if (channel === 'cashier') cashierIncome += amounts.net
+    else if (channel === 'online') onlineIncome += amounts.net
+    else unknownIncome += amounts.net
   }
-
-  const totalIncome =
-    onlineBookingIncome +
-    cashierBookingIncome +
-    classBookingIncome +
-    membershipIncome
-
   return {
     summary: {
-      totalIncome,
+      totalIncome: totalNetAmount,
       totalGrossAmount,
       totalProcessingFees,
       totalRefunds,
+      totalCancellations,
       totalNetAmount,
-      onlineBookingIncome,
-      cashierBookingIncome,
-      classBookingIncome,
-      membershipIncome,
+      onlineBookingIncome: bySource.Online?.total ?? 0,
+      cashierBookingIncome: bySource.Cashier?.total ?? 0,
+      classBookingIncome: bySource['Class Bookings']?.total ?? 0,
+      membershipIncome: bySource.Membership?.total ?? 0,
+      otherIncome: bySource.Unknown?.total ?? 0,
+      cashierIncome,
+      onlineIncome,
+      unknownIncome,
       totalTransactions: invoices.length,
     },
-    bySource: {
-      ...bookingIncome,
-      ...classIncome,
-      ...membershipIncome_,
-    },
+    bySource,
     dateRange: { startDate, endDate },
   }
 }
 
-/**
- * Get payment method analytics
- * Shows which payment methods are most used
- */
 export async function getPaymentMethodAnalytics(
   startDate: Date,
   endDate: Date,
   source?: 'cashier' | 'online',
 ) {
-  const paymentWhere: any = {
-    status: PaymentStatus.PAID,
-    createdAt: { gte: startDate, lte: endDate },
-  }
-
-  if (source === 'cashier') {
-    paymentWhere.invoice = {
-      isNot: null,
-      booking: { cashierId: { not: null } },
+  const invoices = await getRevenueInvoices(startDate, endDate, source)
+  const groups = new Map<
+    string,
+    {
+      method: { id: string; name: string; logo: string | null }
+      count: number
+      total: number
+      processingFee: number
+      refunds: number
+      cancellations: number
+      netAmount: number
+      transactions: unknown[]
     }
-  } else if (source === 'online') {
-    paymentWhere.invoice = { isNot: null, booking: { cashierId: null } }
-  }
-
-  const payments = await db.payment.findMany({
-    where: paymentWhere,
-    include: {
-      method: { select: { id: true, name: true, logo: true } },
-      invoice: { select: { total: true, processingFee: true } },
-    },
-  })
-
-  const methodAnalytics: Map<string, any> = new Map()
-
-  let totalAmount = 0
-  let totalProcessingFees = 0
-  let totalRefunds = 0
-
-  for (const payment of payments) {
-    const amt = payment.invoice?.total || 0
-    const procFee = payment.invoice?.processingFee || 0
-    const refundAmount = getCompletedRefundAmount(payment.meta, amt)
-    totalAmount += amt
-    totalProcessingFees += procFee
-    totalRefunds += refundAmount
-
-    const methodId = payment.method?.id || 'unknown'
-    if (!methodAnalytics.has(methodId)) {
-      methodAnalytics.set(methodId, {
+  >()
+  let totalAmount = 0,
+    totalProcessingFees = 0,
+    totalRefunds = 0,
+    totalCancellations = 0,
+    netRevenue = 0
+  for (const invoice of invoices) {
+    const amounts = invoiceRevenue(invoice)
+    const channel = invoiceSource(invoice)
+    const method = invoice.payment?.method
+    // Legacy and new CASHIER payments share one group, not duplicate cards.
+    const cashierMethod =
+      method?.channel === 'CASHIER' || (!method && channel === 'cashier')
+    const key = cashierMethod ? 'cashier' : (method?.id ?? 'unknown')
+    if (!groups.has(key))
+      groups.set(key, {
         method: {
-          id: payment.method?.id || null,
-          name: payment.method?.name || 'Unknown',
-          logo: payment.method?.logo
-            ? await getFileUrl(payment.method.logo)
-            : null,
+          id: key,
+          name: cashierMethod
+            ? 'Kasir'
+            : (method?.name ?? 'Metode belum tercatat'),
+          logo:
+            !cashierMethod && method?.logo
+              ? await getFileUrl(method.logo)
+              : null,
         },
         count: 0,
         total: 0,
         processingFee: 0,
         refunds: 0,
-        percentage: 0,
+        cancellations: 0,
+        netAmount: 0,
         transactions: [],
       })
-    }
-
-    const methodData = methodAnalytics.get(methodId)!
-    methodData.count += 1
-    methodData.total += amt
-    methodData.processingFee += procFee
-    methodData.refunds += refundAmount
-    methodData.transactions.push({
-      id: payment.id,
-      amount: amt,
-      processingFee: procFee,
-      refundAmount,
-      date: payment.createdAt,
+    const group = groups.get(key)!
+    group.count++
+    group.total += amounts.gross
+    group.processingFee += amounts.fees
+    group.refunds += amounts.refund
+    group.cancellations += amounts.cancellation
+    group.netAmount += amounts.net
+    group.transactions.push({
+      id: invoice.id,
+      invoiceNumber: invoice.number,
+      customerName: invoice.user.name,
+      type: invoice.membershipUserId
+        ? 'Membership'
+        : invoice.classBookingId
+          ? 'Class'
+          : 'Booking',
+      source: channel,
+      amount: amounts.gross,
+      processingFee: amounts.fees,
+      refundAmount: amounts.refund,
+      cancellationAmount: amounts.cancellation,
+      netAmount: amounts.net,
+      date: revenuePaidAt(invoice),
+      legacyPayment: !invoice.payment,
     })
+    totalAmount += amounts.gross
+    totalProcessingFees += amounts.fees
+    totalRefunds += amounts.refund
+    totalCancellations += amounts.cancellation
+    netRevenue += amounts.net
   }
-
-  // Calculate percentages and convert to array sorted by total
-  const methodsArray = Array.from(methodAnalytics.values())
-    .map((method) => ({
-      ...method,
-      percentage: totalAmount > 0 ? (method.total / totalAmount) * 100 : 0,
+  const methods = [...groups.values()]
+    .map((group) => ({
+      ...group,
+      percentage: totalAmount ? (group.total / totalAmount) * 100 : 0,
     }))
     .sort((a, b) => b.total - a.total)
-
   return {
     summary: {
       totalAmount,
       totalProcessingFees,
       totalRefunds,
-      netRevenue: totalAmount - totalProcessingFees - totalRefunds,
-      totalTransactions: payments.length,
-      methodCount: methodsArray.length,
+      totalCancellations,
+      netRevenue,
+      totalTransactions: invoices.length,
+      methodCount: methods.length,
     },
-    methods: methodsArray,
+    methods,
     dateRange: { startDate, endDate },
   }
 }
@@ -656,14 +585,14 @@ export async function getBusinessAnalytics(startDate: Date, endDate: Date) {
 
   // Revenue
   const revenueInvoices = await db.invoice.findMany({
-    where: {
-      status: PaymentStatus.PAID,
-      paidAt: { gte: startDate, lte: endDate },
-    },
+    where: revenueInvoiceWhere(startDate, endDate),
     select: {
+      status: true,
       total: true,
       processingFee: true,
-      payment: { select: { meta: true } },
+      booking: revenueBooking,
+      promoDiscountAmount: true,
+      payment: { select: { meta: true, status: true } },
     },
   })
 
@@ -676,11 +605,13 @@ export async function getBusinessAnalytics(startDate: Date, endDate: Date) {
     0,
   )
   const refunds = revenueInvoices.reduce(
-    (sum, invoice) =>
-      sum + getCompletedRefundAmount(invoice.payment?.meta, invoice.total),
+    (sum, invoice) => sum + invoiceRevenue(invoice).refund,
     0,
   )
-  const netRevenue = grossRevenue - processingFees - refunds
+  const netRevenue = revenueInvoices.reduce(
+    (sum, invoice) => sum + invoiceRevenue(invoice).net,
+    0,
+  )
 
   // Most booked courts
   const topCourts = await db.bookingDetail.groupBy({
