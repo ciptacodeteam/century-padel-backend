@@ -36,6 +36,30 @@ import { zValidator } from '@hono/zod-validator'
 import status from 'http-status'
 import { BookingStatus, SlotType } from '@prisma/client'
 import dayjs from 'dayjs'
+import { z } from 'zod'
+import { bulkSlotAvailability } from '@/services/bulk-slot-availability.service'
+import { Prisma } from '@prisma/client'
+
+export const bulkSlotAvailabilityHandler = factory.createHandlers(
+  zValidator('param', idSchema, validateHook),
+  zValidator(
+    'json',
+    z.object({
+      slotIds: z.array(z.string().min(1)).min(1).max(5000),
+      isAvailable: z.boolean(),
+    }),
+    validateHook,
+  ),
+  async (c) => {
+    const { id } = c.req.valid('param')
+    const { slotIds, isAvailable } = c.req.valid('json')
+    const result = await db.$transaction(
+      (tx) => bulkSlotAvailability(tx, id, slotIds, isAvailable),
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    )
+    return c.json(ok(result), status.OK)
+  },
+)
 
 export const getAllCourtHandler = factory.createHandlers(
   zValidator('query', searchQuerySchema, validateHook),
