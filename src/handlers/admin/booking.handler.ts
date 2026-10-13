@@ -208,6 +208,7 @@ export const getAllBookingScheduleHandler = factory.createHandlers(
             },
           },
           details: {
+            where: { cancelledAt: null },
             include: {
               court: {
                 select: {
@@ -1102,6 +1103,7 @@ export const getOngoingBookingScheduleHandler = factory.createHandlers(
           status: BookingStatus.CONFIRMED,
           details: {
             some: {
+              cancelledAt: null,
               slot: {
                 startAt: {
                   gte: dayjs().subtract(2, 'hours').toDate(), // Include slots that started up to 2 hours ago
@@ -1129,6 +1131,7 @@ export const getOngoingBookingScheduleHandler = factory.createHandlers(
             },
           },
           details: {
+            where: { cancelledAt: null },
             include: {
               court: {
                 select: {
