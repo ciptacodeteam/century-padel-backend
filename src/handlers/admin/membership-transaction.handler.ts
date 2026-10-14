@@ -1,3 +1,7 @@
+import {
+  expirePendingMembershipPayments,
+  cancelledMembershipData,
+} from '@/services/membership-payment.service'
 import { BadRequestException, NotFoundException } from '@/exceptions'
 import { validateHook } from '@/helpers/validate-hook'
 import { factory } from '@/lib/create-app'
@@ -89,6 +93,7 @@ export const getAllMembershipTransactionsHandler = factory.createHandlers(
         }
       }
 
+      await expirePendingMembershipPayments()
       const membershipTransactions = await db.membershipUser.findMany({
         ...queryOptions,
         where,
@@ -166,6 +171,7 @@ export const getMembershipTransactionDetailHandler = factory.createHandlers(
     try {
       const { id } = c.req.valid('param') as IdSchema
 
+      await expirePendingMembershipPayments()
       const membershipTransaction = await db.membershipUser.findUnique({
         where: { id },
         include: {
@@ -321,6 +327,17 @@ export const approveMembershipTransactionHandler = factory.createHandlers(
           )
         }
 
+        if (
+          membershipTransaction.invoice.status !== PaymentStatus.PENDING ||
+          membershipTransaction.invoice.dueDate <= new Date() ||
+          (membershipTransaction.invoice.payment?.dueDate &&
+            membershipTransaction.invoice.payment.dueDate <= new Date())
+        ) {
+          throw new BadRequestException(
+            'Transaksi membership sudah dibatalkan atau waktu pembayaran habis',
+          )
+        }
+
         // Update invoice status to PAID
         if (membershipTransaction.invoice) {
           await tx.invoice.update({
@@ -430,6 +447,10 @@ export const rejectMembershipTransactionHandler = factory.createHandlers(
           }
         }
 
+        await tx.membershipUser.update({
+          where: { id },
+          data: cancelledMembershipData('Transaksi ditolak admin'),
+        })
         return membershipTransaction
       })
 
@@ -690,6 +711,7 @@ export const exportMembershipTransactionsToExcelHandler =
           searchableFields: [],
         })
 
+        await expirePendingMembershipPayments()
         const membershipTransactions = await db.membershipUser.findMany({
           ...queryOptions,
           include: {

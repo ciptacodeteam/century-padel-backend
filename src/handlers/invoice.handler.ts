@@ -1,3 +1,8 @@
+import {
+  cancelledMembershipData,
+  cancelPendingMembershipPayment,
+  expirePendingMembershipPayments,
+} from '@/services/membership-payment.service'
 import { validateHook } from '@/helpers/validate-hook'
 import { factory } from '@/lib/create-app'
 import { db } from '@/lib/prisma'
@@ -50,6 +55,7 @@ export const getUserInvoicesHandler = factory.createHandlers(
         searchableFields: ['status', 'dueDate'],
       })
 
+      await expirePendingMembershipPayments(new Date(), { userId: user.id })
       const invoices = await db.invoice.findMany({
         ...queryOptions,
         where: {
@@ -131,6 +137,10 @@ export const getInvoiceDetailHandler = factory.createHandlers(
         throw new UnauthorizedException()
       }
 
+      await expirePendingMembershipPayments(new Date(), {
+        invoiceNumber: id,
+        ...(!hasValidShareToken ? { userId: user!.id } : {}),
+      })
       const invoice: any = await db.invoice.findFirst({
         where: hasValidShareToken
           ? { number: id }
@@ -465,6 +475,26 @@ export const expireInvoiceHandler = factory.createHandlers(
 
       const now = new Date()
 
+      if (invoice.membershipUserId) {
+        const changed = await cancelPendingMembershipPayment(
+          invoice.id,
+          'Waktu pembayaran habis',
+          now,
+          true,
+        )
+        if (!changed)
+          throw new BadRequestException(
+            'Waktu pembayaran belum habis atau transaksi sudah diproses',
+          )
+        return c.json(
+          ok(
+            { invoiceId: invoice.id, status: PaymentStatus.CANCELLED },
+            'Waktu pembayaran habis',
+          ),
+          status.OK,
+        )
+      }
+
       // Perform the expiration in a transaction
       await db.$transaction(async (tx) => {
         // First, release slots if booking exists
@@ -508,7 +538,10 @@ export const expireInvoiceHandler = factory.createHandlers(
           await tx.payment.update({
             where: { id: invoice.payment.id },
             data: {
-              status: PaymentStatus.EXPIRED,
+              status: invoice.membershipUserId
+                ? PaymentStatus.CANCELLED
+                : PaymentStatus.EXPIRED,
+              cancelledAt: invoice.membershipUserId ? now : undefined,
             },
           })
         }
@@ -517,7 +550,10 @@ export const expireInvoiceHandler = factory.createHandlers(
         await tx.invoice.update({
           where: { id: invoice.id },
           data: {
-            status: PaymentStatus.EXPIRED,
+            status: invoice.membershipUserId
+              ? PaymentStatus.CANCELLED
+              : PaymentStatus.EXPIRED,
+            cancelledAt: invoice.membershipUserId ? now : undefined,
           },
         })
 
@@ -564,10 +600,11 @@ export const expireInvoiceHandler = factory.createHandlers(
           })
         }
 
-        // Delete unpaid membership if exists
+        // Preserve the unpaid membership and its invoice history
         if (invoice.membershipUser) {
-          await tx.membershipUser.delete({
+          await tx.membershipUser.update({
             where: { id: invoice.membershipUser.id },
+            data: cancelledMembershipData('Waktu pembayaran habis'),
           })
         }
       })

@@ -106,6 +106,23 @@ export const membershipCheckoutHandler = factory.createHandlers(
           },
         })
 
+        const channelCode = paymentMethod.channel
+          ? resolveXenditChannelCode(paymentMethod.channel, paymentMethod.name)
+          : null
+        const paymentDueDate = dayjs()
+          .add(
+            !channelCode ||
+              isVirtualAccountChannel(channelCode) ||
+              channelCode.includes('EWALLET') ||
+              ['DANA', 'OVO', 'LINKAJA', 'SHOPEEPAY', 'GOPAY'].includes(
+                channelCode,
+              )
+              ? 24
+              : 1,
+            'hours',
+          )
+          .toDate()
+
         // Create invoice
         const invoice = await tx.invoice.create({
           data: {
@@ -116,7 +133,7 @@ export const membershipCheckoutHandler = factory.createHandlers(
             processingFee,
             total: finalTotal,
             status: PaymentStatus.PENDING,
-            dueDate: dayjs().add(1, 'day').toDate(),
+            dueDate: paymentDueDate,
             issuedAt: new Date(),
           },
         })
@@ -152,12 +169,12 @@ export const membershipCheckoutHandler = factory.createHandlers(
 
             if (isVirtualAccountChannel(channelCode)) {
               channelProperties = {
-                expires_at: dayjs().add(24, 'hours').toISOString(),
+                expires_at: paymentDueDate.toISOString(),
                 display_name: userDetails?.name || 'Customer',
               }
             } else if (channelCode === 'QRIS' || channelCode === 'QR') {
               channelProperties = {
-                expires_at: dayjs().add(1, 'hour').toISOString(),
+                expires_at: paymentDueDate.toISOString(),
               }
             } else if (
               channelCode.includes('EWALLET') ||
@@ -171,7 +188,7 @@ export const membershipCheckoutHandler = factory.createHandlers(
               }
             } else {
               channelProperties = {
-                expires_at: dayjs().add(1, 'hour').toISOString(),
+                expires_at: paymentDueDate.toISOString(),
               }
             }
 
@@ -240,7 +257,7 @@ export const membershipCheckoutHandler = factory.createHandlers(
             amount: finalTotal,
             fees: paymentMethod.fees,
             status: PaymentStatus.PENDING,
-            dueDate: dayjs().add(24, 'hours').toDate(),
+            dueDate: paymentDueDate,
             externalRef:
               xenditInvoiceResponse?.id ||
               xenditInvoiceResponse?.payment_request_id ||

@@ -1,3 +1,4 @@
+import { expirePendingMembershipPayments } from '@/services/membership-payment.service'
 import { Queue, Worker } from 'bullmq'
 import { db } from '@/lib/prisma'
 import { restoreComplimentaryCreditsForBooking } from '@/services/complimentary-credit.service'
@@ -43,10 +44,17 @@ export async function checkExpiredTransactions() {
   const now = new Date()
 
   try {
+    const cancelledMembershipPayments =
+      await expirePendingMembershipPayments(now)
+
     // Find expired payments
     const expiredPayments = await db.payment.findMany({
       where: {
         status: PaymentStatus.PENDING,
+        OR: [
+          { invoice: { is: null } },
+          { invoice: { is: { membershipUserId: null } } },
+        ],
         dueDate: {
           lte: now,
         },
@@ -188,16 +196,6 @@ export async function checkExpiredTransactions() {
               },
             })
           }
-
-          // Delete membership user if payment expired (not yet activated)
-          if (payment.invoice.membershipUser) {
-            await tx.membershipUser.delete({
-              where: { id: payment.invoice.membershipUser.id },
-            })
-            log.info(
-              `Deleted unpaid membership ${payment.invoice.membershipUser.id}`,
-            )
-          }
         }
 
         log.info(`Expired payment ${payment.id} and related records`)
@@ -301,7 +299,7 @@ export async function checkExpiredTransactions() {
     }
 
     return {
-      expiredPayments: expiredPayments.length,
+      expiredPayments: expiredPayments.length + cancelledMembershipPayments,
       expiredHoldBookings: expiredHoldBookings.length,
     }
   } catch (error) {

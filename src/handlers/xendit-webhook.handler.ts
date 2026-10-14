@@ -1,3 +1,7 @@
+import {
+  cancelledMembershipData,
+  cancelPendingMembershipPayment,
+} from '@/services/membership-payment.service'
 import { factory } from '@/lib/create-app'
 import { db } from '@/lib/prisma'
 import { ok } from '@/lib/response'
@@ -138,6 +142,14 @@ async function handlePaymentWebhookV3(c: any, webhook: XenditPaymentWebhook) {
   if (!invoice) {
     c.var.logger.error(`Invoice not found: ${invoiceIdentifier}`)
     return c.json({ error: 'Invoice not found' }, 404)
+  }
+
+  if (invoice.membershipUserId && event === 'payment.failure') {
+    await cancelPendingMembershipPayment(
+      invoice.id,
+      `Pembayaran gagal: ${data.failure_code || 'Unknown error'}`,
+    )
+    return c.json(ok(null, 'Membership payment failed or already settled'))
   }
 
   // Determine payment status based on event
@@ -329,9 +341,9 @@ async function handlePaymentWebhookV3(c: any, webhook: XenditPaymentWebhook) {
       await db.membershipUser.update({
         where: { id: invoice.membershipUserId },
         data: {
-          isSuspended: true,
-          suspensionReason: `Payment failed: ${data.failure_code || 'Unknown error'}`,
-          suspensionEndDate: null, // Suspended indefinitely until payment is resolved
+          ...cancelledMembershipData(
+            `Pembayaran gagal: ${data.failure_code || 'Unknown error'}`,
+          ),
         },
       })
       c.var.logger.warn(
@@ -379,9 +391,7 @@ async function handlePaymentWebhookV3(c: any, webhook: XenditPaymentWebhook) {
           bookingId: invoice.bookingId,
         })
       } catch (emailErr) {
-        c.var.logger.error(
-          `Failed sending payment receipt email: ${emailErr}`,
-        )
+        c.var.logger.error(`Failed sending payment receipt email: ${emailErr}`)
       }
     } else if (event === 'payment.failure') {
       await notificationService.create({
@@ -507,12 +517,20 @@ async function handlePaymentSessionWebhook(
       return c.json(ok(null, 'Invoice already cancelled/expired'))
     }
 
+    if (invoice.membershipUserId) {
+      await cancelPendingMembershipPayment(invoice.id, 'Waktu pembayaran habis')
+      return c.json(ok(null, 'Membership payment expired or already settled'))
+    }
+
     await db.$transaction(async (tx) => {
       // Update invoice status to EXPIRED
       await tx.invoice.update({
         where: { id: invoice.id },
         data: {
-          status: PaymentStatus.EXPIRED,
+          status: invoice.membershipUserId
+            ? PaymentStatus.CANCELLED
+            : PaymentStatus.EXPIRED,
+          cancelledAt: invoice.membershipUserId ? new Date() : undefined,
         },
       })
 
@@ -521,7 +539,10 @@ async function handlePaymentSessionWebhook(
         await tx.payment.update({
           where: { id: invoice.payment.id },
           data: {
-            status: PaymentStatus.EXPIRED,
+            status: invoice.membershipUserId
+              ? PaymentStatus.CANCELLED
+              : PaymentStatus.EXPIRED,
+            cancelledAt: invoice.membershipUserId ? new Date() : undefined,
             meta: {
               ...(typeof invoice.payment.meta === 'object'
                 ? invoice.payment.meta
@@ -625,12 +646,13 @@ async function handlePaymentSessionWebhook(
 
       // Handle membership cancellation
       if (invoice.membershipUser) {
-        await tx.membershipUser.delete({
+        await tx.membershipUser.update({
           where: { id: invoice.membershipUser.id },
+          data: cancelledMembershipData('Waktu pembayaran habis'),
         })
 
         c.var.logger.info(
-          `Membership ${invoice.membershipUser.id} deleted due to payment session expiration`,
+          `Membership ${invoice.membershipUser.id} cancelled due to payment session expiration`,
         )
       }
     })
@@ -697,6 +719,11 @@ async function handleInvoiceWebhookV2(c: any, payload: XenditWebhookPayload) {
   if (!invoice) {
     c.var.logger.error(`Invoice not found: ${payload.external_id}`)
     return c.json({ error: 'Invoice not found' }, 404)
+  }
+
+  if (invoice.membershipUserId && payload.status === 'EXPIRED') {
+    await cancelPendingMembershipPayment(invoice.id, 'Waktu pembayaran habis')
+    return c.json(ok(null, 'Membership payment expired or already settled'))
   }
 
   // Update invoice status
@@ -841,9 +868,7 @@ async function handleInvoiceWebhookV2(c: any, payload: XenditWebhookPayload) {
         await db.membershipUser.update({
           where: { id: invoice.membershipUserId },
           data: {
-            isSuspended: true,
-            suspensionReason: 'Payment expired',
-            suspensionEndDate: null, // Suspended indefinitely
+            ...cancelledMembershipData('Waktu pembayaran habis'),
           },
         })
         c.var.logger.warn(
@@ -892,9 +917,7 @@ async function handleInvoiceWebhookV2(c: any, payload: XenditWebhookPayload) {
           bookingId: invoice.bookingId,
         })
       } catch (emailErr) {
-        c.var.logger.error(
-          `Failed sending payment receipt email: ${emailErr}`,
-        )
+        c.var.logger.error(`Failed sending payment receipt email: ${emailErr}`)
       }
     } else if (payload.status === 'EXPIRED') {
       await notificationService.create({
@@ -1075,6 +1098,20 @@ export const xenditPaymentRequestWebhookHandler = factory.createHandlers(
         return c.json({ error: 'Invoice not found' }, 404)
       }
 
+      if (
+        invoice.membershipUserId &&
+        (payload.data.status === 'FAILED' || payload.data.status === 'EXPIRED')
+      ) {
+        const reason =
+          payload.data.status === 'FAILED'
+            ? 'Pembayaran gagal'
+            : 'Waktu pembayaran habis'
+        await cancelPendingMembershipPayment(invoice.id, reason)
+        return c.json(
+          ok(null, 'Membership payment cancelled or already settled'),
+        )
+      }
+
       // Map payment request status to our payment status
       let paymentStatus: PaymentStatus
       switch (payload.data.status) {
@@ -1085,7 +1122,9 @@ export const xenditPaymentRequestWebhookHandler = factory.createHandlers(
           paymentStatus = PaymentStatus.CANCELLED
           break
         case 'EXPIRED':
-          paymentStatus = PaymentStatus.EXPIRED
+          paymentStatus = invoice.membershipUserId
+            ? PaymentStatus.CANCELLED
+            : PaymentStatus.EXPIRED
           break
         default:
           paymentStatus = PaymentStatus.PENDING
@@ -1221,9 +1260,11 @@ export const xenditPaymentRequestWebhookHandler = factory.createHandlers(
           await db.membershipUser.update({
             where: { id: invoice.membershipUserId },
             data: {
-              isSuspended: true,
-              suspensionReason: `Payment ${payload.data.status.toLowerCase()}`,
-              suspensionEndDate: null,
+              ...cancelledMembershipData(
+                payload.data.status === 'FAILED'
+                  ? 'Pembayaran gagal'
+                  : 'Waktu pembayaran habis',
+              ),
             },
           })
           c.var.logger.warn(`Membership suspended: ${invoice.membershipUserId}`)
