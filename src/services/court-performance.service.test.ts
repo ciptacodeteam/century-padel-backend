@@ -1,7 +1,15 @@
 import { describe, expect, it, vi } from 'vitest'
-vi.mock('@/lib/prisma', () => ({ db: {} }))
+const { db } = vi.hoisted(() => ({
+  db: {
+    slot: { findMany: vi.fn() },
+    membership: { findMany: vi.fn() },
+    court: { findMany: vi.fn() },
+  },
+}))
+vi.mock('@/lib/prisma', () => ({ db }))
 import {
   aggregateCourtPerformance,
+  getCourtPerformance,
   reportBounds,
 } from './court-performance.service'
 
@@ -45,7 +53,7 @@ function slot(patch: Partial<Slot> = {}): Slot {
   }
 }
 const report = (slots: Slot[], now = new Date('2026-11-01T00:00:00Z')) =>
-  aggregateCourtPerformance(slots, [pkg, unused], start, end, now)
+  aggregateCourtPerformance(slots, [pkg, unused], start, end, 1, now)
 
 describe('court performance', () => {
   it('splits weekday peak boundaries and reconciles normal prices and details', () => {
@@ -54,7 +62,7 @@ describe('court performance', () => {
     expect(result.rows.find((r) => r.id === 'regular:peak')?.hours).toBe(1)
     expect(result.details.map((d) => d.normalValue)).toEqual([300000, 300000])
     expect(result.summary.hours).toBe(2)
-    expect(result.summary.occupancy).toBe(100)
+    expect(result.summary.occupancy).toBeCloseTo((2 / (31 * 18)) * 100)
     expect(result.details.reduce((sum, d) => sum + d.hours, 0)).toBe(
       result.summary.hours,
     )
@@ -110,7 +118,7 @@ describe('court performance', () => {
       slot({ id: 'cancelled', bookingDetails: [cancelledBooking] }),
     ])
     expect(result.summary.hours).toBe(0)
-    expect(result.summary.availableHours).toBe(2)
+    expect(result.summary.availableHours).toBe(31 * 18)
   })
   it('keeps free/legacy and complimentary bookings out of normal paid categories', () => {
     const legacy = detail()
@@ -158,14 +166,98 @@ describe('court performance', () => {
     expect(result.details[0].normalValue).toBe(300000)
     expect(end.toISOString()).toBe('2026-11-01T00:00:00.000Z')
   })
-  it('excludes blocked capacity, includes unsold slots, and returns null occupancy without capacity', () => {
-    expect(report([]).summary.occupancy).toBeNull()
+  it('counts full operating capacity even with missing, unsold or blocked slots', () => {
     const result = report([
       slot(),
       slot({ id: 'open', isAvailable: true, bookingDetails: [] }),
       slot({ id: 'blocked', isAvailable: false, bookingDetails: [] }),
     ])
-    expect(result.summary.availableHours).toBe(4)
-    expect(result.summary.occupancy).toBe(50)
+    expect(result.summary.availableHours).toBe(31 * 18)
+    expect(result.summary.occupancy).toBeCloseTo((2 / (31 * 18)) * 100)
+    expect(report([]).summary.availableHours).toBe(31 * 18)
+    expect(report([]).summary.occupancy).toBe(0)
+  })
+  it('includes 23:00–00:00 on the final day: six courts over 14 days total 1,512 hours', () => {
+    const bounds = reportBounds('2026-10-01', '2026-10-14')
+    const result = aggregateCourtPerformance(
+      [
+        slot({
+          startAt: new Date('2026-10-14T23:00:00Z'),
+          endAt: new Date('2026-10-15T00:00:00Z'),
+        }),
+      ],
+      [],
+      bounds.start,
+      bounds.end,
+      6,
+      new Date('2026-10-15T00:00:00Z'),
+    )
+    expect(result.summary.availableHours).toBe(1512)
+    expect(result.summary.hours).toBe(1)
+    expect(result.details[0].endAt).toBe('2026-10-15T00:00:00.000Z')
+  })
+  it('uses one selected court and counts only elapsed operating hours in Jakarta', () => {
+    const bounds = reportBounds('2026-10-01', '2026-10-14')
+    const result = aggregateCourtPerformance(
+      [
+        slot({
+          startAt: new Date('2026-10-01T23:00:00Z'),
+          endAt: new Date('2026-10-02T00:00:00Z'),
+        }),
+      ],
+      [],
+      bounds.start,
+      bounds.end,
+      1,
+      new Date('2026-10-01T16:30:00Z'),
+    )
+    expect(result.summary.availableHours).toBe(252)
+    expect(result.summary.elapsedOccupancy).toBeCloseTo((0.5 / 17.5) * 100)
+    const beforeOpening = aggregateCourtPerformance(
+      [],
+      [],
+      bounds.start,
+      bounds.end,
+      1,
+      new Date('2026-09-30T23:00:00Z'),
+    )
+    expect(beforeOpening.summary.elapsedOccupancy).toBeNull()
+    expect(
+      aggregateCourtPerformance([], [], bounds.start, bounds.end, 0).summary
+        .occupancy,
+    ).toBeNull()
+  })
+})
+
+describe('court performance capacity query', () => {
+  it('uses the court list even without slots and respects a selected court', async () => {
+    db.slot.findMany.mockResolvedValue([])
+    db.membership.findMany.mockResolvedValue([])
+    db.court.findMany.mockResolvedValue(
+      Array.from({ length: 6 }, (_, i) => ({
+        id: `court-${i}`,
+        name: `Court ${i}`,
+      })),
+    )
+    const all = await getCourtPerformance('2026-10-01', '2026-10-14')
+    expect(all.summary.availableHours).toBe(1512)
+    const selected = await getCourtPerformance(
+      '2026-10-01',
+      '2026-10-14',
+      'court-0',
+    )
+    expect(selected.summary.availableHours).toBe(252)
+    expect(db.slot.findMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ courtId: 'court-0' }),
+      }),
+    )
+    const unknown = await getCourtPerformance(
+      '2026-10-01',
+      '2026-10-14',
+      'missing',
+    )
+    expect(unknown.summary.availableHours).toBe(0)
+    expect(unknown.summary.occupancy).toBeNull()
   })
 })

@@ -1,5 +1,9 @@
 import { db } from '@/lib/prisma'
-import { getCourtPriceBand } from './court-time-policy.service'
+import {
+  COURT_DAY_END,
+  getCourtPriceBand,
+  HAPPY_HOUR_START,
+} from './court-time-policy.service'
 
 const HOUR = 3_600_000
 const DAY = 24 * HOUR
@@ -41,6 +45,7 @@ export function aggregateCourtPerformance(
   packages: Package[],
   start: Date,
   end: Date,
+  courtCount: number,
   now = new Date(),
 ) {
   // Only actual timestamps (createdAt / now) need the Jakarta offset.
@@ -104,8 +109,22 @@ export function aggregateCourtPerformance(
     invoiceId: string | null
     invoiceNumber: string | null
   }> = []
+  // Capacity follows operating hours, independent of missing, blocked or stale slots.
+  // Stored schedules use local wall-clock dates, including 23:00–next-day 00:00.
   let availableHours = 0
   let elapsedAvailableHours = 0
+  for (
+    let day = Math.floor(start.getTime() / DAY) * DAY;
+    day < end.getTime();
+    day += DAY
+  ) {
+    const from = Math.max(start.getTime(), day + HAPPY_HOUR_START * HOUR)
+    const to = Math.min(end.getTime(), day + COURT_DAY_END * HOUR)
+    if (to <= from) continue
+    availableHours += ((to - from) / HOUR) * courtCount
+    elapsedAvailableHours +=
+      (Math.max(0, Math.min(to, localNow) - from) / HOUR) * courtCount
+  }
   for (const slot of slots) {
     const from = Math.max(start.getTime(), slot.startAt.getTime())
     const to = Math.min(end.getTime(), slot.endAt.getTime())
@@ -113,10 +132,6 @@ export function aggregateCourtPerformance(
     const live = slot.bookingDetails.filter(
       (d) => !d.cancelledAt && ['HOLD', 'CONFIRMED'].includes(d.booking.status),
     )
-    if (slot.isAvailable || live.length) {
-      availableHours += (to - from) / HOUR
-      elapsedAvailableHours += Math.max(0, Math.min(to, localNow) - from) / HOUR
-    }
     for (const detail of live.filter((d) => d.booking.status === 'CONFIRMED')) {
       // Split at hour boundaries so slots crossing peak or midnight reconcile.
       for (let cursor = from; cursor < to; ) {
@@ -274,7 +289,13 @@ export async function getCourtPerformance(
     }),
   ])
   return {
-    ...aggregateCourtPerformance(slots, packages, start, end),
+    ...aggregateCourtPerformance(
+      slots,
+      packages,
+      start,
+      end,
+      courts.filter((court) => !courtId || court.id === courtId).length,
+    ),
     courts,
     period: { startDate, endDate },
   }

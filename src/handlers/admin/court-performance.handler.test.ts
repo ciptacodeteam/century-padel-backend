@@ -97,6 +97,9 @@ describe('court performance endpoints', () => {
     )
     const book = XLSX.read(await res.arrayBuffer(), { type: 'array' })
     expect(book.SheetNames).toEqual(['Informasi', 'Rekap', 'Detail Booking'])
+    expect(XLSX.utils.sheet_to_json(book.Sheets.Informasi)).toEqual([
+      expect.objectContaining({ 'Kapasitas operasional (jam)': 20 }),
+    ])
     expect(XLSX.utils.sheet_to_json(book.Sheets.Rekap)).toEqual([
       expect.objectContaining({ Kategori: 'All Day 50 Hours', 'Total jam': 0 }),
     ])

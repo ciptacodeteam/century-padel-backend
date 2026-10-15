@@ -50,10 +50,10 @@ export const exportCourtPerformanceHandler = factory.createHandlers(
           'Total jam': report.summary.hours,
           'Jam berlalu': report.summary.elapsedHours,
           'Jam mendatang': report.summary.upcomingHours,
-          'Kapasitas slot tercatat': report.summary.availableHours,
+          'Kapasitas operasional (jam)': report.summary.availableHours,
           'Occupancy (%)': report.summary.occupancy,
           Catatan:
-            'Tanggal main WIB. CONFIRMED, tanpa pembatalan. Jam = durasi lapangan, bukan debit saldo paket. Nilai normal bukan pendapatan. Kapasitas berdasarkan slot yang tersedia atau dipesan saat laporan dibuat.',
+            'Tanggal main WIB. CONFIRMED, tanpa pembatalan. Jam = durasi lapangan, bukan debit saldo paket. Nilai normal bukan pendapatan. Kapasitas = jumlah lapangan dalam laporan × 18 jam (06.00–00.00 WIB) × jumlah hari, termasuk 23.00–00.00. Slot kosong atau diblokir tetap masuk kapasitas.',
         },
       ],
       Rekap: report.rows.map((r) => ({
