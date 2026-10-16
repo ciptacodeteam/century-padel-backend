@@ -86,6 +86,9 @@ export const getAllBookingTransactionsHandler = factory.createHandlers(
           },
           details: {
             include: {
+              membershipUser: {
+                select: { membership: { select: { name: true, type: true } } },
+              },
               court: {
                 select: {
                   id: true,
@@ -210,6 +213,9 @@ export const getAllBookingScheduleHandler = factory.createHandlers(
           details: {
             where: { cancelledAt: null },
             include: {
+              membershipUser: {
+                select: { membership: { select: { name: true, type: true } } },
+              },
               court: {
                 select: {
                   id: true,
@@ -440,6 +446,9 @@ export const getBookingTransactionDetailHandler = factory.createHandlers(
           },
           details: {
             include: {
+              membershipUser: {
+                select: { membership: { select: { name: true, type: true } } },
+              },
               court: {
                 select: {
                   id: true,
@@ -849,6 +858,9 @@ export const exportBookingTransactionsToExcelHandler = factory.createHandlers(
           },
           details: {
             include: {
+              membershipUser: {
+                select: { membership: { select: { name: true, type: true } } },
+              },
               court: {
                 select: {
                   id: true,
@@ -1133,6 +1145,9 @@ export const getOngoingBookingScheduleHandler = factory.createHandlers(
           details: {
             where: { cancelledAt: null },
             include: {
+              membershipUser: {
+                select: { membership: { select: { name: true, type: true } } },
+              },
               court: {
                 select: {
                   id: true,

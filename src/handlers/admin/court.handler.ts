@@ -274,18 +274,32 @@ export const deleteCourtHandler = factory.createHandlers(
 )
 
 export const getAvailableCourtSlotsHandler = factory.createHandlers(
-  zValidator('query', availableCourtSlotsQuerySchema, validateHook),
+  zValidator(
+    'query',
+    availableCourtSlotsQuerySchema.and(
+      z.object({ includeUnavailable: z.enum(['true', 'false']).optional() }),
+    ),
+    validateHook,
+  ),
   async (c) => {
     try {
       const query = c.req.valid('query') as AvailableCourtSlotsQuerySchema & {
         courtId?: string
+        includeUnavailable?: string
       }
 
       const where: any = {
         type: SlotType.COURT,
-        price: { gt: 0 },
-        endAt: { gt: getBookableSlotEndThreshold() },
-        AND: [openOrHeldCourtSlotWhere()],
+        ...(query.includeUnavailable === 'true'
+          ? {}
+          : {
+              price: { gt: 0 },
+              endAt: { gt: getBookableSlotEndThreshold() },
+            }),
+        AND:
+          query.includeUnavailable === 'true'
+            ? []
+            : [openOrHeldCourtSlotWhere()],
         court: {
           isActive: true,
         },

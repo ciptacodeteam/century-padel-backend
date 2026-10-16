@@ -85,6 +85,12 @@ export const getUserInvoicesHandler = factory.createHandlers(
               details: {
                 select: {
                   id: true,
+                  membershipUserId: true,
+                  membershipUser: {
+                    select: {
+                      membership: { select: { name: true, type: true } },
+                    },
+                  },
                   court: { select: { id: true, name: true } },
                   price: true,
                   discountPrice: true,
@@ -159,6 +165,27 @@ export const getInvoiceDetailHandler = factory.createHandlers(
               details: {
                 select: {
                   id: true,
+                  membershipUserId: true,
+                  cancelledAt: true,
+                  membershipUser: {
+                    select: {
+                      membership: {
+                        select: {
+                          name: true,
+                          type: true,
+                          price: true,
+                          sessions: true,
+                        },
+                      },
+                      invoice: {
+                        select: {
+                          subtotal: true,
+                          promoDiscountAmount: true,
+                          status: true,
+                        },
+                      },
+                    },
+                  },
                   price: true,
                   discountPrice: true,
                   slot: true,
