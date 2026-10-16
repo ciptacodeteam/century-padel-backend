@@ -10,9 +10,17 @@ import { createBookingCancellationNotificationForBooking } from '@/services/noti
 
 let redisConnection = getRedisConnection()
 
+// Repeatable job runs every minute — without pruning, completed jobs pile up in
+// Redis until it hits maxmemory (noeviction) and every queue starts failing with OOM.
+const schedulerJobOptions = {
+  removeOnComplete: { count: 100 },
+  removeOnFail: { count: 500 },
+}
+
 // Queue for scheduled tasks
 let schedulerQueue = new Queue('scheduler', {
   connection: redisConnection,
+  defaultJobOptions: schedulerJobOptions,
 })
 
 /**
@@ -25,6 +33,7 @@ function reconnectRedis() {
     redisConnection = getRedisConnection()
     schedulerQueue = new Queue('scheduler', {
       connection: redisConnection,
+      defaultJobOptions: schedulerJobOptions,
     })
     log.info('Successfully reconnected to Redis')
   } catch (error) {
@@ -329,6 +338,7 @@ export async function scheduleExpiryCheck() {
         repeat: {
           pattern: '* * * * *', // Every minute
         },
+        ...schedulerJobOptions,
       },
     )
 
