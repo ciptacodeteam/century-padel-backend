@@ -5,7 +5,10 @@ import {
   Prisma,
 } from '@prisma/client'
 import { describe, expect, it, vi } from 'vitest'
-import { transferMembershipBalance } from './membership-transfer.service'
+import {
+  cancelMembershipTransfer,
+  transferMembershipBalance,
+} from './membership-transfer.service'
 
 const now = new Date('2026-10-02T05:00:00.000Z')
 const source = {
@@ -244,5 +247,159 @@ describe('membership balance transfer', () => {
         now,
       }),
     ).rejects.toThrow('sedang diblokir')
+  })
+})
+
+function createCancellationTx(
+  options: {
+    admin?: boolean
+    cancelled?: boolean
+    remaining?: number
+    booking?: boolean
+    claimCount?: number
+    expiredSource?: boolean
+    unrelated?: boolean
+    refunded?: boolean
+  } = {},
+) {
+  const transfer = {
+    id: 'transfer-1',
+    sourceMembershipUserId: source.id,
+    destinationMembershipUserId: 'membership-destination',
+    fromUserId: source.userId,
+    toUserId: 'user-target',
+    transferredHours: 4,
+    cancelledAt: options.cancelled ? now : null,
+  }
+  return {
+    $queryRaw: vi.fn().mockResolvedValue([]),
+    staff: {
+      findFirst: vi
+        .fn()
+        .mockResolvedValue(options.admin === false ? null : { id: 'admin-1' }),
+    },
+    membershipTransfer: {
+      findUnique: vi
+        .fn()
+        .mockResolvedValue(options.unrelated ? null : transfer),
+      update: vi.fn().mockResolvedValue({ ...transfer, cancelledAt: now }),
+    },
+    membershipUser: {
+      findUniqueOrThrow: vi
+        .fn()
+        .mockResolvedValueOnce({
+          ...source,
+          endDate: options.expiredSource
+            ? new Date('2026-09-01')
+            : source.endDate,
+          invoice: options.refunded
+            ? { ...source.invoice, status: PaymentStatus.REFUNDED }
+            : source.invoice,
+        })
+        .mockResolvedValueOnce({
+          id: 'membership-destination',
+          remainingSessions: options.remaining ?? 4,
+        }),
+      updateMany: vi.fn().mockResolvedValue({ count: options.claimCount ?? 1 }),
+      update: vi.fn().mockResolvedValue({}),
+    },
+    bookingDetail: {
+      findFirst: vi
+        .fn()
+        .mockResolvedValue(options.booking ? { id: 'booking-detail' } : null),
+    },
+    notification: { createMany: vi.fn().mockResolvedValue({ count: 2 }) },
+  } as unknown as Prisma.TransactionClient
+}
+
+const cancellationInput = {
+  transferId: 'transfer-1',
+  membershipUserId: source.id,
+  reason: 'Salah memilih penerima',
+  adminId: 'admin-1',
+  now,
+}
+
+describe('membership transfer cancellation', () => {
+  it('revokes the entire entitlement, restores the source and preserves cancellation audit', async () => {
+    const tx = createCancellationTx()
+    await cancelMembershipTransfer(tx, cancellationInput)
+    expect(tx.membershipUser.updateMany).toHaveBeenCalledWith({
+      where: { id: 'membership-destination', remainingSessions: 4 },
+      data: { remainingSessions: 0, isExpired: true },
+    })
+    expect(tx.membershipUser.update).toHaveBeenCalledWith({
+      where: { id: source.id },
+      data: { remainingSessions: { increment: 4 }, isExpired: false },
+    })
+    expect(tx.membershipTransfer.update).toHaveBeenCalledWith({
+      where: { id: 'transfer-1' },
+      data: {
+        cancelledAt: now,
+        cancellationReason: cancellationInput.reason,
+        cancelledByAdminId: 'admin-1',
+      },
+    })
+    expect(tx.notification.createMany).toHaveBeenCalledOnce()
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(3)
+  })
+
+  it('restores expired source hours without extending validity', async () => {
+    const tx = createCancellationTx({ expiredSource: true })
+    await cancelMembershipTransfer(tx, cancellationInput)
+    expect(tx.membershipUser.update).toHaveBeenCalledWith({
+      where: { id: source.id },
+      data: { remainingSessions: { increment: 4 }, isExpired: true },
+    })
+  })
+
+  it.each([
+    [{ admin: false }, 'Hanya Super Admin aktif'],
+    [{ cancelled: true }, 'sudah dibatalkan'],
+    [{ remaining: 3 }, 'jam sudah digunakan'],
+    [{ booking: true }, 'booking aktif'],
+    [{ unrelated: true }, 'tidak ditemukan'],
+    [{ refunded: true }, 'tidak memenuhi syarat'],
+  ])(
+    'rejects unsafe cancellation %j without changing balances',
+    async (options, message) => {
+      const tx = createCancellationTx(options)
+      await expect(
+        cancelMembershipTransfer(tx, cancellationInput),
+      ).rejects.toThrow(message)
+      expect(tx.membershipUser.updateMany).not.toHaveBeenCalled()
+      expect(tx.membershipTransfer.update).not.toHaveBeenCalled()
+    },
+  )
+
+  it('rejects transfers outside the selected membership', async () => {
+    const tx = createCancellationTx()
+    await expect(
+      cancelMembershipTransfer(tx, {
+        ...cancellationInput,
+        membershipUserId: 'other',
+      }),
+    ).rejects.toThrow('tidak ditemukan')
+    expect(tx.membershipUser.updateMany).not.toHaveBeenCalled()
+  })
+
+  it.each(['', '  ', 'a'.repeat(501)])(
+    'requires a valid audit reason',
+    async (reason) => {
+      const tx = createCancellationTx()
+      await expect(
+        cancelMembershipTransfer(tx, { ...cancellationInput, reason }),
+      ).rejects.toThrow('Alasan pembatalan')
+      expect(tx.membershipUser.updateMany).not.toHaveBeenCalled()
+    },
+  )
+
+  it('does not restore the source if conditional revocation fails', async () => {
+    const tx = createCancellationTx({ claimCount: 0 })
+    await expect(
+      cancelMembershipTransfer(tx, cancellationInput),
+    ).rejects.toThrow('Saldo berubah')
+    expect(tx.membershipUser.update).not.toHaveBeenCalled()
+    expect(tx.membershipTransfer.update).not.toHaveBeenCalled()
   })
 })

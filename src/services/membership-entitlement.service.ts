@@ -18,7 +18,7 @@ export function fundedMembershipWhere(): Prisma.MembershipUserWhereInput {
       },
       {
         acquisitionType: MembershipAcquisitionType.TRANSFER,
-        incomingTransfer: { isNot: null },
+        incomingTransfer: { is: { cancelledAt: null } },
       },
     ],
   }

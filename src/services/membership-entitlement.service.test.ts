@@ -12,7 +12,7 @@ describe('membership entitlement funding', () => {
         },
         {
           acquisitionType: MembershipAcquisitionType.TRANSFER,
-          incomingTransfer: { isNot: null },
+          incomingTransfer: { is: { cancelledAt: null } },
         },
       ],
     })

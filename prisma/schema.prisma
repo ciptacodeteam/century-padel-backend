@@ -210,6 +210,7 @@ model Staff {
   bookingCashier                  Booking[]
   complimentaryCreditsGranted     ComplimentaryCredit[]            @relation("ComplimentaryCreditGrantedBy")
   complimentaryCreditTransactions ComplimentaryCreditTransaction[]
+  membershipTransfersCancelled    MembershipTransfer[] @relation("MembershipTransferCancellationAdmin")
   membershipTransfersPerformed    MembershipTransfer[]             @relation("MembershipTransferAdmin")
 
   @@index([isActive, role])
@@ -730,12 +731,16 @@ model MembershipTransfer {
   transferredHours            Int
   reason                      String
   transferredByAdminId        String
+  cancelledAt                 DateTime?
+  cancellationReason          String?
+  cancelledByAdminId           String?
   createdAt                   DateTime @default(now())
 
   sourceMembership      MembershipUser @relation("MembershipTransferSource", fields: [sourceMembershipUserId], references: [id], onDelete: Restrict)
   destinationMembership MembershipUser @relation("MembershipTransferDestination", fields: [destinationMembershipUserId], references: [id], onDelete: Restrict)
   fromUser              User           @relation("MembershipTransferFromUser", fields: [fromUserId], references: [id], onDelete: Restrict)
   toUser                User           @relation("MembershipTransferToUser", fields: [toUserId], references: [id], onDelete: Restrict)
+  cancelledByAdmin      Staff? @relation("MembershipTransferCancellationAdmin", fields: [cancelledByAdminId], references: [id], onDelete: Restrict)
   transferredByAdmin    Staff          @relation("MembershipTransferAdmin", fields: [transferredByAdminId], references: [id], onDelete: Restrict)
 
   @@index([sourceMembershipUserId, createdAt])

@@ -47,7 +47,9 @@ async function findMembershipUsedByBooking(
       where: { id: explicitMembershipUserId },
       include: {
         membership: true,
-        incomingTransfer: { select: { transferredHours: true } },
+        incomingTransfer: {
+          select: { transferredHours: true, cancelledAt: true },
+        },
       },
     })
   }
@@ -69,7 +71,9 @@ async function findMembershipUsedByBooking(
     },
     include: {
       membership: true,
-      incomingTransfer: { select: { transferredHours: true } },
+      incomingTransfer: {
+        select: { transferredHours: true, cancelledAt: true },
+      },
     },
     orderBy: { endDate: 'asc' },
   })
@@ -84,8 +88,12 @@ async function findMembershipUsedByBooking(
 
 function maximumRestorableHours(membershipUser: {
   membership: { sessions: number }
-  incomingTransfer: { transferredHours: number } | null
+  incomingTransfer: {
+    transferredHours: number
+    cancelledAt?: Date | null
+  } | null
 }): number {
+  if (membershipUser.incomingTransfer?.cancelledAt) return 0
   return (
     membershipUser.incomingTransfer?.transferredHours ??
     membershipUser.membership.sessions
@@ -118,7 +126,9 @@ export async function restoreMembershipHoursForBooking(
         where: { id: membershipUserId },
         include: {
           membership: true,
-          incomingTransfer: { select: { transferredHours: true } },
+          incomingTransfer: {
+            select: { transferredHours: true, cancelledAt: true },
+          },
         },
       })
       if (!membershipUser) continue

@@ -203,3 +203,131 @@ export async function transferMembershipBalance(
     membership: source.membership,
   }
 }
+
+export async function cancelMembershipTransfer(
+  tx: Prisma.TransactionClient,
+  input: {
+    transferId: string
+    membershipUserId: string
+    reason: string
+    adminId: string
+    now?: Date
+  },
+) {
+  const now = input.now ?? new Date()
+  const reason = input.reason.trim()
+  if (reason.length < 3 || reason.length > 500) {
+    throw new BadRequestException(
+      'Alasan pembatalan wajib diisi (3–500 karakter)',
+    )
+  }
+  const admin = await tx.staff.findFirst({
+    where: { id: input.adminId, role: Role.ADMIN, isActive: true },
+    select: { id: true },
+  })
+  if (!admin)
+    throw new BadRequestException(
+      'Hanya Super Admin aktif yang dapat membatalkan transfer',
+    )
+
+  await tx.$queryRaw(
+    Prisma.sql`SELECT id FROM membership_transfers WHERE id = ${input.transferId} FOR UPDATE`,
+  )
+  const transfer = await tx.membershipTransfer.findUnique({
+    where: { id: input.transferId },
+  })
+  if (
+    !transfer ||
+    ![
+      transfer.sourceMembershipUserId,
+      transfer.destinationMembershipUserId,
+    ].includes(input.membershipUserId)
+  ) {
+    throw new NotFoundException('Transfer membership tidak ditemukan')
+  }
+  if (transfer.cancelledAt)
+    throw new BadRequestException('Transfer sudah dibatalkan')
+
+  // Lock the source first, matching the order used by a new transfer. Checkout
+  // uses conditional deductions, so a waiting checkout cannot spend revoked hours.
+  for (const id of [
+    transfer.sourceMembershipUserId,
+    transfer.destinationMembershipUserId,
+  ]) {
+    await tx.$queryRaw(
+      Prisma.sql`SELECT id FROM membership_users WHERE id = ${id} FOR UPDATE`,
+    )
+  }
+  const source = await tx.membershipUser.findUniqueOrThrow({
+    where: { id: transfer.sourceMembershipUserId },
+    include: { invoice: { include: { payment: true } } },
+  })
+  const destination = await tx.membershipUser.findUniqueOrThrow({
+    where: { id: transfer.destinationMembershipUserId },
+  })
+  if (
+    !source.invoice ||
+    source.invoice.status !== PaymentStatus.PAID ||
+    getCompletedRefund(source.invoice.payment?.meta)
+  ) {
+    throw new BadRequestException(
+      'Membership asal sudah tidak memenuhi syarat pengembalian saldo',
+    )
+  }
+  if (destination.remainingSessions !== transfer.transferredHours) {
+    throw new BadRequestException(
+      'Transfer tidak dapat dibatalkan karena jam sudah digunakan atau saldo berubah',
+    )
+  }
+  const booking = await tx.bookingDetail.findFirst({
+    where: {
+      membershipUserId: destination.id,
+      cancelledAt: null,
+      booking: { status: { not: 'CANCELLED' } },
+    },
+    select: { id: true },
+  })
+  if (booking)
+    throw new BadRequestException(
+      'Transfer masih terkait booking aktif atau jam yang sudah digunakan. Selesaikan booking terkait terlebih dahulu.',
+    )
+
+  const revoked = await tx.membershipUser.updateMany({
+    where: { id: destination.id, remainingSessions: transfer.transferredHours },
+    data: { remainingSessions: 0, isExpired: true },
+  })
+  if (revoked.count !== 1)
+    throw new BadRequestException(
+      'Saldo berubah saat pembatalan diproses. Silakan muat ulang.',
+    )
+  await tx.membershipUser.update({
+    where: { id: source.id },
+    data: {
+      remainingSessions: { increment: transfer.transferredHours },
+      isExpired: source.endDate <= now,
+    },
+  })
+  const cancelled = await tx.membershipTransfer.update({
+    where: { id: transfer.id },
+    data: {
+      cancelledAt: now,
+      cancellationReason: reason,
+      cancelledByAdminId: admin.id,
+    },
+  })
+  await tx.notification.createMany({
+    data: [transfer.fromUserId, transfer.toUserId].map((userId) => ({
+      userId,
+      audience: NotificationAudience.USER,
+      type: NotificationType.ADMIN_PUSH,
+      title: 'Transfer Membership Dibatalkan',
+      message: `Transfer ${transfer.transferredHours} jam dibatalkan. Jam dikembalikan ke pemilik asal. Alasan: ${reason}`,
+      data: {
+        event: 'MEMBERSHIP_TRANSFER_CANCELLED',
+        transferId: transfer.id,
+        hours: transfer.transferredHours,
+      },
+    })),
+  })
+  return cancelled
+}

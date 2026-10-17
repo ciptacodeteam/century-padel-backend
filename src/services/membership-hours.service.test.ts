@@ -143,6 +143,32 @@ describe('membership hours', () => {
     expect(update).not.toHaveBeenCalled()
   })
 
+  it('does not resurrect a cancelled transfer when an old booking is cancelled again', async () => {
+    const update = vi.fn()
+    const tx = {
+      membershipUser: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: 'membership-transfer-1',
+          remainingSessions: 0,
+          endDate: new Date('2099-09-30T00:00:00.000Z'),
+          membership: { sessions: 20, type: 'ALL_HOUR' },
+          incomingTransfer: { transferredHours: 4, cancelledAt: new Date() },
+        }),
+        update,
+      },
+    } as unknown as Prisma.TransactionClient
+    const restored = await restoreMembershipHoursForBooking(tx, {
+      userId: 'user-2',
+      createdAt: new Date(),
+      courtNormalPrice: 0,
+      details: [
+        { membershipUserId: 'membership-transfer-1', slot: oneHourSlot },
+      ],
+    })
+    expect(restored).toBe(0)
+    expect(update).not.toHaveBeenCalled()
+  })
+
   it('restores hours to each membership used by a booking', async () => {
     const update = vi.fn().mockResolvedValue({})
     const memberships = {

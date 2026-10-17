@@ -32,7 +32,10 @@ import {
   getCompletedRefund,
   mergeRefundIntoPaymentMeta,
 } from '@/services/refund.service'
-import { transferMembershipBalance } from '@/services/membership-transfer.service'
+import {
+  cancelMembershipTransfer,
+  transferMembershipBalance,
+} from '@/services/membership-transfer.service'
 
 const suspendMembershipSchema = z.object({
   reason: z.string().trim().min(3).max(500),
@@ -140,13 +143,17 @@ export const getAllMembershipTransactionsHandler = factory.createHandlers(
           incomingTransfer: {
             include: {
               fromUser: { select: { id: true, name: true, phone: true } },
+              toUser: { select: { id: true, name: true, phone: true } },
               transferredByAdmin: { select: { id: true, name: true } },
+              cancelledByAdmin: { select: { id: true, name: true } },
             },
           },
           outgoingTransfers: {
             include: {
+              fromUser: { select: { id: true, name: true, phone: true } },
               toUser: { select: { id: true, name: true, phone: true } },
               transferredByAdmin: { select: { id: true, name: true } },
+              cancelledByAdmin: { select: { id: true, name: true } },
             },
             orderBy: { createdAt: 'desc' },
           },
@@ -221,13 +228,17 @@ export const getMembershipTransactionDetailHandler = factory.createHandlers(
           incomingTransfer: {
             include: {
               fromUser: { select: { id: true, name: true, phone: true } },
+              toUser: { select: { id: true, name: true, phone: true } },
               transferredByAdmin: { select: { id: true, name: true } },
+              cancelledByAdmin: { select: { id: true, name: true } },
             },
           },
           outgoingTransfers: {
             include: {
+              fromUser: { select: { id: true, name: true, phone: true } },
               toUser: { select: { id: true, name: true, phone: true } },
               transferredByAdmin: { select: { id: true, name: true } },
+              cancelledByAdmin: { select: { id: true, name: true } },
             },
             orderBy: { createdAt: 'desc' },
           },
@@ -280,6 +291,38 @@ export const transferMembershipBalanceHandler = factory.createHandlers(
       c.var.logger.fatal(`Error in transferMembershipBalanceHandler: ${error}`)
       throw error
     }
+  },
+)
+
+export const cancelMembershipTransferHandler = factory.createHandlers(
+  zValidator(
+    'param',
+    z.object({ id: z.string().min(1), transferId: z.string().min(1) }),
+    validateHook,
+  ),
+  zValidator(
+    'json',
+    z.object({ reason: z.string().trim().min(3).max(500) }),
+    validateHook,
+  ),
+  async (c) => {
+    const { id, transferId } = c.req.valid('param')
+    const { reason } = c.req.valid('json')
+    const adminId = c.var.admin?.id
+    if (!adminId)
+      throw new BadRequestException('Super Admin tidak teridentifikasi')
+    const result = await db.$transaction((tx) =>
+      cancelMembershipTransfer(tx, {
+        membershipUserId: id,
+        transferId,
+        reason,
+        adminId,
+      }),
+    )
+    return c.json(
+      ok(result, 'Transfer dibatalkan dan jam dikembalikan ke pemilik asal'),
+      status.OK,
+    )
   },
 )
 
