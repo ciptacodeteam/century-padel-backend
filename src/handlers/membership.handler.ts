@@ -1,3 +1,7 @@
+import {
+  buildMembershipActivity,
+  membershipActivityInclude,
+} from '@/services/membership-activity.service'
 import { NotFoundException } from '@/exceptions'
 import { validateHook } from '@/helpers/validate-hook'
 import { factory } from '@/lib/create-app'
@@ -72,46 +76,56 @@ export const getUserMembershipsHandler = factory.createHandlers(async (c) => {
     const user = c.get('user')
 
     if (!user) {
-      return c.json(err('Unauthorized', status.UNAUTHORIZED))
+      return c.json(
+        err('Unauthorized', status.UNAUTHORIZED),
+        status.UNAUTHORIZED,
+      )
     }
 
     const userMemberships = await db.membershipUser.findMany({
       where: {
         userId: user.id,
       },
-      include: {
-        membership: {
-          include: {
-            benefits: true,
-          },
-        },
-        incomingTransfer: {
-          select: {
-            id: true,
-            transferredHours: true,
-            createdAt: true,
-            fromUser: { select: { name: true } },
-          },
-        },
-      },
+      include: membershipActivityInclude,
       orderBy: {
         createdAt: 'desc',
       },
     })
 
+    const activity = buildMembershipActivity(userMemberships)
+    const publicMemberships = userMemberships.map(
+      ({
+        invoice,
+        outgoingTransfers,
+        bookingDetails,
+        incomingTransfer,
+        ...membership
+      }) => ({
+        ...membership,
+        incomingTransfer: incomingTransfer
+          ? {
+              id: incomingTransfer.id,
+              transferredHours: incomingTransfer.transferredHours,
+              createdAt: incomingTransfer.createdAt,
+              fromUser: incomingTransfer.fromUser,
+            }
+          : null,
+      }),
+    )
+
     // Separate active, expired, and suspended memberships
     const now = new Date()
-    const activeMemberships = userMemberships.filter(
+    const activeMemberships = publicMemberships.filter(
       (um) =>
         !um.isExpired &&
         !um.isSuspended &&
         um.startDate <= now &&
         um.endDate > now,
     )
-    const expiredMemberships = userMemberships.filter(
+    const expiredMemberships = publicMemberships.filter(
       (um) => um.isExpired || um.endDate <= now,
     )
-    const suspendedMemberships = userMemberships.filter(
+    const suspendedMemberships = publicMemberships.filter(
       (um) => um.isSuspended && !um.isExpired && um.endDate > now,
     )
 
@@ -120,6 +134,7 @@ export const getUserMembershipsHandler = factory.createHandlers(async (c) => {
       expired: expiredMemberships,
       suspended: suspendedMemberships,
       total: userMemberships.length,
+      activity,
     }
 
     return c.json(
