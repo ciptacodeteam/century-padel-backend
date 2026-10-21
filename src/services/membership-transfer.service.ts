@@ -29,7 +29,7 @@ export async function transferMembershipBalance(
   // Serialize every balance-changing operation for this membership. This also
   // prevents two simultaneous admin requests from spending the same hours.
   await tx.$queryRaw(
-    Prisma.sql`SELECT id FROM membership_users WHERE id = ${input.sourceMembershipUserId} FOR UPDATE`,
+    Prisma.sql`SELECT id FROM membership_users WHERE id = ${input.sourceMembershipUserId} FOR NO KEY UPDATE`,
   )
 
   const [admin, source, recipient] = await Promise.all([
@@ -94,8 +94,13 @@ export async function transferMembershipBalance(
       'Jumlah transfer harus berupa jam bulat positif',
     )
   }
-  if (input.hours > source.remainingSessions) {
-    throw new BadRequestException('Saldo membership tidak mencukupi')
+  if (
+    input.hours >
+    source.remainingSessions - (source.remainingComplimentarySessions ?? 0)
+  ) {
+    throw new BadRequestException(
+      'Saldo berbayar tidak mencukupi. Kuota complimentary tidak dapat ditransfer.',
+    )
   }
 
   const balanceClaim = await tx.membershipUser.updateMany({
@@ -255,7 +260,7 @@ export async function cancelMembershipTransfer(
     transfer.destinationMembershipUserId,
   ]) {
     await tx.$queryRaw(
-      Prisma.sql`SELECT id FROM membership_users WHERE id = ${id} FOR UPDATE`,
+      Prisma.sql`SELECT id FROM membership_users WHERE id = ${id} FOR NO KEY UPDATE`,
     )
   }
   const source = await tx.membershipUser.findUniqueOrThrow({
@@ -272,6 +277,11 @@ export async function cancelMembershipTransfer(
   ) {
     throw new BadRequestException(
       'Membership asal sudah tidak memenuhi syarat pengembalian saldo',
+    )
+  }
+  if (destination.totalComplimentarySessions > 0) {
+    throw new BadRequestException(
+      'Transfer yang telah menerima complimentary tidak dapat dibatalkan',
     )
   }
   if (destination.remainingSessions !== transfer.transferredHours) {

@@ -1,3 +1,4 @@
+import { grantMembershipComplimentary } from '@/services/membership-complimentary.service'
 import {
   expirePendingMembershipPayments,
   cancelledMembershipData,
@@ -140,6 +141,10 @@ export const getAllMembershipTransactionsHandler = factory.createHandlers(
               },
             },
           },
+          complimentaryGrants: {
+            include: { admin: { select: { id: true, name: true } } },
+            orderBy: { createdAt: 'desc' },
+          },
           incomingTransfer: {
             include: {
               fromUser: { select: { id: true, name: true, phone: true } },
@@ -224,6 +229,10 @@ export const getMembershipTransactionDetailHandler = factory.createHandlers(
                 },
               },
             },
+          },
+          complimentaryGrants: {
+            include: { admin: { select: { id: true, name: true } } },
+            orderBy: { createdAt: 'desc' },
           },
           incomingTransfer: {
             include: {
@@ -433,6 +442,12 @@ export const rejectMembershipTransactionHandler = factory.createHandlers(
       const { id } = c.req.valid('param') as IdSchema
 
       const result = await db.$transaction(async (tx) => {
+        // Coordinate rejection with payment callbacks/approval. Paid memberships
+        // must use the termination/refund flow rather than silently losing funds.
+        await tx.$queryRaw(
+          Prisma.sql`SELECT id FROM invoices WHERE "membershipUserId" = ${id} FOR UPDATE`,
+        )
+
         const membershipTransaction = await tx.membershipUser.findUnique({
           where: { id },
           include: {
@@ -465,6 +480,15 @@ export const rejectMembershipTransactionHandler = factory.createHandlers(
         ) {
           throw new BadRequestException(
             'Membership transaction is already cancelled',
+          )
+        }
+
+        if (
+          membershipTransaction.invoice.status !== PaymentStatus.PENDING ||
+          membershipTransaction.invoice.payment?.status === PaymentStatus.PAID
+        ) {
+          throw new BadRequestException(
+            'Hanya transaksi membership yang menunggu pembayaran yang dapat ditolak',
           )
         }
 
@@ -622,7 +646,7 @@ export const terminateMembershipWithRefundHandler = factory.createHandlers(
 
       const result = await db.$transaction(async (tx) => {
         await tx.$queryRaw(
-          Prisma.sql`SELECT id FROM membership_users WHERE id = ${id} FOR UPDATE`,
+          Prisma.sql`SELECT id FROM membership_users WHERE id = ${id} FOR NO KEY UPDATE`,
         )
         const membershipTransaction = await tx.membershipUser.findUnique({
           where: { id },
@@ -695,6 +719,7 @@ export const terminateMembershipWithRefundHandler = factory.createHandlers(
             suspensionEndDate: null,
             endDate: now,
             remainingSessions: 0,
+            remainingComplimentarySessions: 0,
             remainingDuration: 0,
           },
         })
@@ -782,6 +807,10 @@ export const exportMembershipTransactionsToExcelHandler =
                 },
               },
             },
+            complimentaryGrants: {
+              include: { admin: { select: { id: true, name: true } } },
+              orderBy: { createdAt: 'desc' },
+            },
             incomingTransfer: {
               include: {
                 fromUser: { select: { name: true } },
@@ -829,6 +858,13 @@ export const exportMembershipTransactionsToExcelHandler =
             'Start Date': dayjs(transaction.startDate).format('YYYY-MM-DD'),
             'End Date': dayjs(transaction.endDate).format('YYYY-MM-DD'),
             'Remaining Hours': transaction.remainingSessions,
+            'Remaining Complimentary Hours':
+              transaction.remainingComplimentarySessions,
+            'Complimentary Hours Granted':
+              transaction.totalComplimentarySessions,
+            'Remaining Paid/Transfer Hours':
+              transaction.remainingSessions -
+              transaction.remainingComplimentarySessions,
             'Remaining Duration': transaction.remainingDuration,
             'Is Expired': transaction.isExpired ? 'Yes' : 'No',
             'Is Suspended': transaction.isSuspended ? 'Yes' : 'No',
@@ -915,3 +951,35 @@ export const exportMembershipTransactionsToExcelHandler =
       }
     },
   )
+
+export const grantMembershipComplimentaryHandler = factory.createHandlers(
+  zValidator('param', idSchema, validateHook),
+  zValidator(
+    'json',
+    z
+      .object({
+        hours: z.number().int().min(1).max(10000),
+        reason: z.string().trim().min(3).max(500),
+        requestId: z.string().uuid(),
+      })
+      .strict(),
+    validateHook,
+  ),
+  async (c) => {
+    const { id } = c.req.valid('param')
+    const adminId = c.var.admin?.id
+    if (!adminId)
+      throw new BadRequestException('Super Admin tidak teridentifikasi')
+    const result = await db.$transaction((tx) =>
+      grantMembershipComplimentary(tx, {
+        ...c.req.valid('json'),
+        membershipUserId: id,
+        adminId,
+      }),
+    )
+    return c.json(
+      ok(result, 'Kuota complimentary berhasil ditambahkan'),
+      status.OK,
+    )
+  },
+)

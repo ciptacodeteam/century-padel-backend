@@ -185,6 +185,10 @@ export const searchCustomersHandler = factory.createHandlers(
                 startDate: activeMembership.startDate,
                 endDate: activeMembership.endDate,
                 remainingSessions: activeMembership.remainingSessions,
+                remainingComplimentarySessions:
+                  activeMembership.remainingComplimentarySessions,
+                totalComplimentarySessions:
+                  activeMembership.totalComplimentarySessions,
                 remainingDuration: activeMembership.remainingDuration,
                 isExpired: activeMembership.isExpired,
                 isSuspended: activeMembership.isSuspended,
@@ -826,6 +830,10 @@ export const getCustomerMembershipDetailsHandler = factory.createHandlers(
                 startDate: activeMembership.startDate,
                 endDate: activeMembership.endDate,
                 remainingSessions: activeMembership.remainingSessions,
+                remainingComplimentarySessions:
+                  activeMembership.remainingComplimentarySessions,
+                totalComplimentarySessions:
+                  activeMembership.totalComplimentarySessions,
                 remainingDuration: activeMembership.remainingDuration,
                 isExpired: activeMembership.isExpired,
                 isSuspended: activeMembership.isSuspended,

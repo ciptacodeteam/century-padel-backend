@@ -1,3 +1,4 @@
+import { consumeMembershipHours } from '@/services/membership-complimentary.service'
 import { BadRequestException, NotFoundException } from '@/exceptions'
 import { validateHook } from '@/helpers/validate-hook'
 import { factory } from '@/lib/create-app'
@@ -475,30 +476,12 @@ export const adminCheckoutHandler = factory.createHandlers(
         // Always derive this from persisted slots instead of trusting the client.
         // (Membership was already checked earlier if it exists)
         if (activeMembership && membershipHoursUsed > 0) {
-          const deduction = await tx.membershipUser.updateMany({
-            where: {
-              id: activeMembership.id,
-              isExpired: false,
-              isSuspended: false,
-              remainingSessions: { gte: membershipHoursUsed },
-            },
-            data: { remainingSessions: { decrement: membershipHoursUsed } },
-          })
-          if (deduction.count !== 1) {
-            throw new BadRequestException(
-              'Membership balance changed during checkout. Please try again.',
-            )
-          }
-          const updatedMembership = await tx.membershipUser.findUniqueOrThrow({
-            where: { id: activeMembership.id },
-            select: { remainingSessions: true },
-          })
-          if (updatedMembership.remainingSessions === 0) {
-            await tx.membershipUser.update({
-              where: { id: activeMembership.id },
-              data: { isExpired: true },
-            })
-          }
+          const updatedMembership = await consumeMembershipHours(
+            tx,
+            activeMembership.id,
+            booking.id,
+            membershipHoursUsed,
+          )
 
           // Log for tracking
           c.var.logger.info(

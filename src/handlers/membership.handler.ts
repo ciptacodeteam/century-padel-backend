@@ -99,6 +99,7 @@ export const getUserMembershipsHandler = factory.createHandlers(async (c) => {
         outgoingTransfers,
         bookingDetails,
         incomingTransfer,
+        complimentaryGrants,
         ...membership
       }) => ({
         ...membership,
@@ -206,6 +207,10 @@ export const getMyActiveMembershipHandler = factory.createHandlers(
           startDate: activeMembership.startDate,
           endDate: activeMembership.endDate,
           remainingSessions: activeMembership.remainingSessions,
+          remainingComplimentarySessions:
+            activeMembership.remainingComplimentarySessions,
+          totalComplimentarySessions:
+            activeMembership.totalComplimentarySessions,
           remainingDuration: activeMembership.remainingDuration,
           isExpired: activeMembership.isExpired,
           isSuspended: activeMembership.isSuspended,

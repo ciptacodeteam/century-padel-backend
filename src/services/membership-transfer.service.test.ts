@@ -18,6 +18,7 @@ const source = {
   startDate: new Date('2026-09-01T00:00:00.000Z'),
   endDate: new Date('2026-11-01T00:00:00.000Z'),
   remainingSessions: 10,
+  remainingComplimentarySessions: 0,
   isExpired: false,
   isSuspended: false,
   acquisitionType: MembershipAcquisitionType.PURCHASE,
@@ -401,5 +402,43 @@ describe('membership transfer cancellation', () => {
     ).rejects.toThrow('Saldo berubah')
     expect(tx.membershipUser.update).not.toHaveBeenCalled()
     expect(tx.membershipTransfer.update).not.toHaveBeenCalled()
+  })
+})
+
+describe('complimentary transfer restrictions', () => {
+  it('cannot transfer complimentary as if it were paid balance', async () => {
+    const tx = createTx({
+      source: { ...source, remainingComplimentarySessions: 8 },
+    })
+    await expect(
+      transferMembershipBalance(tx, {
+        sourceMembershipUserId: source.id,
+        toUserId: 'user-target',
+        hours: 4,
+        reason: 'Pindah saldo',
+        adminId: 'admin-1',
+        now,
+      }),
+    ).rejects.toThrow('complimentary tidak dapat ditransfer')
+    expect(tx.membershipTransfer.create).not.toHaveBeenCalled()
+    expect(tx.membershipUser.updateMany).not.toHaveBeenCalled()
+  })
+  it('allows transferring only the paid portion without modifying complimentary', async () => {
+    const tx = createTx({
+      source: { ...source, remainingComplimentarySessions: 6 },
+    })
+    await transferMembershipBalance(tx, {
+      sourceMembershipUserId: source.id,
+      toUserId: 'user-target',
+      hours: 4,
+      reason: 'Pindah saldo',
+      adminId: 'admin-1',
+      now,
+    })
+    expect(tx.membershipUser.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { remainingSessions: { decrement: 4 } },
+      }),
+    )
   })
 })

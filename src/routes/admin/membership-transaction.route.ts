@@ -1,6 +1,7 @@
 import { createRouter } from '@/lib/create-app'
 import {
   approveMembershipTransactionHandler,
+  grantMembershipComplimentaryHandler,
   cancelMembershipTransferHandler,
   exportMembershipTransactionsToExcelHandler,
   getAllMembershipTransactionsHandler,
@@ -18,6 +19,11 @@ const adminMembershipTransactionRoute = createRouter()
   .get('/', ...getAllMembershipTransactionsHandler)
   .get('/export/excel', ...exportMembershipTransactionsToExcelHandler)
   .get('/:id', ...getMembershipTransactionDetailHandler)
+  .post(
+    '/:id/complimentary',
+    requireAdminWriteAccess,
+    ...grantMembershipComplimentaryHandler,
+  )
   .post(
     '/:id/transfer',
     requireAdminWriteAccess,

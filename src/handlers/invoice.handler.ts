@@ -86,6 +86,7 @@ export const getUserInvoicesHandler = factory.createHandlers(
                 select: {
                   id: true,
                   membershipUserId: true,
+                  complimentaryMembershipHours: true,
                   membershipUser: {
                     select: {
                       membership: { select: { name: true, type: true } },
@@ -166,6 +167,7 @@ export const getInvoiceDetailHandler = factory.createHandlers(
                 select: {
                   id: true,
                   membershipUserId: true,
+                  complimentaryMembershipHours: true,
                   cancelledAt: true,
                   membershipUser: {
                     select: {

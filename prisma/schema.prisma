@@ -190,6 +190,7 @@ model EmailVerification {
 }
 
 model Staff {
+  membershipComplimentaryGrants MembershipComplimentaryGrant[]
   id        String     @id @default(cuid())
   image     String?
   name      String
@@ -517,6 +518,8 @@ model BookingDetail {
   price                      Int       @db.Integer
   discountPrice              Int       @default(0) @db.Integer
   complimentaryCreditMinutes Int       @default(0)
+  complimentaryMembershipHours Int @default(0)
+  membershipHoursRestored Boolean @default(false)
   cancelledAt                DateTime?
   cancellationReason         String?
   refundAmount               Int       @default(0) @db.Integer
@@ -702,6 +705,8 @@ model MembershipUser {
   startDate         DateTime
   endDate           DateTime
   remainingSessions Int
+  remainingComplimentarySessions Int @default(0)
+  totalComplimentarySessions Int @default(0)
   remainingDuration Int
   acquisitionType  MembershipAcquisitionType @default(PURCHASE)
   isExpired         Boolean   @default(false)
@@ -717,9 +722,26 @@ model MembershipUser {
   bookingDetails    BookingDetail[]
   outgoingTransfers MembershipTransfer[] @relation("MembershipTransferSource")
   incomingTransfer  MembershipTransfer?  @relation("MembershipTransferDestination")
+  complimentaryGrants MembershipComplimentaryGrant[]
 
   @@index([userId, isExpired, isSuspended])
   @@map("membership_users")
+}
+
+model MembershipComplimentaryGrant {
+  id String @id @default(cuid())
+  requestId String @unique
+  membershipUserId String
+  hours Int
+  reason String
+  adminId String
+  createdAt DateTime @default(now())
+
+  membershipUser MembershipUser @relation(fields: [membershipUserId], references: [id], onDelete: Restrict)
+  admin Staff @relation(fields: [adminId], references: [id], onDelete: Restrict)
+
+  @@index([membershipUserId, createdAt])
+  @@map("membership_complimentary_grants")
 }
 
 model MembershipTransfer {

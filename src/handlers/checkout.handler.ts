@@ -1,3 +1,4 @@
+import { consumeMembershipHours } from '@/services/membership-complimentary.service'
 import { BOOKING_PAYMENT_MINUTES } from '@/constants'
 import { env } from '@/env'
 import { BadRequestException, NotFoundException } from '@/exceptions'
@@ -780,33 +781,15 @@ export const checkoutHandler = factory.createHandlers(
             },
           })
 
-          for (const [membershipUserId, hoursUsed] of membershipHoursUsed) {
-            const deduction = await tx.membershipUser.updateMany({
-              where: {
-                id: membershipUserId,
-                isExpired: false,
-                isSuspended: false,
-                remainingSessions: { gte: hoursUsed },
-              },
-              data: { remainingSessions: { decrement: hoursUsed } },
-            })
-            if (deduction.count !== 1) {
-              throw new BadRequestException(
-                'Membership balance changed during checkout. Please try again.',
-              )
-            }
-            const updatedMembership = await tx.membershipUser.findUniqueOrThrow(
-              {
-                where: { id: membershipUserId },
-                select: { remainingSessions: true },
-              },
+          for (const [membershipUserId, hoursUsed] of [
+            ...membershipHoursUsed,
+          ].sort(([a], [b]) => a.localeCompare(b))) {
+            await consumeMembershipHours(
+              tx,
+              membershipUserId,
+              booking.id,
+              hoursUsed,
             )
-            if (updatedMembership.remainingSessions === 0) {
-              await tx.membershipUser.update({
-                where: { id: membershipUserId },
-                data: { isExpired: true },
-              })
-            }
           }
         }
 

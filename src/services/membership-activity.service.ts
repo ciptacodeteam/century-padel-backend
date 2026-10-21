@@ -4,6 +4,7 @@ import { calculateCourtHours } from './membership-hours.service'
 export const membershipActivityInclude = {
   membership: { include: { benefits: true } },
   invoice: { select: { number: true, status: true, paidAt: true } },
+  complimentaryGrants: { select: { id: true, hours: true, createdAt: true } },
   incomingTransfer: {
     select: {
       id: true,
@@ -44,11 +45,18 @@ type MembershipRecord = Prisma.MembershipUserGetPayload<{
 type Activity = {
   id: string
   membershipUserId: string
-  type: 'PURCHASE' | 'BOOKING' | 'TRANSFER_IN' | 'TRANSFER_OUT' | 'RETURN'
+  type:
+    | 'PURCHASE'
+    | 'BOOKING'
+    | 'TRANSFER_IN'
+    | 'TRANSFER_OUT'
+    | 'RETURN'
+    | 'COMPLIMENTARY'
   title: string
   hours: number
   occurredAt: Date
   reference: string
+  complimentaryHours?: number
   counterpart?: string
   court?: string
   startAt?: Date
@@ -69,8 +77,10 @@ export function buildMembershipActivity(
         record.invoice?.status === 'PAID',
     )
     .map((record) => {
-      const allocatedHours =
+      const baseHours =
         record.incomingTransfer?.transferredHours ?? record.membership.sessions
+      const allocatedHours =
+        baseHours + (record.totalComplimentarySessions ?? 0)
       const transferredOutHours = record.outgoingTransfers
         .filter((transfer) => !transfer.cancelledAt)
         .reduce((sum, transfer) => sum + transfer.transferredHours, 0)
@@ -84,9 +94,20 @@ export function buildMembershipActivity(
           id: `purchase-${record.id}`,
           type: 'PURCHASE',
           title: 'Pembelian membership',
-          hours: allocatedHours,
+          hours: baseHours,
           occurredAt: record.invoice?.paidAt ?? record.createdAt,
           reference: record.invoice?.number ?? record.id,
+          status: 'COMPLETED',
+        })
+      }
+      for (const grant of record.complimentaryGrants ?? []) {
+        add({
+          id: `complimentary-${grant.id}`,
+          type: 'COMPLIMENTARY',
+          title: 'Kuota complimentary',
+          hours: grant.hours,
+          occurredAt: grant.createdAt,
+          reference: grant.id,
           status: 'COMPLETED',
         })
       }
@@ -157,6 +178,7 @@ export function buildMembershipActivity(
           id: `booking-${detail.id}`,
           type: 'BOOKING',
           title: `Booking ${court}`,
+          complimentaryHours: detail.complimentaryMembershipHours ?? 0,
           hours: -hours,
           occurredAt: detail.createdAt,
           reference,
@@ -169,6 +191,7 @@ export function buildMembershipActivity(
             id: `refund-${detail.id}`,
             type: 'RETURN',
             title: 'Pengembalian jam booking',
+            complimentaryHours: detail.complimentaryMembershipHours ?? 0,
             hours,
             occurredAt: cancelledAt,
             reference,
@@ -195,6 +218,8 @@ export function buildMembershipActivity(
         endDate: record.endDate,
         allocatedHours,
         remainingHours: record.remainingSessions,
+        complimentaryHours: record.totalComplimentarySessions ?? 0,
+        remainingComplimentaryHours: record.remainingComplimentarySessions ?? 0,
         bookingHours,
         heldHours,
         transferredOutHours,

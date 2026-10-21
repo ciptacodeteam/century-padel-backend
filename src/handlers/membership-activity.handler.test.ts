@@ -36,7 +36,18 @@ describe('membership customer history access', () => {
         createdAt: new Date('2026-01-01'),
         startDate: new Date('2026-01-01'),
         endDate: new Date('2030-01-01'),
-        remainingSessions: 16,
+        remainingSessions: 18,
+        totalComplimentarySessions: 2,
+        remainingComplimentarySessions: 2,
+        complimentaryGrants: [
+          {
+            id: 'grant-1',
+            hours: 2,
+            createdAt: new Date('2026-02-02'),
+            reason: 'Private complimentary note',
+            adminId: 'secret-admin',
+          },
+        ],
         isExpired: false,
         isSuspended: false,
         membership: { name: '20 Jam', sessions: 20, benefits: [] },
@@ -80,6 +91,11 @@ describe('membership customer history access', () => {
     })
     expect(payload.data.active[0]).not.toHaveProperty('outgoingTransfers')
     expect(payload.data.active[0]).not.toHaveProperty('bookingDetails')
+    expect(payload.data.activity.events).toContainEqual(
+      expect.objectContaining({ type: 'COMPLIMENTARY', hours: 2 }),
+    )
+    expect(JSON.stringify(payload)).not.toContain('Private complimentary note')
+    expect(JSON.stringify(payload)).not.toContain('secret-admin')
     expect(JSON.stringify(payload)).not.toContain('Internal admin note')
     expect(JSON.stringify(payload)).not.toContain('private-admin-id')
   })

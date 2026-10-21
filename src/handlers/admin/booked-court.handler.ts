@@ -833,6 +833,7 @@ export const cancelBookedCourtHandler = factory.createHandlers(
               courtNormalPrice: detail.booking.courtNormalPrice,
             },
             {
+              id: detail.id,
               membershipUserId: detail.membershipUserId,
               slot: detail.slot,
             },
@@ -1189,6 +1190,9 @@ export const rescheduleCourtBookingHandler = factory.createHandlers(
       const { newSlotId } = c.req.valid('json') as RescheduleCourtSchema
 
       const result = await db.$transaction(async (tx) => {
+        await tx.$queryRaw(
+          Prisma.sql`SELECT id FROM booking_details WHERE id = ${bookingDetailId} FOR UPDATE`,
+        )
         const bookingDetail = await tx.bookingDetail.findUnique({
           where: { id: bookingDetailId },
           include: {
@@ -1278,6 +1282,7 @@ export const rescheduleCourtBookingHandler = factory.createHandlers(
               details: [
                 {
                   slot: bookingDetail.slot,
+                  id: bookingDetail.id,
                   membershipUserId: bookingDetail.membershipUserId,
                 },
               ],
