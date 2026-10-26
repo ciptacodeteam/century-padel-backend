@@ -57,7 +57,7 @@ export const membershipCheckoutHandler = factory.createHandlers(
         where: { id: membershipId },
         include: { benefits: true },
       })
-      if (!membership) {
+      if (!membership || !membership.isPublic) {
         throw new NotFoundException('Membership not found')
       }
       if (!membership.isActive) {

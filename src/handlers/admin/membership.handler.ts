@@ -91,6 +91,7 @@ export const createMembershipHandler = factory.createHandlers(
           type: membershipData.type,
           scheduleVisibilityMonths: membershipData.scheduleVisibilityMonths,
           sequence: membershipData.sequence,
+          isPublic: membershipData.isPublic,
           isActive: membershipData.isActive,
           benefits: {
             createMany: {
@@ -160,6 +161,7 @@ export const updateMembershipHandler = factory.createHandlers(
           type: membershipData.type,
           scheduleVisibilityMonths: membershipData.scheduleVisibilityMonths,
           sequence: membershipData.sequence,
+          isPublic: membershipData.isPublic,
           isActive:
             membershipData.isActive !== undefined
               ? Boolean(membershipData.isActive)

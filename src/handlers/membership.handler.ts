@@ -34,6 +34,7 @@ export const getAllMembershipHandler = factory.createHandlers(
         where: {
           ...queryOptions.where,
           isActive: true,
+          isPublic: true,
         },
         include: {
           benefits: true,
@@ -59,7 +60,7 @@ export const getMembershipHandler = factory.createHandlers(
         include: { benefits: true },
       })
 
-      if (!item || !item.isActive) {
+      if (!item || !item.isActive || !item.isPublic) {
         throw new NotFoundException('Membership item not found')
       }
 

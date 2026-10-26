@@ -514,6 +514,7 @@ export type UpdateTournamentSchema = z.infer<typeof updateTournamentSchema>
 
 // Membership schema
 export const createMembershipSchema = z.object({
+  isPublic: z.boolean().optional(),
   name: z.string().min(3).max(100),
   description: z.string().max(500).optional(),
   content: z.string().optional(),
