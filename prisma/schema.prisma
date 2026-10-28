@@ -190,6 +190,7 @@ model EmailVerification {
 }
 
 model Staff {
+  membershipStartDateChanges MembershipStartDateChange[]
   membershipComplimentaryGrants MembershipComplimentaryGrant[]
   id        String     @id @default(cuid())
   image     String?
@@ -724,9 +725,28 @@ model MembershipUser {
   outgoingTransfers MembershipTransfer[] @relation("MembershipTransferSource")
   incomingTransfer  MembershipTransfer?  @relation("MembershipTransferDestination")
   complimentaryGrants MembershipComplimentaryGrant[]
+  startDateChanges MembershipStartDateChange[]
 
   @@index([userId, isExpired, isSuspended])
   @@map("membership_users")
+}
+
+model MembershipStartDateChange {
+  id String @id @default(cuid())
+  membershipUserId String
+  previousStartDate DateTime
+  previousEndDate DateTime
+  startDate DateTime
+  endDate DateTime
+  reason String
+  adminId String
+  createdAt DateTime @default(now())
+
+  membershipUser MembershipUser @relation(fields: [membershipUserId], references: [id], onDelete: Restrict)
+  admin Staff @relation(fields: [adminId], references: [id], onDelete: Restrict)
+
+  @@index([membershipUserId, createdAt])
+  @@map("membership_start_date_changes")
 }
 
 model MembershipComplimentaryGrant {

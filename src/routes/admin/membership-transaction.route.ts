@@ -1,5 +1,6 @@
 import { createRouter } from '@/lib/create-app'
 import {
+  rescheduleMembershipStartHandler,
   approveMembershipTransactionHandler,
   grantMembershipComplimentaryHandler,
   cancelMembershipTransferHandler,
@@ -33,6 +34,11 @@ const adminMembershipTransactionRoute = createRouter()
     '/:id/transfers/:transferId/cancel',
     requireAdminWriteAccess,
     ...cancelMembershipTransferHandler,
+  )
+  .put(
+    '/:id/start-date',
+    requireAdminWriteAccess,
+    ...rescheduleMembershipStartHandler,
   )
   .put('/:id/approve', ...approveMembershipTransactionHandler)
   .put('/:id/reject', ...rejectMembershipTransactionHandler)

@@ -131,7 +131,18 @@ export const getUserMembershipsHandler = factory.createHandlers(async (c) => {
       (um) => um.isSuspended && !um.isExpired && um.endDate > now,
     )
 
+    const upcomingMemberships = publicMemberships.filter(
+      (um) =>
+        !um.isExpired &&
+        !um.isSuspended &&
+        um.startDate > now &&
+        um.endDate > now &&
+        activity.memberships.some(
+          (item) => item.id === um.id && item.status === 'UPCOMING',
+        ),
+    )
     const response = {
+      upcoming: upcomingMemberships,
       active: activeMemberships,
       expired: expiredMemberships,
       suspended: suspendedMemberships,

@@ -100,3 +100,49 @@ describe('membership customer history access', () => {
     expect(JSON.stringify(payload)).not.toContain('private-admin-id')
   })
 })
+
+it('returns a funded future membership under upcoming and activates it at the start instant', async () => {
+  vi.useFakeTimers()
+  try {
+    vi.setSystemTime(new Date('2026-11-01T16:59:59Z'))
+    const record = {
+      id: 'future',
+      userId: 'current-user',
+      acquisitionType: 'PURCHASE',
+      createdAt: new Date('2026-10-29'),
+      startDate: new Date('2026-11-01T17:00:00Z'),
+      endDate: new Date('2026-12-01T17:00:00Z'),
+      remainingSessions: 10,
+      isExpired: false,
+      isSuspended: false,
+      membership: { name: '10 Jam', sessions: 10, benefits: [] },
+      invoice: {
+        number: 'INV-FUTURE',
+        status: 'PAID',
+        paidAt: new Date('2026-10-29'),
+      },
+      bookingDetails: [],
+      outgoingTransfers: [],
+      complimentaryGrants: [],
+      incomingTransfer: null,
+    }
+    findMany.mockResolvedValue([
+      record,
+      {
+        ...record,
+        id: 'unpaid',
+        invoice: { ...record.invoice, status: 'PENDING' },
+      },
+    ])
+    const before = (await (await app().request('/my')).json()) as any
+    expect(before.data.upcoming.map((item: any) => item.id)).toEqual(['future'])
+    expect(before.data.active).toHaveLength(0)
+    vi.setSystemTime(new Date('2026-11-01T17:00:00Z'))
+    findMany.mockResolvedValue([record])
+    const after = (await (await app().request('/my')).json()) as any
+    expect(after.data.upcoming).toHaveLength(0)
+    expect(after.data.active.map((item: any) => item.id)).toEqual(['future'])
+  } finally {
+    vi.useRealTimers()
+  }
+})

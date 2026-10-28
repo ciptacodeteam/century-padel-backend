@@ -1,3 +1,4 @@
+import { rescheduleMembershipStart } from '@/services/membership-start-date.service'
 import { grantMembershipComplimentary } from '@/services/membership-complimentary.service'
 import {
   expirePendingMembershipPayments,
@@ -141,6 +142,11 @@ export const getAllMembershipTransactionsHandler = factory.createHandlers(
               },
             },
           },
+          startDateChanges: {
+            include: { admin: { select: { id: true, name: true } } },
+            orderBy: { createdAt: 'desc' },
+          },
+          _count: { select: { bookingDetails: true, outgoingTransfers: true } },
           complimentaryGrants: {
             include: { admin: { select: { id: true, name: true } } },
             orderBy: { createdAt: 'desc' },
@@ -230,6 +236,11 @@ export const getMembershipTransactionDetailHandler = factory.createHandlers(
               },
             },
           },
+          startDateChanges: {
+            include: { admin: { select: { id: true, name: true } } },
+            orderBy: { createdAt: 'desc' },
+          },
+          _count: { select: { bookingDetails: true, outgoingTransfers: true } },
           complimentaryGrants: {
             include: { admin: { select: { id: true, name: true } } },
             orderBy: { createdAt: 'desc' },
@@ -979,6 +990,39 @@ export const grantMembershipComplimentaryHandler = factory.createHandlers(
     )
     return c.json(
       ok(result, 'Kuota complimentary berhasil ditambahkan'),
+      status.OK,
+    )
+  },
+)
+
+export const rescheduleMembershipStartHandler = factory.createHandlers(
+  zValidator('param', idSchema, validateHook),
+  zValidator(
+    'json',
+    z
+      .object({
+        startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        reason: z.string().trim().min(3).max(500),
+      })
+      .strict(),
+    validateHook,
+  ),
+  async (c) => {
+    const { id } = c.req.valid('param') as IdSchema
+    const { startDate, reason } = c.req.valid('json')
+    const adminId = c.var.admin?.id
+    if (!adminId)
+      throw new BadRequestException('Super Admin tidak teridentifikasi')
+    const result = await db.$transaction((tx) =>
+      rescheduleMembershipStart(tx, {
+        membershipUserId: id,
+        startDate,
+        reason,
+        adminId,
+      }),
+    )
+    return c.json(
+      ok(result, 'Tanggal mulai membership berhasil diatur'),
       status.OK,
     )
   },
