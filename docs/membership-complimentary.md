@@ -14,8 +14,9 @@ excludes these redeemed hours from new revenue; paid add-ons remain chargeable.
 Complimentary uses the existing membership's dates and court-hour restrictions.
 It is consumed first within that membership. Suspension and termination therefore
 apply to both portions. A depleted membership can receive quota while its original
-period is still valid; unpaid, refunded, banned, suspended, future, or elapsed
-memberships cannot. Complimentary cannot be transferred; transfers use only the
+period has not ended. A funded membership can also receive quota before its start
+date; the added hours become usable when that membership starts. Unpaid, refunded,
+banned, suspended, or elapsed memberships cannot receive quota. Complimentary cannot be transferred; transfers use only the
 non-complimentary balance. A transferred membership that has received additional
 complimentary cannot have its original transfer cancelled.
 

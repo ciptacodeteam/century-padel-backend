@@ -65,6 +65,7 @@ function fixture(overrides: Record<string, unknown> = {}) {
         if (
           (where.isExpired === false && membership.isExpired) ||
           (where.isSuspended === false && membership.isSuspended) ||
+          (where.startDate && membership.startDate > where.startDate.lte) ||
           where.remainingSessions?.gte > membership.remainingSessions ||
           (where.endDate && membership.endDate <= where.endDate.gt)
         )
@@ -177,7 +178,6 @@ describe('complimentary membership grants', () => {
   it.each([
     { isSuspended: true },
     { endDate: now },
-    { startDate: new Date('2099-01-01') },
     { user: { banned: true } },
     { isExpired: true, remainingSessions: 2 },
     {
@@ -196,6 +196,22 @@ describe('complimentary membership grants', () => {
     await expect(grantMembershipComplimentary(tx, input)).rejects.toThrow(
       'lunas',
     )
+  })
+  it('grants quota before activation without changing the dates or allowing early usage', async () => {
+    const startDate = new Date('2099-01-01')
+    const { tx, membership } = fixture({ startDate })
+    await grantMembershipComplimentary(tx, input)
+    expect(membership).toMatchObject({
+      remainingSessions: 8,
+      remainingComplimentarySessions: 6,
+      totalComplimentarySessions: 6,
+      startDate,
+      endDate: new Date('2099-12-01'),
+    })
+    await expect(
+      consumeMembershipHours(tx, 'membership', 'booking', 2),
+    ).rejects.toThrow('Saldo atau status membership berubah')
+    expect(membership.remainingSessions).toBe(8)
   })
   it('allows a depleted balance within the original membership period', async () => {
     const { tx, membership } = fixture({

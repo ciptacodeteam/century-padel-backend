@@ -69,13 +69,12 @@ export async function grantMembershipComplimentary(
   if (
     membership.user.banned ||
     membership.isSuspended ||
-    membership.startDate > now ||
     membership.endDate <= now ||
     (membership.isExpired && membership.remainingSessions > 0) ||
     getCompletedRefund(membership.invoice?.payment?.meta)
   ) {
     throw new BadRequestException(
-      'Membership sedang tidak aktif, ditangguhkan, atau sudah berakhir',
+      'Membership diblokir, ditangguhkan, sudah berakhir, atau telah direfund',
     )
   }
   if (
