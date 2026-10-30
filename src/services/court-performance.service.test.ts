@@ -28,6 +28,7 @@ function detail(patch: Partial<Detail> = {}): Detail {
     id: 'detail-1',
     price: 600000,
     complimentaryCreditMinutes: 0,
+    complimentaryMembershipHours: 0,
     cancelledAt: null,
     membershipUser: null,
     booking: {
@@ -134,6 +135,71 @@ describe('court performance', () => {
     expect(result.summary.membershipHours).toBe(0)
     expect(result.rows.find((r) => r.id === 'unverified')?.hours).toBe(2)
     expect(result.rows.find((r) => r.id === 'complimentary')?.hours).toBe(2)
+  })
+  it('reports redeemed membership complimentary separately without double counting', () => {
+    const result = report([
+      slot({
+        bookingDetails: [
+          detail({
+            membershipUser: { membership: pkg },
+            complimentaryMembershipHours: 2,
+          }),
+        ],
+      }),
+    ])
+    expect(result.rows.find((r) => r.id === 'complimentary')?.hours).toBe(2)
+    expect(result.summary.membershipHours).toBe(0)
+    expect(result.summary.hours).toBe(2)
+    expect(result.details.every((d) => d.groupId === 'complimentary')).toBe(
+      true,
+    )
+  })
+  it('reconciles mixed paid and complimentary quota, elapsed time and normal value', () => {
+    const result = report(
+      [
+        slot({
+          bookingDetails: [
+            detail({
+              membershipUser: { membership: pkg },
+              complimentaryMembershipHours: 1,
+            }),
+          ],
+        }),
+      ],
+      new Date('2026-10-08T08:30:00Z'),
+    )
+    expect(result.summary.membershipHours).toBe(1)
+    expect(result.rows.find((r) => r.id === 'complimentary')).toMatchObject({
+      hours: 1,
+      elapsedHours: 0.25,
+      upcomingHours: 0.75,
+      normalValue: 300000,
+    })
+    expect(result.summary.hours).toBe(2)
+    expect(result.details.reduce((sum, d) => sum + d.hours, 0)).toBe(2)
+    expect(result.details.reduce((sum, d) => sum + d.normalValue, 0)).toBe(
+      600000,
+    )
+    expect(new Set(result.details.map((d) => d.id)).size).toBe(
+      result.details.length,
+    )
+  })
+  it('uses actual duration for rounded quota and clips complimentary usage to play dates', () => {
+    const result = report([
+      slot({
+        startAt: new Date('2026-09-30T23:30:00Z'),
+        endAt: new Date('2026-10-01T01:00:00Z'),
+        bookingDetails: [
+          detail({
+            membershipUser: { membership: pkg },
+            complimentaryMembershipHours: 1,
+          }),
+        ],
+      }),
+    ])
+    expect(result.summary.hours).toBe(1)
+    expect(result.summary.membershipHours).toBe(0.5)
+    expect(result.rows.find((r) => r.id === 'complimentary')?.hours).toBe(0.5)
   })
   it('treats weekend evening as non-peak', () => {
     const result = report([

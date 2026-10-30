@@ -12,6 +12,7 @@ type Detail = {
   id: string
   price: number
   complimentaryCreditMinutes: number
+  complimentaryMembershipHours: number
   cancelledAt: Date | null
   membershipUser: { membership: Package } | null
   booking: {
@@ -143,57 +144,79 @@ export function aggregateCourtPerformance(
             ? 'Peak'
             : 'Non-Peak'
         const pkg = detail.membershipUser?.membership
-        let group
-        if (pkg)
-          group = addGroup(
-            `membership:${pkg.id}`,
-            pkg.name,
-            'membership',
-            pkg.sessions,
-          )
-        else if (detail.complimentaryCreditMinutes > 0)
-          group = addGroup('complimentary', 'Complimentary', 'complimentary')
-        else if (detail.booking.courtNormalPrice === 0 || detail.price === 0)
-          group = addGroup(
-            'unverified',
-            'Perlu verifikasi · Paket / harga tidak tercatat',
-            'unverified',
-          )
-        else
-          group = groups.get(
-            band === 'Peak' ? 'regular:peak' : 'regular:non-peak',
-          )!
-        const hours = (segmentEnd - cursor) / HOUR
-        const elapsedHours =
-          Math.max(0, Math.min(segmentEnd, localNow) - cursor) / HOUR
-        const upcomingHours = hours - elapsedHours
-        const normalValue =
-          (detail.price * (segmentEnd - cursor)) /
-          (slot.endAt.getTime() - slot.startAt.getTime())
-        group.hours += hours
-        group.elapsedHours += elapsedHours
-        group.upcomingHours += upcomingHours
-        group.normalValue += normalValue
-        group.bookingIds.add(detail.booking.id)
-        group.customers.add(detail.booking.user.id)
-        details.push({
-          id: `${detail.id}:${cursor}`,
-          groupId: group.id,
-          category: group.name,
-          bookingId: detail.booking.id,
-          customer: detail.booking.user.name,
-          court: slot.court?.name ?? 'Lapangan tidak tersedia',
-          startAt: new Date(cursor).toISOString(),
-          endAt: new Date(segmentEnd).toISOString(),
-          bookedAt: detail.booking.createdAt.toISOString(),
-          band,
-          hours,
-          elapsedHours,
-          upcomingHours,
-          normalValue,
-          invoiceId: detail.booking.invoice?.id ?? null,
-          invoiceNumber: detail.booking.invoice?.number ?? null,
-        })
+        // Quota debits round up to whole hours. Allocate the recorded split
+        // proportionally to actual court duration, including clipped report ranges.
+        const debitHours = Math.ceil(
+          (slot.endAt.getTime() - slot.startAt.getTime()) / HOUR,
+        )
+        const complimentaryShare =
+          detail.complimentaryCreditMinutes > 0
+            ? 1
+            : Math.min(
+                1,
+                Math.max(
+                  0,
+                  (detail.complimentaryMembershipHours ?? 0) / debitHours,
+                ),
+              )
+        for (const [isComplimentary, share] of [
+          [true, complimentaryShare],
+          [false, 1 - complimentaryShare],
+        ] as const) {
+          if (share <= 0) continue
+          let group
+          if (isComplimentary)
+            group = addGroup('complimentary', 'Complimentary', 'complimentary')
+          else if (pkg)
+            group = addGroup(
+              `membership:${pkg.id}`,
+              pkg.name,
+              'membership',
+              pkg.sessions,
+            )
+          else if (detail.booking.courtNormalPrice === 0 || detail.price === 0)
+            group = addGroup(
+              'unverified',
+              'Perlu verifikasi · Paket / harga tidak tercatat',
+              'unverified',
+            )
+          else
+            group = groups.get(
+              band === 'Peak' ? 'regular:peak' : 'regular:non-peak',
+            )!
+          const hours = ((segmentEnd - cursor) / HOUR) * share
+          const elapsedHours =
+            (Math.max(0, Math.min(segmentEnd, localNow) - cursor) / HOUR) *
+            share
+          const upcomingHours = hours - elapsedHours
+          const normalValue =
+            (detail.price * (segmentEnd - cursor) * share) /
+            (slot.endAt.getTime() - slot.startAt.getTime())
+          group.hours += hours
+          group.elapsedHours += elapsedHours
+          group.upcomingHours += upcomingHours
+          group.normalValue += normalValue
+          group.bookingIds.add(detail.booking.id)
+          group.customers.add(detail.booking.user.id)
+          details.push({
+            id: `${detail.id}:${cursor}:${group.id}`,
+            groupId: group.id,
+            category: group.name,
+            bookingId: detail.booking.id,
+            customer: detail.booking.user.name,
+            court: slot.court?.name ?? 'Lapangan tidak tersedia',
+            startAt: new Date(cursor).toISOString(),
+            endAt: new Date(segmentEnd).toISOString(),
+            bookedAt: detail.booking.createdAt.toISOString(),
+            band,
+            hours,
+            elapsedHours,
+            upcomingHours,
+            normalValue,
+            invoiceId: detail.booking.invoice?.id ?? null,
+            invoiceNumber: detail.booking.invoice?.number ?? null,
+          })
+        }
         cursor = segmentEnd
       }
     }
@@ -256,6 +279,7 @@ export async function getCourtPerformance(
             id: true,
             price: true,
             complimentaryCreditMinutes: true,
+            complimentaryMembershipHours: true,
             cancelledAt: true,
             membershipUser: {
               select: {
