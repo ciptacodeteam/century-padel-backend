@@ -2,10 +2,6 @@ import { validateHook } from '@/helpers/validate-hook'
 import { factory } from '@/lib/create-app'
 import { db } from '@/lib/prisma'
 import buildFindManyOptions from '@/lib/query'
-import {
-  CUSTOMER_RESCHEDULE_MIN_HOURS,
-  canCustomerReschedule,
-} from '@/lib/reschedule-policy'
 import { ok } from '@/lib/response'
 import {
   IdSchema,
@@ -1223,9 +1219,9 @@ export const rescheduleCourtBookingHandler = factory.createHandlers(
           throw new BadRequestException('Cannot reschedule a cancelled court')
         }
 
-        if (!canCustomerReschedule(bookingDetail.slot.startAt)) {
+        if (!dayjs(bookingDetail.slot.startAt).isAfter(dayjs())) {
           throw new BadRequestException(
-            `Reschedule is only allowed at least H-2 (${CUSTOMER_RESCHEDULE_MIN_HOURS} hours) before the play schedule`,
+            'Cannot reschedule a booking that has already started',
           )
         }
 
