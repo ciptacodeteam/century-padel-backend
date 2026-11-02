@@ -1,5 +1,9 @@
 import { consumeMembershipHours } from '@/services/membership-complimentary.service'
-import { BadRequestException, NotFoundException } from '@/exceptions'
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@/exceptions'
 import { validateHook } from '@/helpers/validate-hook'
 import { factory } from '@/lib/create-app'
 import { db } from '@/lib/prisma'
@@ -29,9 +33,7 @@ const adminCheckoutSchema = z
     name: z.string().min(1).optional(),
     phone: z.string().min(5).optional(),
     totalHours: z.number().positive(),
-    // Membership usage is intentionally restricted to client checkout.
-    // Reject `true` here so the rule cannot be bypassed through the admin API.
-    useMembership: z.literal(false).default(false),
+    useMembership: z.boolean().default(false),
     useComplimentaryCredit: z.boolean().default(false),
     courtSlots: z.array(z.string()).optional(),
     coachSlots: z.array(z.string()).optional(),
@@ -81,6 +83,21 @@ export const adminCheckoutHandler = factory.createHandlers(
     // admin—is reported under the Kasir channel.
     const admin = c.get('admin')
     const cashierId = admin?.id || null
+
+    if (
+      useMembership &&
+      admin?.role !== 'ADMIN' &&
+      admin?.role !== 'ADMIN_VIEWER'
+    ) {
+      throw new ForbiddenException(
+        'Only Super Admin and Manager can book with membership',
+      )
+    }
+    if (useMembership && useComplimentaryCredit) {
+      throw new BadRequestException(
+        'Membership and complimentary credit cannot be used together',
+      )
+    }
 
     // Ensure at least one item is provided
     const hasItems =
