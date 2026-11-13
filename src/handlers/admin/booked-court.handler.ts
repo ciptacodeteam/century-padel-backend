@@ -1403,6 +1403,7 @@ export const rescheduleCourtBookingHandler = factory.createHandlers(
         }
 
         const priceDifference =
+          bookingDetail.membershipUserId ||
           bookingDetail.booking.courtNormalPrice === 0 ||
           bookingDetail.complimentaryCreditMinutes > 0
             ? 0

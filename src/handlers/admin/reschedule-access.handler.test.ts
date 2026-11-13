@@ -17,6 +17,12 @@ vi.mock('@/lib/prisma', () => ({ db: { $transaction: mocks.transaction } }))
 vi.mock('@/services/email.service', () => ({
   queueSendTemplatedEmail: vi.fn(),
 }))
+vi.mock('@/services/membership-hours.service', async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import('@/services/membership-hours.service')
+  >()),
+  adjustMembershipHoursForReschedule: vi.fn().mockResolvedValue(0),
+}))
 
 function app(role?: string) {
   const router = createRouter()
@@ -59,11 +65,126 @@ beforeEach(() => {
 })
 afterEach(() => vi.useRealTimers())
 describe('reschedule access before the original slot starts', () => {
+  it.each([
+    ['membership with recorded court value', 'membership-1', 760000, 0, 0],
+    ['membership with paid extras', 'membership-1', 760000, 100000, 0],
+    ['legacy membership', null, 0, 0, 0],
+    ['regular paid court', null, 760000, 760000, -30000],
+  ])(
+    'applies the correct cash difference for %s',
+    async (
+      _,
+      membershipUserId,
+      courtNormalPrice,
+      totalPrice,
+      expectedDifference,
+    ) => {
+      const oldSlot = {
+        id: 'old-slot',
+        startAt: new Date('2026-11-18T20:00:00+07:00'),
+        endAt: new Date('2026-11-18T21:00:00+07:00'),
+      }
+      const targetSlot = {
+        id: 'target-slot',
+        type: 'COURT',
+        courtId: 'court-3',
+        isAvailable: true,
+        price: 350000,
+        discountPrice: 0,
+        startAt: new Date('2026-11-25T20:00:00+07:00'),
+        endAt: new Date('2026-11-25T21:00:00+07:00'),
+      }
+      const booking = {
+        id: 'booking-1',
+        status: 'CONFIRMED',
+        courtNormalPrice,
+        totalPrice,
+        invoice: { id: 'invoice-1' },
+        coaches: [],
+      }
+      const detail = {
+        id: 'detail-1',
+        bookingId: booking.id,
+        slotId: oldSlot.id,
+        price: 380000,
+        cancelledAt: null,
+        membershipUserId,
+        complimentaryCreditMinutes: 0,
+        booking,
+        slot: oldSlot,
+      }
+      const updateDetail = vi
+        .fn()
+        .mockResolvedValue({ ...detail, slot: targetSlot })
+      const updateSlot = vi.fn()
+      const updateBooking = vi.fn().mockResolvedValue({
+        ...booking,
+        totalPrice: totalPrice + expectedDifference,
+      })
+      const updateInvoice = vi.fn()
+      mocks.detail.mockResolvedValue(detail)
+      mocks.slot.mockResolvedValue(targetSlot)
+      mocks.transaction.mockImplementation((callback) =>
+        callback({
+          $queryRaw: vi.fn(),
+          bookingDetail: { findUnique: mocks.detail, update: updateDetail },
+          slot: { findUnique: mocks.slot, update: updateSlot },
+          booking: { update: updateBooking },
+          invoice: { update: updateInvoice },
+        }),
+      )
+
+      const response = await request('ADMIN')
+      expect(response.status).toBe(200)
+      const body = (await response.json()) as {
+        data: {
+          priceDifference: number
+          updatedBooking: { totalPrice: number }
+        }
+      }
+      expect(body.data.priceDifference).toBe(expectedDifference)
+      expect(body.data.updatedBooking.totalPrice).toBe(
+        totalPrice + expectedDifference,
+      )
+      expect(updateDetail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            slotId: 'target-slot',
+            courtId: 'court-3',
+          }),
+        }),
+      )
+      expect(updateSlot).toHaveBeenCalledWith({
+        where: { id: 'old-slot' },
+        data: { isAvailable: true },
+      })
+      expect(updateSlot).toHaveBeenCalledWith({
+        where: { id: 'target-slot' },
+        data: { isAvailable: false },
+      })
+      if (expectedDifference === 0) {
+        expect(updateBooking).not.toHaveBeenCalled()
+        expect(updateInvoice).not.toHaveBeenCalled()
+      } else {
+        expect(updateInvoice).toHaveBeenCalledWith({
+          where: { id: 'invoice-1' },
+          data: {
+            subtotal: { increment: expectedDifference },
+            total: { increment: expectedDifference },
+          },
+        })
+      }
+    },
+  )
+
   describe.each(Object.values(Role))('%s', (role) => {
     it.each([
       ['exactly 48 hours before', '2026-10-28T10:00:00+07:00'],
       ['less than 48 hours before', '2026-10-27T10:00:00+07:00'],
-      ['one millisecond before the original start', '2026-10-26T10:00:00.001+07:00'],
+      [
+        'one millisecond before the original start',
+        '2026-10-26T10:00:00.001+07:00',
+      ],
     ])('allows rescheduling %s', async (_, startAt) => {
       mocks.detail.mockResolvedValue({
         id: 'detail-1',
@@ -85,7 +206,10 @@ describe('reschedule access before the original slot starts', () => {
 
     it.each([
       ['at the original start time', '2026-10-26T10:00:00+07:00'],
-      ['one millisecond after the original start', '2026-10-26T09:59:59.999+07:00'],
+      [
+        'one millisecond after the original start',
+        '2026-10-26T09:59:59.999+07:00',
+      ],
       ['after the original slot', '2026-10-25T10:00:00+07:00'],
     ])('rejects rescheduling %s', async (_, startAt) => {
       const detail = await mocks.detail()
