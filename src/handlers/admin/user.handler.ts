@@ -4,9 +4,8 @@ import { validateHook } from '@/helpers/validate-hook'
 import { factory } from '@/lib/create-app'
 import { db } from '@/lib/prisma'
 import buildFindManyOptions from '@/lib/query'
-import { ok } from '@/lib/response'
+import { err, ok } from '@/lib/response'
 import { formatPhone } from '@/lib/utils'
-import { generateOtp } from '@/lib/generators'
 import {
   IdSchema,
   idSchema,
@@ -24,7 +23,6 @@ import {
   buildPasswordResetLink,
   createPasswordResetToken,
 } from '@/services/password-reset.service'
-import { sendPhoneOtp } from '@/services/phone.service'
 import { zValidator } from '@hono/zod-validator'
 import dayjs from 'dayjs'
 import status from 'http-status'
@@ -526,17 +524,14 @@ export const sendResetPasswordLinkHandler = factory.createHandlers(
         )
       }
 
-      // Create password reset token
-      const { token, expiresIn, expiresAt } = await createPasswordResetToken(
-        user.id,
-      )
-      const resetLink = buildPasswordResetLink(token, env.frontEndUrl)
-
-      // Track which channel was used
-      const channels: string[] = []
-
-      // Priority 1: Send to email if available and verified
+      // Only verified email receives a bearer reset token. Phone recovery
+      // always requires the customer to prove ownership with an OTP first.
       if (user.email && user.emailVerified) {
+        const { token, expiresIn, expiresAt } = await createPasswordResetToken(
+          user.id,
+        )
+        const resetLink = buildPasswordResetLink(token, env.frontEndUrl)
+
         try {
           await queueEmail({
             to: user.email,
@@ -549,61 +544,56 @@ export const sendResetPasswordLinkHandler = factory.createHandlers(
               actionUrl: resetLink,
             },
           })
-          channels.push('email')
-          c.var.logger.info(
-            { userId: user.id, email: user.email },
-            'Password reset email queued',
+          return c.json(
+            ok(
+              {
+                userId: user.id,
+                channels: ['email'],
+                sentTo: { email: user.email, phone: null },
+                expiresAt,
+              },
+              'Link reset password berhasil dijadwalkan untuk dikirim melalui email.',
+            ),
+            status.OK,
           )
-        } catch (emailError) {
+        } catch (error) {
           c.var.logger.error(
-            { userId: user.id, error: emailError },
+            { userId: user.id, error },
             'Failed to queue password reset email',
           )
-          // Continue to phone fallback if email fails
-        }
-      }
-
-      // Fallback: Send to phone if email not available or failed
-      if (!channels.includes('email') && user.phone && user.phoneVerified) {
-        try {
-          const otp = generateOtp(6)
-          const requestId = await sendPhoneOtp(user.phone, otp)
-
-          if (requestId) {
-            channels.push('phone')
-            c.var.logger.info(
-              { userId: user.id, phone: user.phone },
-              'Password reset OTP sent via phone',
+          // Do not leave a usable bearer token after a delivery failure.
+          await db.passwordResetToken.delete({ where: { token } })
+          if (!user.phone) {
+            return c.json(
+              err(
+                'Layanan email gagal mengirim link reset password. Silakan coba lagi.',
+                status.BAD_GATEWAY,
+              ),
+              status.BAD_GATEWAY,
             )
           }
-        } catch (phoneError) {
-          c.var.logger.error(
-            { userId: user.id, error: phoneError },
-            'Failed to send password reset OTP via phone',
-          )
         }
       }
 
-      // If no channel was successful, throw error
-      if (channels.length === 0) {
+      if (!user.phone) {
         throw new BadRequestException(
-          'Unable to send password reset link. Please ensure your email and/or phone are verified.',
+          'Email pelanggan belum terverifikasi dan nomor telepon belum tersedia.',
         )
       }
 
+      // This is a public entry point, not a password reset token. It can be
+      // shared manually even for customers created by staff (unverified phone).
+      const recoveryUrl = new URL('/forgot-password', env.frontEndUrl)
+      recoveryUrl.searchParams.set('phone', user.phone)
       return c.json(
         ok(
           {
             userId: user.id,
-            channels,
-            message: `Password reset link sent successfully via ${channels.join(' and ')}`,
-            sentTo: {
-              email: channels.includes('email') ? user.email : null,
-              phone: channels.includes('phone') ? user.phone : null,
-            },
-            expiresAt,
+            channels: [],
+            recoveryUrl: recoveryUrl.toString(),
+            sentTo: { email: null, phone: null },
           },
-          `Reset password link sent via ${channels.join(' and ')}`,
+          'Link pemulihan siap disalin. Bagikan kepada pelanggan untuk meminta OTP melalui WhatsApp.',
         ),
         status.OK,
       )

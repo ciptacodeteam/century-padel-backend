@@ -458,7 +458,18 @@ export const forgotPasswordHandler = factory.createHandlers(
 
       if (env.nodeEnv === 'production') {
         code = await generateOtp(OTP_LENGTH)
-        requestId = await sendPhoneOtp(formattedPhone, code)
+        try {
+          requestId = await sendPhoneOtp(formattedPhone, code)
+        } catch (error) {
+          c.var.logger.error({ error }, 'Password recovery OTP delivery failed')
+          return c.json(
+            err(
+              'OTP WhatsApp gagal dikirim. Silakan coba lagi beberapa saat lagi atau hubungi admin.',
+              status.BAD_GATEWAY,
+            ),
+            status.BAD_GATEWAY,
+          )
+        }
 
         if (!requestId) {
           c.var.logger.error(
@@ -551,6 +562,7 @@ export const resetPasswordHandler = factory.createHandlers(
           where: { id: existingUser.id },
           data: {
             password: hashNewPassword,
+            phoneVerified: true,
           },
         })
       })
