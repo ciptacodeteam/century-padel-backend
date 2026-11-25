@@ -45,6 +45,14 @@ backend, then run `prisma generate`. Deploy the frontend after the backend. The
 patch creates only the audit table and constraints, with no balance updates. For
 an empty development database, use the normal Prisma `db:push` workflow.
 
+From the backend directory, with `DATABASE_URL` configured in `.env`, run once:
+
+```sh
+bun run db:booking-membership-correction
+bun run db:generate
+bun run build
+```
+
 Run integration tests against an explicitly selected disposable PostgreSQL database:
 
 ```sh

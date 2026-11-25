@@ -13,6 +13,7 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
+    "db:booking-membership-correction": "prisma db execute --schema prisma/schema.prisma --file prisma/patches/20261125_booking_membership_correction.sql",
     "db:fresh": "prisma db push --force-reset && bun run prisma/seed.ts",
     "db:pull": "prisma db pull",
     "db:truncate": "bun run prisma/truncate.ts",
