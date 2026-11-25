@@ -68,6 +68,9 @@ export const getAllBookingTransactionsHandler = factory.createHandlers(
         ...queryOptions,
         where,
         include: {
+          membershipCorrection: {
+            include: { admin: { select: { name: true } } },
+          },
           user: {
             select: {
               id: true,
@@ -427,6 +430,9 @@ export const getBookingTransactionDetailHandler = factory.createHandlers(
       const booking = await db.booking.findUnique({
         where: { id },
         include: {
+          membershipCorrection: {
+            include: { admin: { select: { name: true } } },
+          },
           user: {
             select: {
               id: true,

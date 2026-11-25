@@ -763,6 +763,10 @@ export const cancelBookedCourtHandler = factory.createHandlers(
       const now = new Date()
 
       const result = await db.$transaction(async (tx) => {
+        // Read the funding source only after any concurrent correction completes.
+        await tx.$queryRaw(
+          Prisma.sql`SELECT id FROM booking_details WHERE id = ${bookingDetailId} FOR UPDATE`,
+        )
         const detail = await tx.bookingDetail.findUnique({
           where: { id: bookingDetailId },
           include: {
@@ -919,6 +923,9 @@ export const cancelBookingHandler = factory.createHandlers(
       const { reason } = c.req.valid('json') as CancelBookingSchema
 
       const result = await db.$transaction(async (tx) => {
+        await tx.$queryRaw(
+          Prisma.sql`SELECT id FROM bookings WHERE id = ${bookingId} FOR UPDATE`,
+        )
         // 1. Fetch the booking with all related data
         const booking = await tx.booking.findUnique({
           where: { id: bookingId },

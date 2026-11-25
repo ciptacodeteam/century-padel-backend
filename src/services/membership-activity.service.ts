@@ -68,6 +68,12 @@ type Activity = {
 export function buildMembershipActivity(
   records: MembershipRecord[],
   now = new Date(),
+  corrections: Array<{
+    id: string
+    sources: Prisma.JsonValue
+    createdAt: Date
+    booking: { invoice: { number: string } | null }
+  }> = [],
 ) {
   const events: Activity[] = []
   const memberships = records
@@ -199,6 +205,32 @@ export function buildMembershipActivity(
             status: 'COMPLETED',
           })
       }
+      let retiredComplimentaryHours = 0
+      for (const correction of corrections) {
+        const sources = Array.isArray(correction.sources)
+          ? correction.sources
+          : []
+        const hours = sources.reduce<number>((sum, source) => {
+          if (!source || typeof source !== 'object' || Array.isArray(source))
+            return sum
+          return source.membershipUserId === record.id &&
+            typeof source.complimentaryMembershipHours === 'number'
+            ? sum + source.complimentaryMembershipHours
+            : sum
+        }, 0)
+        if (hours <= 0) continue
+        retiredComplimentaryHours += hours
+        add({
+          id: `correction-${correction.id}-${record.id}`,
+          type: 'RETURN',
+          title: 'Koreksi kuota gratis ke paket berbayar',
+          hours: -hours,
+          complimentaryHours: hours,
+          occurredAt: correction.createdAt,
+          reference: correction.booking.invoice?.number ?? correction.id,
+          status: 'COMPLETED',
+        })
+      }
       const revoked = !!incoming?.cancelledAt
       // Do not infer booking use from balance differences: legacy records and
       // manual adjustments may not have an attributable booking detail.
@@ -209,6 +241,7 @@ export function buildMembershipActivity(
           transferredOutHours -
           bookingHours -
           heldHours -
+          retiredComplimentaryHours -
           (revoked ? allocatedHours : 0),
       )
       return {
@@ -224,6 +257,7 @@ export function buildMembershipActivity(
         heldHours,
         transferredOutHours,
         untrackedHours,
+        retiredComplimentaryHours,
         transferredInHours:
           incoming && !revoked ? incoming.transferredHours : 0,
         status: revoked

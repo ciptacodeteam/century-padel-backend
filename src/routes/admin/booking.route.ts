@@ -1,3 +1,7 @@
+import {
+  bookingMembershipCorrectionOptionsHandler,
+  correctBookingMembershipHandler,
+} from '@/handlers/admin/booking-membership-correction.handler'
 import { createRouter } from '@/lib/create-app'
 import {
   approveBookingTransactionHandler,
@@ -20,6 +24,16 @@ const adminBookingRoute = createRouter()
   .get('/ongoing-schedule', ...getOngoingBookingScheduleHandler)
   .get('/export', ...exportBookingsHandler)
   .get('/export/excel', ...exportBookingTransactionsToExcelHandler)
+  .get(
+    '/:id/complimentary-membership-options',
+    requireAdminWriteAccess,
+    ...bookingMembershipCorrectionOptionsHandler,
+  )
+  .put(
+    '/:id/correct-complimentary-membership',
+    requireAdminWriteAccess,
+    ...correctBookingMembershipHandler,
+  )
   .get('/:id', ...getBookingTransactionDetailHandler)
   .put(
     '/:id/correct-complimentary-payment',

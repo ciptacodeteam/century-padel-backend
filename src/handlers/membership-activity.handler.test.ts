@@ -3,7 +3,12 @@ import { createRouter } from '@/lib/create-app'
 import { getUserMembershipsHandler } from './membership.handler'
 
 const { findMany } = vi.hoisted(() => ({ findMany: vi.fn() }))
-vi.mock('@/lib/prisma', () => ({ db: { membershipUser: { findMany } } }))
+vi.mock('@/lib/prisma', () => ({
+  db: {
+    membershipUser: { findMany },
+    bookingMembershipCorrection: { findMany: vi.fn().mockResolvedValue([]) },
+  },
+}))
 vi.mock('@/services/schedule-visibility.service', () => ({
   getUserScheduleVisibilityMonths: vi.fn(),
 }))

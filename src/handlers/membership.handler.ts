@@ -93,7 +93,20 @@ export const getUserMembershipsHandler = factory.createHandlers(async (c) => {
       },
     })
 
-    const activity = buildMembershipActivity(userMemberships)
+    const corrections = await db.bookingMembershipCorrection.findMany({
+      where: { booking: { userId: user.id } },
+      select: {
+        id: true,
+        sources: true,
+        createdAt: true,
+        booking: { select: { invoice: { select: { number: true } } } },
+      },
+    })
+    const activity = buildMembershipActivity(
+      userMemberships,
+      new Date(),
+      corrections,
+    )
     const publicMemberships = userMemberships.map(
       ({
         invoice,

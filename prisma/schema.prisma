@@ -190,6 +190,7 @@ model EmailVerification {
 }
 
 model Staff {
+  bookingMembershipCorrections BookingMembershipCorrection[]
   membershipStartDateChanges MembershipStartDateChange[]
   membershipComplimentaryGrants MembershipComplimentaryGrant[]
   id        String     @id @default(cuid())
@@ -462,6 +463,7 @@ model Invoice {
 // Booking (Courts + optional add-ons)
 // ------------------------------
 model Booking {
+  membershipCorrection BookingMembershipCorrection?
   id                            String        @id @default(cuid())
   userId                        String
   status                        BookingStatus @default(HOLD)
@@ -701,6 +703,7 @@ model MembershipBenefit {
 }
 
 model MembershipUser {
+  bookingCorrections BookingMembershipCorrection[]
   id                String    @id @default(cuid())
   userId            String
   membershipId      String
@@ -997,4 +1000,23 @@ model UserCreditCard {
 
   @@index([userId, isDefault])
   @@map("user_credit_cards")
+}
+
+// A booking correction retires erroneous complimentary usage without creating cash.
+model BookingMembershipCorrection {
+  id String @id @default(cuid())
+  bookingId String @unique
+  targetMembershipUserId String
+  adminId String
+  hours Int
+  reason String
+  sources Json
+  createdAt DateTime @default(now())
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  targetMembershipUser MembershipUser @relation(fields: [targetMembershipUserId], references: [id], onDelete: Restrict)
+  admin Staff @relation(fields: [adminId], references: [id], onDelete: Restrict)
+
+  @@index([targetMembershipUserId, createdAt], map: "booking_membership_corrections_target_created_idx")
+  @@map("booking_membership_corrections")
 }
